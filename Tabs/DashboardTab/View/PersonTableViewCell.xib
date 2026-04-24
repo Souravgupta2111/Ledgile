@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.XIB" version="3.0" toolsVersion="24506" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24504"/>
+        <capability name="Named colors" minToolsVersion="9.0"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <objects>
+        <placeholder placeholderIdentifier="IBFilesOwner" id="-1" userLabel="File's Owner"/>
+        <placeholder placeholderIdentifier="IBFirstResponder" id="-2" customClass="UIResponder"/>
+        <tableViewCell contentMode="scaleToFill" selectionStyle="default" indentationWidth="10" reuseIdentifier="PersonTableViewCell" rowHeight="101" id="KGk-i7-Jjw" customClass="PersonTableViewCell" customModule="Tabs" customModuleProvider="target">
+            <rect key="frame" x="0.0" y="0.0" width="377" height="101"/>
+            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+            <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" ambiguous="YES" tableViewCell="KGk-i7-Jjw" id="H2p-sc-9uM">
+                <rect key="frame" x="0.0" y="0.0" width="377" height="101"/>
+                <autoresizingMask key="autoresizingMask"/>
+                <subviews>
+                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="OxD-KD-yla">
+                        <rect key="frame" x="0.0" y="0.0" width="377" height="60"/>
+                        <subviews>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="CN9-iJ-sHv">
+                                <rect key="frame" x="72" y="19.666666666666668" width="42" height="21.000000000000004"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <nil key="textColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="I0o-z0-u71">
+                                <rect key="frame" x="285.33333333333331" y="19.666666666666668" width="42" height="21.000000000000004"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <nil key="textColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="zbR-ip-p9D">
+                                <rect key="frame" x="331.33333333333331" y="0.0" width="33.666666666666686" height="60"/>
+                                <state key="normal" title="Button"/>
+                                <buttonConfiguration key="configuration" style="plain" image="chevron.right" catalog="system">
+                                    <preferredSymbolConfiguration key="preferredSymbolConfigurationForImage" scale="small"/>
+                                    <color key="baseForegroundColor" systemColor="systemGrayColor"/>
+                                </buttonConfiguration>
+                            </button>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="VMB-iS-RlT">
+                                <rect key="frame" x="16" y="10" width="40" height="40"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="40" id="PTA-4K-TnB"/>
+                                    <constraint firstAttribute="width" constant="40" id="e3x-mH-sBT"/>
+                                </constraints>
+                                <userDefinedRuntimeAttributes>
+                                    <userDefinedRuntimeAttribute type="number" keyPath="layer.cornerRadius">
+                                        <integer key="value" value="20"/>
+                                    </userDefinedRuntimeAttribute>
+                                </userDefinedRuntimeAttributes>
+                            </imageView>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ztm-Gd-dLK">
+                                <rect key="frame" x="16" y="10" width="40" height="40"/>
+                                <color key="backgroundColor" systemColor="systemGray4Color"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="40" id="6RZ-fQ-iIe"/>
+                                    <constraint firstAttribute="width" constant="40" id="D6H-Wg-6H6"/>
+                                </constraints>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <nil key="textColor"/>
+                                <nil key="highlightedColor"/>
+                                <userDefinedRuntimeAttributes>
+                                    <userDefinedRuntimeAttribute type="number" keyPath="layer.cornerRadius">
+                                        <integer key="value" value="20"/>
+                                    </userDefinedRuntimeAttribute>
+                                </userDefinedRuntimeAttributes>
+                            </label>
+                        </subviews>
+                        <color key="backgroundColor" name="CellColor"/>
+                        <constraints>
+                            <constraint firstItem="zbR-ip-p9D" firstAttribute="top" secondItem="OxD-KD-yla" secondAttribute="top" id="FW2-8b-yuN"/>
+                            <constraint firstItem="CN9-iJ-sHv" firstAttribute="leading" secondItem="VMB-iS-RlT" secondAttribute="trailing" constant="16" id="Gvb-ak-N2M"/>
+                            <constraint firstItem="VMB-iS-RlT" firstAttribute="centerY" secondItem="OxD-KD-yla" secondAttribute="centerY" id="Pvy-gI-opk"/>
+                            <constraint firstItem="CN9-iJ-sHv" firstAttribute="centerY" secondItem="OxD-KD-yla" secondAttribute="centerY" id="R4I-ZU-ZQA"/>
+                            <constraint firstItem="I0o-z0-u71" firstAttribute="centerY" secondItem="OxD-KD-yla" secondAttribute="centerY" id="T9G-Bi-ZdL"/>
+                            <constraint firstAttribute="bottom" secondItem="zbR-ip-p9D" secondAttribute="bottom" id="ULq-0y-iyA"/>
+                            <constraint firstItem="VMB-iS-RlT" firstAttribute="leading" secondItem="OxD-KD-yla" secondAttribute="leading" constant="16" id="cxr-as-lG9"/>
+                            <constraint firstAttribute="trailing" secondItem="zbR-ip-p9D" secondAttribute="trailing" constant="12" id="dDy-TX-L1q"/>
+                            <constraint firstItem="ztm-Gd-dLK" firstAttribute="leading" secondItem="OxD-KD-yla" secondAttribute="leading" constant="16" id="hjF-QZ-WMH"/>
+                            <constraint firstItem="zbR-ip-p9D" firstAttribute="leading" secondItem="I0o-z0-u71" secondAttribute="trailing" constant="4" id="kfe-2w-Mao"/>
+                            <constraint firstAttribute="height" constant="60" id="kqf-2A-80a"/>
+                            <constraint firstItem="ztm-Gd-dLK" firstAttribute="centerY" secondItem="OxD-KD-yla" secondAttribute="centerY" id="vlu-md-sNJ"/>
+                        </constraints>
+                    </view>
+                </subviews>
+                <constraints>
+                    <constraint firstAttribute="trailing" secondItem="OxD-KD-yla" secondAttribute="trailing" id="5II-NF-xxa"/>
+                    <constraint firstItem="OxD-KD-yla" firstAttribute="leading" secondItem="H2p-sc-9uM" secondAttribute="leading" id="BFC-Fg-eqd"/>
+                    <constraint firstItem="OxD-KD-yla" firstAttribute="top" secondItem="H2p-sc-9uM" secondAttribute="top" id="Sx4-z8-BKn"/>
+                    <constraint firstAttribute="bottom" secondItem="OxD-KD-yla" secondAttribute="bottom" id="tPb-1Y-zpL"/>
+                </constraints>
+            </tableViewCellContentView>
+            <viewLayoutGuide key="safeArea" id="njF-e1-oar"/>
+            <connections>
+                <outlet property="initialLabel" destination="ztm-Gd-dLK" id="fxg-rQ-yEY"/>
+                <outlet property="nameLabel" destination="CN9-iJ-sHv" id="VCu-VB-blf"/>
+                <outlet property="priceLabel" destination="I0o-z0-u71" id="zki-aE-vr6"/>
+                <outlet property="profileImageView" destination="VMB-iS-RlT" id="ppG-sE-2XX"/>
+            </connections>
+            <point key="canvasLocation" x="95.419847328244273" y="173.59154929577466"/>
+        </tableViewCell>
+    </objects>
+    <resources>
+        <image name="chevron.right" catalog="system" width="97" height="128"/>
+        <namedColor name="CellColor">
+            <color red="0.99999994039535522" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <systemColor name="systemGray4Color">
+            <color red="0.81960784310000001" green="0.81960784310000001" blue="0.83921568629999999" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </systemColor>
+        <systemColor name="systemGrayColor">
+            <color red="0.5568627451" green="0.5568627451" blue="0.57647058819999997" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </systemColor>
+    </resources>
+</document>

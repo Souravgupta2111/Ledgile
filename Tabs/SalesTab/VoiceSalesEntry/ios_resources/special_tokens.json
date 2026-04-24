@@ -1,0 +1,10 @@
+{
+  "cls_token": "[CLS]",
+  "sep_token": "[SEP]",
+  "pad_token": "<pad>",
+  "unk_token": "<unk>",
+  "cls_token_id": 2,
+  "sep_token_id": 3,
+  "pad_token_id": 0,
+  "unk_token_id": 1
+}
