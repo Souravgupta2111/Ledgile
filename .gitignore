@@ -1,6 +1,10 @@
 # Secrets
 Secrets.xcconfig
 
+# OS generated files
+.DS_Store
+**/.DS_Store
+
 # Personal and assignment files
 GST_Integration_Plan.md
 Shivraj Business Assignment.pdf
