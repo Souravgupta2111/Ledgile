@@ -240,7 +240,11 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         for product in matchedProducts {
             var inputQty = Double(product.quantity) ?? 1.0
             let voicePrice = Double(product.price ?? "")
-            var finalUnit = product.unit ?? "pcs"
+            let matchedItem = product.itemID.flatMap { id in inventoryItems.first { $0.id == id } }
+            
+            // Determine the working unit:
+            // If the parser extracted a unit, use it. Otherwise default to the inventory unit (NOT "pcs").
+            var finalUnit = product.unit ?? matchedItem?.unit ?? "pcs"
             var finalSellingPrice: Double
             
             // Auto-scale fractional units to avoid decimal loss (e.g. 0.5 kg -> 500 g)
@@ -256,34 +260,39 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             }
             
             var finalQtyInt = Int(round(inputQty)) == 0 ? 1 : Int(round(inputQty))
-            
-            let matchedItem = product.itemID.flatMap { id in inventoryItems.first { $0.id == id } }
 
             // Apply conversions if matched
             if let inv = matchedItem {
                 print("[VoiceSale] Item=\(inv.name), invUnit=\(inv.unit), reqUnit=\(finalUnit), reqQty=\(inputQty), invPrice=\(inv.defaultSellingPrice)")
-                // Determine if we need to pro-rate based on different units
-                if let conversion = UnitConversionService.shared.calculateProrated(
-                    requestedQty: inputQty,
-                    requestedUnit: finalUnit,
-                    inventoryPrice: inv.defaultSellingPrice,
-                    inventoryUnit: inv.unit
-                ) {
-                    finalQtyInt = conversion.quantity
-                    finalUnit = conversion.unit
-                    
-                    // If user explicitly stated a price, use it; otherwise pro-rate
-                    if let vp = voicePrice {
-                        finalSellingPrice = vp
+                
+                let normalizedReq = UnitConversionService.shared.normalizeUnit(finalUnit)
+                let normalizedInv = UnitConversionService.shared.normalizeUnit(inv.unit)
+                
+                if normalizedReq != normalizedInv {
+                    // Units differ — need prorated conversion (e.g. 540g at ₹40/kg)
+                    if let conversion = UnitConversionService.shared.calculateProrated(
+                        requestedQty: inputQty,
+                        requestedUnit: finalUnit,
+                        inventoryPrice: inv.defaultSellingPrice,
+                        inventoryUnit: inv.unit
+                    ) {
+                        finalQtyInt = conversion.quantity
+                        finalUnit = conversion.unit
+                        
+                        // If user explicitly stated a price, use it; otherwise pro-rate
+                        finalSellingPrice = voicePrice ?? conversion.proratedPrice
+                        print("[VoiceSale] ✓ Converted: qty=\(finalQtyInt), unit=\(finalUnit), price=\(finalSellingPrice)")
                     } else {
-                        finalSellingPrice = conversion.proratedPrice
+                        // Incompatible families (e.g. pcs vs kg) — fall back to defaults
+                        finalSellingPrice = voicePrice ?? inv.defaultSellingPrice
+                        finalUnit = inv.unit
+                        print("[VoiceSale] ✗ Incompatible units, using defaults: price=\(finalSellingPrice), unit=\(finalUnit)")
                     }
-                    print("[VoiceSale] ✓ Converted: qty=\(finalQtyInt), unit=\(finalUnit), price=\(finalSellingPrice)")
                 } else {
-                    // Same units or incompatible, just use default lookup
+                    // Same unit — no conversion needed, use inventory price as default
                     finalSellingPrice = voicePrice ?? inv.defaultSellingPrice
                     finalUnit = inv.unit
-                    print("[VoiceSale] ✗ No conversion needed/possible, using price=\(finalSellingPrice), unit=\(finalUnit)")
+                    print("[VoiceSale] ✗ Same unit, using price=\(finalSellingPrice), unit=\(finalUnit)")
                 }
             } else {
                 finalSellingPrice = voicePrice ?? 0

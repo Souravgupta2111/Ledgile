@@ -1,24 +1,18 @@
-//  Spatial column parser for bills: uses OCR bounding boxes to reconstruct
-//  table structure (Qty | Particulars | Rate | Amount) by geometry.
-//  Works for Hindi/English/Hinglish, printed/handwritten.
 
 import Foundation
 import CoreGraphics
 
-/// Parsed purchase line item
 struct ParsedPurchaseItem {
     var name: String
     var quantity: String
     var unit: String?
     var costPrice: String?
     var sellingPrice: String?
-    /// When item not in inventory: only include if likelihood >= this (0...1).
     var itemLikelihood: Double?
     var hsnCode: String?
     var gstRate: String?
 }
 
-/// Result of parsing a purchase bill
 struct ParsedPurchaseResult {
     var supplierName: String?
     var supplierGSTIN: String?
@@ -35,13 +29,11 @@ final class BillParser {
 
     static let shared = BillParser()
 
-    /// Hindi (Devanagari) numeral mapping
      let hindiDigits: [Character: Character] = [
         "०": "0", "१": "1", "२": "2", "३": "3", "४": "4",
         "५": "5", "६": "6", "७": "7", "८": "8", "९": "9"
     ]
 
-    /// Keywords that indicate non-item lines (header/footer/totals). Lowercased.
      let nonItemKeywords: Set<String> = [
         "total", "subtotal", "grand", "gst", "tax", "discount", "amount", "payable",
         "bill", "invoice", "receipt", "date", "no.", "thank", "thanks",
@@ -52,30 +44,24 @@ final class BillParser {
         "dated", "m/s", "मैसर्स"
     ]
 
-    /// Column header keywords mapped to column type.
      let headerKeywords: [String: ColumnType] = [
         "s.no": .serial, "s.no.": .serial, "s no": .serial, "sno": .serial,
         "sr": .serial, "sr.": .serial, "sr no": .serial, "srno": .serial,
         "sr.no": .serial, "sr.no.": .serial, "serial": .serial,
         "क्र.सं.": .serial, "क्रसं": .serial, "क्रम": .serial,
-        // Qty variants
         "qty": .qty, "qty.": .qty, "quantity": .qty, "qnty": .qty,
         "no": .qty, "no.": .qty,
         "मात्रा": .qty, "नग": .qty, "संख्या": .qty,
-        // Particulars variants
         "particulars": .particulars, "particular": .particulars, "description": .particulars,
         "item": .particulars, "items": .particulars, "product": .particulars, "name": .particulars, "articles": .particulars,
         "विवरण": .particulars, "सामान": .particulars, "माल": .particulars, "नाम": .particulars,
-        // Rate variants
         "rate": .rate, "price": .rate, "mrp": .rate, "unit": .rate,
         "unit price": .rate, "each": .rate,
         "दर": .rate, "भाव": .rate, "रेट": .rate, "rs": .rate, "rs.": .rate,
-        // Amount variants
         "amount": .amount, "amt": .amount, "amt.": .amount, "total": .amount,
         "रकम": .amount, "राशि": .amount, "कीमत": .amount, "योग": .amount
     ]
 
-    /// Footer-like keywords
      let footerKeywords: Set<String> = [
         "total", "grand total", "subtotal", "thanking", "thank you", "thanking you",
         "round off", "net amount", "payable", "हस्ताक्षर", "signature",
@@ -89,9 +75,7 @@ final class BillParser {
 
      init() {}
 
-    // MARK: ─── Spatial Parsing (Primary) ───────────────────────────────
 
-    /// Parse OCR boxes for sale using spatial column detection.
     func parseForSale(boxes: [OCRTextBox]) -> ParsedResult {
         let bill = parseBillSpatial(boxes: boxes)
         let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
@@ -102,12 +86,10 @@ final class BillParser {
             return (name: $0.particulars, quantity: q, unit: u ?? "pcs", price: cleanPrice($0.rate ?? $0.amount), costPrice: nil)
         }
 
-        // If spatial parsing found items, use them; otherwise fall back to text parsing
         guard !rawProducts.isEmpty else {
             return parseForSale(fullText: bill.rawText)
         }
 
-        // Match against inventory — but keep ALL items, matched or not
         let matched = InventoryMatcher.shared.matchProducts(
             products: rawProducts,
             items: inventory
@@ -131,13 +113,11 @@ final class BillParser {
         )
     }
 
-    /// Parse OCR boxes for purchase using spatial column detection.
     func parseForPurchase(boxes: [OCRTextBox]) -> ParsedPurchaseResult {
         let bill = parseBillSpatial(boxes: boxes)
         let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         InventoryMatcher.shared.indexInventory(inventory)
 
-        // If spatial parsing found no items, fall back to text parsing
         guard !bill.items.isEmpty else {
             return parseForPurchase(fullText: bill.rawText)
         }
@@ -159,7 +139,6 @@ final class BillParser {
                     itemLikelihood: match.confidence
                 ))
             } else {
-                // Include ALL items — even unmatched ones
                 let likelihood = itemLikelihood(name: name, quantity: qty, price: price)
                 items.append(ParsedPurchaseItem(
                     name: name,
@@ -185,9 +164,7 @@ final class BillParser {
         )
     }
 
-    // MARK: ─── Core Spatial Algorithm ──────────────────────────────────
 
-    /// Main spatial parsing: boxes → rows → columns → structured bill.
     func parseBillSpatial(boxes: [OCRTextBox]) -> ParsedBillStructure {
         guard !boxes.isEmpty else {
             return ParsedBillStructure(items: [], grandTotal: nil, footerText: [], rawText: "")
@@ -195,7 +172,6 @@ final class BillParser {
 
         let rawText = boxes.map { $0.text }.joined(separator: "\n")
 
-        // Deskew box coordinates if the receipt was tilted
         let correctedBoxes = deskewBoxes(boxes)
         
         let rows = groupIntoRows(boxes: correctedBoxes)
@@ -211,13 +187,11 @@ final class BillParser {
             columns = validKeywordCols
             dataStartRow = (headerIdx ?? 0) + 1
         } else {
-            // Geometric column detection — works with ANY headers or no headers
             let (geoCols, skipRows) = detectColumnsGeometric(rows: rows)
             if !geoCols.isEmpty {
                 columns = geoCols
                 dataStartRow = skipRows
             } else if !keywordColumns.isEmpty {
-                // Fall back to whatever keywords found
                 columns = keywordColumns
                 dataStartRow = (headerIdx ?? 0) + 1
             } else {
@@ -254,7 +228,6 @@ final class BillParser {
                 continue
             }
 
-            // Assign boxes to columns
             if let item = assignBoxesToColumns(row: row, columns: columns) {
                 items.append(item)
             }
@@ -263,15 +236,11 @@ final class BillParser {
         return ParsedBillStructure(items: items, grandTotal: grandTotal, footerText: footerText, rawText: rawText)
     }
 
-    // MARK: ─── Geometric Column Detection ─────────────────────────────
 
-    /// Detect columns by analyzing X-position patterns across all rows.
-    /// Works without any header keywords — purely structural.
-    /// Returns (column map, first data row index).
      func detectColumnsGeometric(rows: [OCRRow]) -> ([ColumnType: CGFloat], Int) {
         guard rows.count >= 3 else { return ([:], 0) }
 
-        var xPositions: [[CGFloat]] = []  // Each inner array = X positions of boxes in one row
+        var xPositions: [[CGFloat]] = []
         var tabularRowIndices: [Int] = []
 
         for (idx, row) in rows.enumerated() {
@@ -329,16 +298,13 @@ final class BillParser {
             let avg = valueCount > 0 ? avgValue / Double(valueCount) : 0
 
             if textCount > numericCount {
-                // Mostly text → particulars
                 if colTypes[.particulars] == nil {
                     colTypes[.particulars] = avgX[colIdx]
                 }
             } else {
-                // Mostly numbers
                 if avg < 100 && colTypes[.qty] == nil {
                     colTypes[.qty] = avgX[colIdx]
                 } else if colTypes[.amount] == nil && colIdx == mostCommon - 1 {
-                    // Rightmost numeric column → amount
                     colTypes[.amount] = avgX[colIdx]
                 } else if colTypes[.rate] == nil {
                     colTypes[.rate] = avgX[colIdx]
@@ -349,7 +315,6 @@ final class BillParser {
         }
 
         let firstDataRow = dataRows.first?.1 ?? 0
-        // Header is likely the row before first data row, or row with non-item text
         let startRow = max(0, firstDataRow)
 
         for (type, x) in colTypes.sorted(by: { $0.value < $1.value }) {
@@ -358,20 +323,13 @@ final class BillParser {
         return (colTypes, startRow)
     }
 
-    // MARK: ─── Coordinate Deskew ───────────────────────────────────────
     
-    /// Detects the dominant text line slope from OCR box coordinates and
-    /// creates new OCRTextBox objects with rotated bounding boxes.
-    /// This fixes row grouping when the receipt image is slightly tilted.
      func deskewBoxes(_ boxes: [OCRTextBox]) -> [OCRTextBox] {
         guard boxes.count >= 4 else { return boxes }
         
-        // Pair boxes that are horizontally adjacent (same row candidates)
-        // and compute the slope between their centers
         let sorted = boxes.sorted { $0.centerY < $1.centerY }
         var angles: [CGFloat] = []
         
-        // Find boxes that are roughly on the same line
         let medianHeight = boxes.map { $0.boundingBox.height }.sorted()[boxes.count / 2]
         let yTolerance = medianHeight * 1.5
         
@@ -380,17 +338,14 @@ final class BillParser {
                 let a = sorted[i]
                 let b = sorted[j]
                 
-                // Check if they are on roughly the same row
                 guard abs(a.centerY - b.centerY) < yTolerance else { continue }
                 
-                // Need meaningful horizontal separation
                 let dx = b.centerX - a.centerX
                 let dy = b.centerY - a.centerY
                 guard abs(dx) > 0.05 else { continue }
                 
                 let angle = atan2(dy, dx)
-                // Only consider small angles (< 25°)
-                if abs(angle) < 0.44 { // ~25 degrees in radians
+                if abs(angle) < 0.44 {
                     angles.append(angle)
                 }
             }
@@ -398,19 +353,16 @@ final class BillParser {
         
         guard angles.count >= 3 else { return boxes }
         
-        // Compute median angle
         let sortedAngles = angles.sorted()
         let medianAngle = sortedAngles[sortedAngles.count / 2]
         let angleDegrees = medianAngle * 180.0 / .pi
         
-        // Only correct if tilt is significant (> 0.5°) but reasonable (< 20°)
-        guard abs(angleDegrees) > 0.5 && abs(angleDegrees) < 20.0 else {
+        guard abs(angleDegrees) > 0.2 && abs(angleDegrees) < 20.0 else {
             return boxes
         }
         
         print("[BillParser] Deskewing box coordinates by \(String(format: "%.1f", angleDegrees))°")
         
-        // Rotate all box coordinates by -medianAngle around the image center (0.5, 0.5)
         let cosA = cos(-medianAngle)
         let sinA = sin(-medianAngle)
         let cx: CGFloat = 0.5
@@ -420,13 +372,11 @@ final class BillParser {
             let origCenterX = box.boundingBox.midX
             let origCenterY = box.boundingBox.midY
             
-            // Translate to origin, rotate, translate back
             let dx = origCenterX - cx
             let dy = origCenterY - cy
             let newCX = dx * cosA - dy * sinA + cx
             let newCY = dx * sinA + dy * cosA + cy
             
-            // Reconstruct bounding box centered at new position
             let newOriginX = newCX - box.boundingBox.width / 2
             let newOriginY = newCY - box.boundingBox.height / 2
             let newRect = CGRect(
@@ -444,39 +394,44 @@ final class BillParser {
         }
     }
 
-    // MARK: ─── Row Grouping ───────────────────────────────────────────
 
-    /// Group boxes into rows by Y-coordinate proximity.
-    /// Uses adaptive tolerance based on actual box heights.
      func groupIntoRows(boxes: [OCRTextBox]) -> [OCRRow] {
         guard !boxes.isEmpty else { return [] }
-
-        // Compute adaptive Y-tolerance from median box height
-        let heights = boxes.map { $0.boundingBox.height }.sorted()
-        let medianHeight = heights[heights.count / 2]
-        // Tolerance = half the median box height (boxes on the same line overlap in Y)
-        let yTolerance = max(medianHeight * 0.6, 0.005)
 
         let sorted = boxes.sorted { $0.topY < $1.topY }
 
         var rows: [OCRRow] = []
         var currentBoxes: [OCRTextBox] = [sorted[0]]
-        var currentAvgY = sorted[0].centerY
+        
+        var currentRowTopY = sorted[0].topY
+        var currentRowBottomY = sorted[0].bottomY
 
         for box in sorted.dropFirst() {
-            if abs(box.centerY - currentAvgY) <= yTolerance {
+            let boxHeight = box.bottomY - box.topY
+            let intersectionTop = max(currentRowTopY, box.topY)
+            let intersectionBottom = min(currentRowBottomY, box.bottomY)
+            let intersectionHeight = max(0, intersectionBottom - intersectionTop)
+            
+            let rowHeight = currentRowBottomY - currentRowTopY
+            let overlapRatioBox = boxHeight > 0 ? intersectionHeight / boxHeight : 0
+            let overlapRatioRow = rowHeight > 0 ? intersectionHeight / rowHeight : 0
+            
+            if overlapRatioBox > 0.3 || overlapRatioRow > 0.3 {
                 currentBoxes.append(box)
-                currentAvgY = currentBoxes.map { $0.centerY }.reduce(0, +) / CGFloat(currentBoxes.count)
+                currentRowTopY = min(currentRowTopY, box.topY)
+                currentRowBottomY = max(currentRowBottomY, box.bottomY)
             } else {
+                let currentAvgY = currentBoxes.map { $0.centerY }.reduce(0, +) / CGFloat(currentBoxes.count)
                 rows.append(OCRRow(
                     boxes: currentBoxes.sorted { $0.centerX < $1.centerX },
                     averageY: currentAvgY
                 ))
                 currentBoxes = [box]
-                currentAvgY = box.centerY
+                currentRowTopY = box.topY
+                currentRowBottomY = box.bottomY
             }
         }
-        // Last row
+        let currentAvgY = currentBoxes.map { $0.centerY }.reduce(0, +) / CGFloat(currentBoxes.count)
         rows.append(OCRRow(
             boxes: currentBoxes.sorted { $0.centerX < $1.centerX },
             averageY: currentAvgY
@@ -485,9 +440,7 @@ final class BillParser {
         return rows
     }
 
-    // MARK: ─── Column Detection ───────────────────────────────────────
 
-    /// Normalize text for header keyword matching: lowercase, strip periods, trim.
      func normalizeForMatch(_ text: String) -> String {
         return text.lowercased()
             .replacingOccurrences(of: ".", with: "")
@@ -495,7 +448,6 @@ final class BillParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Remove columns that overlap (within 5% X distance), keeping the more important one.
      func validateColumns(_ cols: [ColumnType: CGFloat]) -> [ColumnType: CGFloat] {
         let priority: [ColumnType: Int] = [.particulars: 4, .amount: 3, .rate: 2, .qty: 1]
         var valid: [ColumnType: CGFloat] = [:]
@@ -511,7 +463,6 @@ final class BillParser {
         return valid
     }
 
-    /// Find header row and extract column X-positions.
      func detectColumns(rows: [OCRRow]) -> (headerIndex: Int?, columns: [ColumnType: CGFloat]) {
         for (idx, row) in rows.enumerated() {
             var found: [ColumnType: CGFloat] = [:]
@@ -519,13 +470,11 @@ final class BillParser {
             for box in row.boxes {
                 let normalized = normalizeForMatch(box.text)
 
-                // Check the full normalized text first
                 if let colType = headerKeywords[normalized], found[colType] == nil {
                     found[colType] = box.centerX
                     continue
                 }
 
-                // Check each word individually
                 let words = normalized.split(separator: " ").map(String.init)
                 for word in words {
                     if let colType = headerKeywords[word], found[colType] == nil {
@@ -533,20 +482,17 @@ final class BillParser {
                     }
                 }
 
-                // Also check with periods intact (e.g. "s.no", "qty.", "amt.")
                 let lowerDotted = box.text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 if let colType = headerKeywords[lowerDotted], found[colType] == nil {
                     found[colType] = box.centerX
                 }
 
-                // Check combined adjacent words (e.g. "s no" → "s.no")
                 let joined = words.joined()
                 if let colType = headerKeywords[joined], found[colType] == nil {
                     found[colType] = box.centerX
                 }
             }
 
-            // Need at least 2 columns detected to consider this a header
             if found.count >= 2 {
                 return (idx, found)
             }
@@ -554,9 +500,7 @@ final class BillParser {
         return (nil, [:])
     }
 
-    // MARK: ─── Column Assignment ──────────────────────────────────────
 
-    /// Assign a row's boxes to the detected columns by X-position proximity.
      func assignBoxesToColumns(row: OCRRow, columns: [ColumnType: CGFloat]) -> BillLineItem? {
         guard !row.boxes.isEmpty else { return nil }
 
@@ -576,7 +520,6 @@ final class BillParser {
                 }
             }
 
-            // Only assign if reasonably close (within 15% of image width)
             if let col = bestCol, bestDist < 0.15 {
                 if let existing = assignments[col] {
                     assignments[col] = existing + " " + box.text
@@ -584,9 +527,7 @@ final class BillParser {
                     assignments[col] = box.text
                 }
             } else {
-                // Box too far from any column — try to assign by content type
                 if looksNumeric(box.text) {
-                    // Assign to rate or amount (whichever is missing)
                     if assignments[.amount] == nil && columns[.amount] != nil {
                         assignments[.amount] = box.text
                     } else if assignments[.rate] == nil && columns[.rate] != nil {
@@ -597,7 +538,6 @@ final class BillParser {
                 } else if assignments[.particulars] == nil {
                     assignments[.particulars] = box.text
                 } else {
-                    // Append to particulars
                     assignments[.particulars] = (assignments[.particulars] ?? "") + " " + box.text
                 }
             }
@@ -605,7 +545,6 @@ final class BillParser {
 
         let particulars = assignments[.particulars]?.trimmingCharacters(in: .whitespaces) ?? ""
         let qty = assignments[.qty]?.trimmingCharacters(in: .whitespaces) ?? "1"
-        // IGNORE .serial column — it's just S.No (1., 2., 3.) not actual quantity
 
         guard !particulars.isEmpty else { return nil }
         let lowerPart = particulars.lowercased()
@@ -619,10 +558,7 @@ final class BillParser {
         )
     }
 
-    // MARK: ─── Positional Fallback ────────────────────────────────────
 
-    /// When no header is detected: use positional heuristics.
-    /// Separates each row into numeric parts (qty, rate, amount) and text parts (item name).
      func parseFallbackPositional(rows: [OCRRow], rawText: String) -> ParsedBillStructure {
         var items: [BillLineItem] = []
         var grandTotal: String?
@@ -649,7 +585,6 @@ final class BillParser {
 
             let sorted = row.boxes.sorted { $0.centerX < $1.centerX }
 
-            // Separate into numeric and text boxes
             let numericBoxes = sorted.filter { looksNumeric($0.text) }
             let textBoxes = sorted.filter { !looksNumeric($0.text) }
 
@@ -658,7 +593,6 @@ final class BillParser {
             var rate: String?
             var amount: String?
 
-            // Extract qty: leftmost numeric box (if small number, likely qty)
             if let firstNum = numericBoxes.first {
                 let qtyCandidate = cleanPrice(firstNum.text)
                 if let val = Double(qtyCandidate ?? ""), val < 500 {
@@ -666,31 +600,51 @@ final class BillParser {
                 }
             }
 
-            // Extract rate/amount from rightmost numeric boxes
             if numericBoxes.count >= 3 {
                 rate = cleanPrice(numericBoxes[numericBoxes.count - 2].text)
                 amount = cleanPrice(numericBoxes.last!.text)
             } else if numericBoxes.count >= 2 {
                 amount = cleanPrice(numericBoxes.last!.text)
             } else if numericBoxes.count == 1 && textBoxes.isEmpty {
-                // Single number row — skip (it's probably a total or serial #)
                 continue
             }
 
-            // Name = all text (non-numeric) boxes
             name = textBoxes.map { $0.text }.joined(separator: " ")
 
-            // If no text boxes but multiple numeric boxes, middle ones might be name
-            if name.isEmpty && sorted.count >= 3 {
-                // Try the second box as name (between qty and price)
-                let middleBoxes = sorted.dropFirst().dropLast()
-                let middleText = middleBoxes.filter { !looksNumeric($0.text) }
-                if !middleText.isEmpty {
-                    name = middleText.map { $0.text }.joined(separator: " ")
+            if name.isEmpty && sorted.count >= 2 {
+                var textParts: [String] = []
+                var numParts: [String] = []
+                for box in sorted {
+                    if looksNumeric(box.text) {
+                        numParts.append(box.text)
+                    } else {
+                        textParts.append(box.text)
+                    }
+                }
+                
+                if !textParts.isEmpty {
+                    name = textParts.joined(separator: " ")
+                }
+                
+                if numParts.count >= 3 {
+                    if let first = numParts.first, let val = Double(cleanPrice(first) ?? ""), val < 500 {
+                        qty = cleanPrice(first) ?? "1"
+                    }
+                    rate = cleanPrice(numParts[numParts.count - 2])
+                    amount = cleanPrice(numParts.last!)
+                } else if numParts.count == 2 {
+                    if let first = numParts.first, let val = Double(cleanPrice(first) ?? ""), val < 500 {
+                        qty = cleanPrice(first) ?? "1"
+                        amount = cleanPrice(numParts.last!)
+                    } else {
+                        rate = cleanPrice(numParts.first!)
+                        amount = cleanPrice(numParts.last!)
+                    }
+                } else if numParts.count == 1 {
+                    amount = cleanPrice(numParts.first!)
                 }
             }
 
-            // Handle single-box rows: try to split "2 Parle G 10" pattern
             if sorted.count == 1 {
                 let parts = sorted[0].text.split(separator: " ").map(String.init)
                 if parts.count >= 2 {
@@ -705,10 +659,9 @@ final class BillParser {
                             amount = cleanPrice(numParts.last!)
                         }
                     } else {
-                        continue // All-numeric single box, skip
+                        continue
                     }
                 } else {
-                    // Single word in single box — probably not an item
                     continue
                 }
             }
@@ -724,14 +677,12 @@ final class BillParser {
         return ParsedBillStructure(items: items, grandTotal: grandTotal, footerText: footerText, rawText: rawText)
     }
 
-    /// Check if row text looks like it could contain item data (has numbers + text).
      func containsItemLikeContent(_ text: String) -> Bool {
         let hasNumbers = text.contains(where: { $0.isNumber })
         let hasLetters = text.contains(where: { $0.isLetter })
         return hasNumbers && hasLetters
     }
 
-    // MARK: ─── Helpers ────────────────────────────────────────────────
 
      func isFooterRow(_ text: String) -> Bool {
         let lower = text.lowercased()
@@ -761,7 +712,6 @@ final class BillParser {
         return !digits.isEmpty && Double(digits.replacingOccurrences(of: "/", with: "")) != nil
     }
 
-    /// Convert Devanagari numerals (१२३) to Arabic (123).
      func convertHindiNumerals(_ text: String) -> String {
         var result = ""
         for char in text {
@@ -774,14 +724,12 @@ final class BillParser {
         return result
     }
 
-    /// Extract numeric quantity AND unit from strings like "10 kg", "5kg", "२/१०".
      func extractQtyAndUnit(_ qtyStr: String) -> (number: String, unit: String?) {
         var cleaned = convertHindiNumerals(qtyStr)
             .trimmingCharacters(in: .whitespaces)
         
         var foundUnit: String? = nil
         
-        // Strip common unit words and capture the first one found
         let unitWords = ["kg", "kgs", "litre", "litres", "ltr", "pz", "pc", "pcs", "pieces",
                          "gm", "gms", "gram", "grams", "ml", "lbs", "lb", "ton", "tons",
                          "tire", "kz", "meter", "mtr", "ft", "dozen"]
@@ -810,18 +758,15 @@ final class BillParser {
         return (number: digits.isEmpty ? "1" : digits, unit: foundUnit)
     }
 
-    /// Clean price string: "44/-" → "44", "$2.00/kg" → "2.00", "₹50" → "50", "१२७" → "127"
      func cleanPrice(_ priceStr: String?) -> String? {
         guard var p = priceStr?.trimmingCharacters(in: .whitespaces), !p.isEmpty else { return nil }
         p = convertHindiNumerals(p)
-        // Strip currency symbols
         p = p.replacingOccurrences(of: "₹", with: "")
             .replacingOccurrences(of: "$", with: "")
             .replacingOccurrences(of: "Rs.", with: "")
             .replacingOccurrences(of: "Rs", with: "")
             .replacingOccurrences(of: "/-", with: "")
             .replacingOccurrences(of: ",", with: "")
-        // Strip unit suffixes like /kg, /kB, /unit, /pcs, /litre
         if let slashUnit = p.range(of: "/[a-zA-Z]+", options: .regularExpression) {
             p = String(p[p.startIndex..<slashUnit.lowerBound])
         }
@@ -836,7 +781,6 @@ final class BillParser {
         return p.isEmpty ? nil : p
     }
 
-    /// Score how likely this is a real product (not "Total", "GST", etc.).
      func itemLikelihood(name: String, quantity: String, price: String?) -> Double {
         let lower = name.lowercased().trimmingCharacters(in: .whitespaces)
         let tokens = lower.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
@@ -857,9 +801,7 @@ final class BillParser {
         return min(1.0, score)
     }
 
-    // MARK: ─── Legacy Text-Only Parsing (Fallback) ────────────────────
 
-    /// Legacy: parse flat text for sale (used as fallback when spatial parsing fails).
     func parseForSale(fullText: String) -> ParsedResult {
         let rawProducts = extractProductsFromBill(fullText)
         let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
@@ -889,7 +831,6 @@ final class BillParser {
         )
     }
 
-    /// Legacy: parse flat text for purchase.
     func parseForPurchase(fullText: String) -> ParsedPurchaseResult {
         let rawProducts = extractProductsFromBill(fullText)
         let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
@@ -936,7 +877,6 @@ final class BillParser {
         )
     }
 
-    /// Extract products from flat text (legacy line-by-line regex).
      func extractProductsFromBill(_ text: String) -> [(name: String, quantity: String, unit: String?, price: String?)] {
         let lines = text.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -954,7 +894,6 @@ final class BillParser {
         return products.isEmpty ? [(name: text, quantity: "1", unit: "pcs", price: nil)] : products
     }
 
-    /// Filter to lines that look like items (skip header/footer/totals).
      func itemLinesOnly(_ lines: [String]) -> [String] {
         if lines.isEmpty { return [] }
         var start = 0
@@ -990,7 +929,6 @@ final class BillParser {
         return onlyNumbers
     }
 
-    /// Try multiple patterns: "qty name price", "name qty price", etc.
      func parseLineAsItem(_ line: String) -> (name: String, quantity: String, unit: String?, price: String?)? {
         let tokens = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard tokens.count >= 1 else { return nil }

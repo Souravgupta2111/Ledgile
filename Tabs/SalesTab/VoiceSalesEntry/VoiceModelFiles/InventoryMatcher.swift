@@ -1,22 +1,17 @@
-//  Resolves transcribed item names to actual inventory items using
-//  fuzzy matching: exact match, alias dictionary, Levenshtein distance,
-//  Soundex phonetic matching, and substring containment.
 
 import Foundation
 struct MatchResult {
     let item: Item
     let confidence: Double
-    let matchType: String   // "exact", "alias", "levenshtein", "soundex", "substring"
+    let matchType: String
 }
 
 final class InventoryMatcher {
     
     static let shared = InventoryMatcher()
     
-    // MARK: - Alias Dictionary (Massively Expanded)
     
      let aliases: [String: String] = [
-        // Vegetables
         "aloo": "aloo", "aaloo": "aloo", "alu": "aloo", "alloo": "aloo", "potato": "aloo", "potatoes": "aloo", "batata": "aloo",
         "pyaaz": "onion", "pyaz": "onion", "piyas": "onion", "piyaz": "onion", "onion": "onion", "onions": "onion", "kanda": "onion",
         "tamatar": "tomato", "tomato": "tomato", "tomatoes": "tomato",
@@ -39,7 +34,6 @@ final class InventoryMatcher {
         "kheera": "cucumber", "kakdi": "cucumber", "cucumber": "cucumber",
         "neebu": "lemon", "nimbu": "lemon", "lemon": "lemon", "lime": "lemon",
         
-        // Fruits
         "seb": "apple", "apple": "apple", "apples": "apple",
         "kela": "banana", "banana": "banana", "bananas": "banana",
         "santra": "orange", "orange": "orange", "oranges": "orange",
@@ -49,7 +43,6 @@ final class InventoryMatcher {
         "papita": "papaya", "papaya": "papaya",
         "tarbooz": "watermelon", "watermelon": "watermelon",
         
-        // Dairy
         "doodh": "milk", "milk": "milk",
         "dahi": "curd", "curd": "curd", "yogurt": "curd",
         "makhan": "butter", "butter": "butter",
@@ -57,7 +50,6 @@ final class InventoryMatcher {
         "paneer": "paneer", "cheese": "paneer", "cottage cheese": "paneer",
         "chaas": "buttermilk", "buttermilk": "buttermilk", "lassi": "lassi",
         
-        // Groceries (Staples)
         "chawal": "rice", "rice": "rice", "basmati": "rice",
         "gehun": "wheat", "wheat": "wheat",
         "atta": "atta", "flour": "atta", "wheat flour": "atta",
@@ -71,7 +63,6 @@ final class InventoryMatcher {
         "refine": "refined oil", "refined oil": "refined oil",
         "dal": "dal", "daal": "dal", "lentils": "dal",
         
-        // Pulses
         "chana": "chana", "chickpea": "chana", "chickpeas": "chana", "kala chana": "chana",
         "moong": "moong dal", "mung": "moong dal", "moong dal": "moong dal",
         "masoor": "masoor dal", "masoor dal": "masoor dal",
@@ -80,7 +71,6 @@ final class InventoryMatcher {
         "rajma": "rajma", "kidney beans": "rajma",
         "chole": "chole", "kabuli chana": "chole",
         
-        // Spices
         "haldi": "turmeric", "turmeric": "turmeric", "turmeric powder": "turmeric",
         "jeera": "cumin", "cumin": "cumin", "cumin seeds": "cumin",
         "dhania powder": "coriander powder", "coriander powder": "coriander powder",
@@ -92,7 +82,6 @@ final class InventoryMatcher {
         "laung": "clove", "cloves": "clove",
         "kaali mirch": "black pepper", "black pepper": "black pepper",
         
-        // Packaged / FMCG
         "maggi": "maggi", "noodles": "maggi", "instant noodles": "maggi",
         "biscuit": "biscuit", "biscuits": "biscuit", "parle g": "biscuit", "mari gold": "biscuit",
         "bread": "bread",
@@ -101,7 +90,6 @@ final class InventoryMatcher {
         "coke": "coca cola", "cocacola": "coca cola", "coca cola": "coca cola", "pepsi": "pepsi", "thums up": "thums up", "7up": "7 up", "seven up": "7 up", "sprite": "sprite", "maaza": "maaza", "frooti": "frooti",
         "water": "water", "paani": "water", "bisleri": "water", "mineral water": "water",
         
-        // Household / Personal Care
         "sabun": "soap", "soap": "soap", "lux": "soap", "lifebuoy": "soap", "dettol": "soap",
         "detergent": "detergent", "surf": "detergent", "surf excel": "detergent", "tide": "detergent", "ariel": "detergent", "washing powder": "detergent",
         "shampoo": "shampoo", "clinic plus": "shampoo", "sunsilk": "shampoo", "head and shoulders": "shampoo",
@@ -111,7 +99,6 @@ final class InventoryMatcher {
         "matchbox": "matchbox", "maachis": "matchbox",
     ]
     
-    // MARK: - Semantic Search (MiniLM)
     
      var inventoryEmbeddings: [String: [Float]] = [:]
     
@@ -129,7 +116,6 @@ final class InventoryMatcher {
         }
     }
     
-    /// Re-ranks candidates using semantic similarity
      func rerank(query: String, candidates: [(item: Item, score: Double)]) -> MatchResult? {
         guard let queryEmbedding = MiniLMEncoder.shared.encode(query),
               !inventoryEmbeddings.isEmpty else {
@@ -142,10 +128,9 @@ final class InventoryMatcher {
         for (item, baseScore) in candidates {
             if let itemEmb = inventoryEmbeddings[item.name] {
                 let semScore = Double(queryEmbedding.cosineSimilarity(with: itemEmb))
-                // Combine scores: 70% Semantic + 30% Base (Fuzzy)
                 let finalScore = (semScore * 0.7) + (baseScore * 0.3)
                 
-                if finalScore > 0.6 { // Valid semantic match threshold
+                if finalScore > 0.6 {
                     if bestSemMatch == nil || finalScore > bestSemMatch!.score {
                         bestSemMatch = (item, finalScore)
                     }
@@ -154,7 +139,6 @@ final class InventoryMatcher {
         }
         
         if bestSemMatch == nil {
-             // Linear scan of all embeddings (okay for < 1000 items)
              for (name, emb) in inventoryEmbeddings {
                  let score = Double(queryEmbedding.cosineSimilarity(with: emb))
                  if score > 0.75 {
@@ -174,7 +158,6 @@ final class InventoryMatcher {
         return nil
     }
     
-    // MARK: - Main Match Function
     
     func match(name: String, against items: [Item]) -> MatchResult? {
         let normalizedName = name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -191,9 +174,6 @@ final class InventoryMatcher {
             return MatchResult(item: exactMatch, confidence: 1.0, matchType: "exact")
         }
         
-        // ── Transliteration check: Hindi (Devanagari) ↔ Latin ──
-        // If the query is in Devanagari (e.g. "धनिया"), transliterate to Latin ("dhaniya")
-        // and try matching. Also handles the reverse: Latin query vs Devanagari inventory name.
         if let translitMatch = matchViaTransliteration(normalizedName, items: items) {
             return translitMatch
         }
@@ -209,7 +189,6 @@ final class InventoryMatcher {
             }
         }
         
-        // Also check aliases against the transliterated form
         let latinForm = transliterateToLatin(normalizedName)
         if latinForm != normalizedName, let canonical = aliases[latinForm] {
             if let aliasMatch = items.first(where: { $0.name.lowercased() == canonical }) {
@@ -239,8 +218,6 @@ final class InventoryMatcher {
             }
         }
         
-        // ── Fuzzy match against transliterated forms ──
-        // When Levenshtein on raw strings fails, try transliterating both sides
         if candidates.isEmpty {
             let queryLatin = transliterateToLatin(normalizedName)
             for item in items {
@@ -255,7 +232,6 @@ final class InventoryMatcher {
             }
         }
         
-        // DEDUPE Candidates
         candidates.sort { $0.score > $1.score }
         
        
@@ -263,7 +239,6 @@ final class InventoryMatcher {
             return semanticMatch
         }
         
-        // Fallback to best candidate if no semantic boost or model missing
         if let best = candidates.first {
             return MatchResult(item: best.item, confidence: best.score, matchType: "fuzzy_best")
         }
@@ -301,16 +276,13 @@ final class InventoryMatcher {
         }
         
         if results.count < limit {
-            // Allow distance up to 2.
             let maxDist = normalizedQuery.count < 4 ? 1 : 2
             
             let fuzzyMatches = items.filter { item in
-                // Avoid duplicates
                 if results.contains(where: { $0.id == item.id }) { return false }
                 
                 let name = item.name.lowercased()
                 
-                // optimization: Check length difference first
                 if abs(name.count - normalizedQuery.count) > maxDist { return false }
                 
                 let dist = levenshteinDistance(normalizedQuery, name)
@@ -337,20 +309,19 @@ final class InventoryMatcher {
         return products.map { product in
             if let result = match(name: product.name, against: items) {
                 
-                let price = product.price ?? String(format: "%.0f", result.item.defaultSellingPrice)
-                let unit = product.unit ?? result.item.unit
-                // Pass through costPrice from parser; fallback to inventory default
-                let costPrice = product.costPrice ?? String(format: "%.0f", result.item.defaultCostPrice)
+                let price = product.price
+                let unit = product.unit
+                let costPrice = product.costPrice
                 
                 return (
-                    name: result.item.name,  // Use canonical inventory name
+                    name: result.item.name,
                     quantity: product.quantity,
                     unit: unit,
                     price: price,
                     costPrice: costPrice,
                     itemID: result.item.id,
                     matchConfidence: result.confidence,
-                    originalName: product.name // Track original for aliasing
+                    originalName: product.name
                 )
             } else {
                 return (
@@ -367,24 +338,17 @@ final class InventoryMatcher {
         }
     }
     
-    // MARK: - Hindi ↔ Latin Transliteration
     
-    /// Transliterates Devanagari (Hindi) text to Latin script using iOS built-in ICU.
-    /// e.g. "धनिया" → "dhaniyā" → "dhaniya" (stripped of diacritics)
     func transliterateToLatin(_ text: String) -> String {
-        // Step 1: Devanagari → Latin (ICU transliterator)
         guard let latinized = text.applyingTransform(.toLatin, reverse: false) else {
             return text
         }
-        // Step 2: Strip diacritics/accents (ā→a, ī→i, etc.) for fuzzy comparison
         guard let stripped = latinized.applyingTransform(.stripDiacritics, reverse: false) else {
             return latinized.lowercased()
         }
         return stripped.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    /// Transliterates Latin text to Devanagari.
-    /// e.g. "dhaniya" → "धनिय"
     func transliterateToDevanagari(_ text: String) -> String {
         guard let devnagari = text.applyingTransform(StringTransform("Latin-Devanagari"), reverse: false) else {
             return text
@@ -392,37 +356,29 @@ final class InventoryMatcher {
         return devnagari
     }
     
-    /// Checks if text contains any Devanagari characters.
     func containsDevanagari(_ text: String) -> Bool {
         return text.unicodeScalars.contains { scalar in
-            // Devanagari Unicode block: U+0900 to U+097F
             return (0x0900...0x097F).contains(scalar.value)
         }
     }
     
-    /// Attempts to match by transliterating between Hindi and Latin scripts.
-    /// Handles: धनिया (Devanagari) matching "Dhaniya" (Latin) in inventory, and vice versa.
      func matchViaTransliteration(_ normalizedName: String, items: [Item]) -> MatchResult? {
         let isDevanagari = containsDevanagari(normalizedName)
         
         if isDevanagari {
-            // Input is Hindi → transliterate to Latin and match
             let latinForm = transliterateToLatin(normalizedName)
             print("[InventoryMatcher] Transliterated '\(normalizedName)' → '\(latinForm)'")
             
-            // Exact match against Latin inventory names
             if let match = items.first(where: { $0.name.lowercased() == latinForm }) {
                 return MatchResult(item: match, confidence: 0.97, matchType: "translit_exact")
             }
             
-            // Substring/contains match
             if let match = items.first(where: {
                 $0.name.lowercased().contains(latinForm) || latinForm.contains($0.name.lowercased())
             }) {
                 return MatchResult(item: match, confidence: 0.92, matchType: "translit_contains")
             }
             
-            // Check alias dictionary with transliterated form
             if let canonical = aliases[latinForm] {
                 if let match = items.first(where: { $0.name.lowercased() == canonical }) {
                     return MatchResult(item: match, confidence: 0.95, matchType: "translit_alias")
@@ -432,7 +388,6 @@ final class InventoryMatcher {
                 }
             }
             
-            // Levenshtein on transliterated form
             for item in items {
                 let itemLower = item.name.lowercased()
                 let dist = levenshteinDistance(latinForm, itemLower)
@@ -442,8 +397,6 @@ final class InventoryMatcher {
                 }
             }
         } else {
-            // Input is Latin → check if any inventory item is in Devanagari
-            // Also transliterate inventory items that might be stored in Devanagari
             for item in items {
                 let itemName = item.name.lowercased()
                 if containsDevanagari(itemName) {
@@ -462,7 +415,6 @@ final class InventoryMatcher {
         return nil
     }
     
-    // MARK: - String Distance Algorithms
     
      func levenshteinDistance(_ s1: String, _ s2: String) -> Int {
         let a = Array(s1)
@@ -482,9 +434,9 @@ final class InventoryMatcher {
             for j in 1...n {
                 let cost = a[i - 1] == b[j - 1] ? 0 : 1
                 dp[i][j] = min(
-                    dp[i - 1][j] + 1,      // deletion
-                    dp[i][j - 1] + 1,       // insertion
-                    dp[i - 1][j - 1] + cost // substitution
+                    dp[i - 1][j] + 1,
+                    dp[i][j - 1] + 1,
+                    dp[i - 1][j - 1] + cost
                 )
             }
         }
@@ -517,11 +469,10 @@ final class InventoryMatcher {
                 }
                 lastCode = code
             } else {
-                lastCode = nil  // vowels/h/w/y reset the grouping
+                lastCode = nil
             }
         }
         
-        // Pad with zeros
         while result.count < 4 { result.append("0") }
         return result
     }

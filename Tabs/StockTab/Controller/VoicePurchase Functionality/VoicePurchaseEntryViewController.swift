@@ -249,7 +249,7 @@ class VoicePurchaseEntryViewController: UIViewController {
         
         // Show processing indicator
         DispatchQueue.main.async {
-            self.resultLabel.text = "🔄 Processing with Whisper..."
+            self.resultLabel.text = "Processing..."
             self.micButton?.isEnabled = false
         }
         
@@ -257,7 +257,7 @@ class VoicePurchaseEntryViewController: UIViewController {
         if isMostlySilence {
             DispatchQueue.main.async {
                 self.micButton?.isEnabled = true
-                if !sfSpeechText.isEmpty && sfSpeechText != "Listening..." && sfSpeechText != "🔄 Processing with Whisper..." {
+                if !sfSpeechText.isEmpty && sfSpeechText != "Listening..." && sfSpeechText != "Processing..." {
                     self.resultLabel.text = sfSpeechText
                     self.processFinalTextAndNavigate(sfSpeechText)
                 } else {
@@ -303,7 +303,7 @@ class VoicePurchaseEntryViewController: UIViewController {
                     
                     let totalTime = CFAbsoluteTimeGetCurrent() - stopTime
                     
-                } else if !sfSpeechText.isEmpty && sfSpeechText != "Listening..." && sfSpeechText != "🔄 Processing with Whisper..." {
+                } else if !sfSpeechText.isEmpty && sfSpeechText != "Listening..." && sfSpeechText != "Processing..." {
                     self.resultLabel.text = sfSpeechText
                     
                     let parseStart = CFAbsoluteTimeGetCurrent()

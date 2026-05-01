@@ -6,7 +6,6 @@ final class WhisperService {
     
     static let shared = WhisperService()
     
-    // MARK: - Properties
     
      var whisper: Whisper?
      var isLoading = false
@@ -17,7 +16,6 @@ final class WhisperService {
     
      init() {}
     
-    // MARK: - Model Loading
     
     func preloadModel() {
         loadLock.lock()
@@ -31,7 +29,6 @@ final class WhisperService {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             
-            // Check for Core ML model
             if let coreMLURL = Bundle.main.url(forResource: "ggml-small-encoder", withExtension: "mlmodelc") {
             } else {
             }
@@ -66,21 +63,18 @@ final class WhisperService {
         }
     }
     
-    // MARK: - Transcription
     
-   
     func transcribe(audioFrames: [Float]) async -> String? {
         let totalStart = CFAbsoluteTimeGetCurrent()
         
-        // Strip leading/trailing silence to reduce hallucinations
-        let trimmedFrames = Self.trimSilence(from: audioFrames, threshold: 0.03) // Increased from 0.01
+        let trimmedFrames = Self.trimSilence(from: audioFrames, threshold: 0.03) 
         
         let durationSecs = Double(trimmedFrames.count) / 16000.0
         let maxAmplitude = trimmedFrames.map { abs($0) }.max() ?? 0
         let avgAmplitude = trimmedFrames.isEmpty ? 0 : trimmedFrames.map { abs($0) }.reduce(0, +) / Float(trimmedFrames.count)
         
      
-        if maxAmplitude < 0.015 { // Increased from 0.005 
+        if maxAmplitude < 0.015 { 
             return nil
         }
         
@@ -88,7 +82,6 @@ final class WhisperService {
             return nil
         }
         
-        // Ensure model is loaded
         if whisper == nil {
             let modelLoadStart = CFAbsoluteTimeGetCurrent()
             await loadModelSync()
@@ -117,7 +110,6 @@ final class WhisperService {
             
             var fullText = segments.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             
-            // Hallucination/Garbage Detection
             if isGarbageTranscription(fullText, duration: durationSecs) {
                 return nil
             }
@@ -129,13 +121,10 @@ final class WhisperService {
         }
     }
     
-    // MARK: - Garbage Detection
-    
 
      func isGarbageTranscription(_ text: String, duration: Double) -> Bool {
         let lower = text.lowercased()
         
-        // English hallucination phrases
         let hallucinationPhrases = [
             "subtitles by", "amara.org", "copyright", "all rights reserved",
             "captioned by", "transcribed by", "www.", "http", "https",
@@ -148,7 +137,6 @@ final class WhisperService {
             return true
         }
         
-        // Hindi hallucination phrases
         let hindiHallucinations = [
             "धन्यवाद", "नमस्ते", "शुक्रिया", "सब्सक्राइब",
             "ये वीडियो", "इस वीडियो", "चैनल को", "जय हिंद",
@@ -158,14 +146,12 @@ final class WhisperService {
             return true
         }
         
-        // Musical note / special character hallucinations
         if lower.contains("♪") || lower.contains("🎵") || lower.contains("♫") {
             return true
         }
         
         let words = lower.split(separator: " ")
         
-        // Repeated words check (same word 3+ times in a row)
         if words.count >= 3 {
             for i in 0..<(words.count - 2) {
                 if words[i] == words[i+1] && words[i+1] == words[i+2] {
@@ -174,7 +160,6 @@ final class WhisperService {
             }
         }
         
-        // Too few unique words for the total count
         if words.count > 4 {
             let uniqueWords = Set(words)
             if uniqueWords.count <= 2 {
@@ -182,12 +167,10 @@ final class WhisperService {
             }
         }
         
-        // Too many words for very short audio
         if duration < 2.0 && words.count > 10 {
             return true
         }
         
-        // Foreign script hallucinations (Japanese, Korean, Chinese)
         let foreignScripts = try? NSRegularExpression(pattern: "[\\p{Katakana}\\p{Hiragana}\\p{Han}\\p{Hangul}]", options: [])
         if let regex = foreignScripts {
             let matches = regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
@@ -199,7 +182,6 @@ final class WhisperService {
         return false
     }
     
-    // MARK: - Audio Conversion
     
     static func convertBufferToFrames(_ buffer: AVAudioPCMBuffer) -> [Float]? {
         guard let channelData = buffer.floatChannelData else { return nil }
@@ -214,7 +196,6 @@ final class WhisperService {
         if channelCount == 1 {
             monoSamples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
         } else {
-            // Mix stereo to mono
             let left = channelData[0]
             let right = channelData[1]
             for i in 0..<frameCount {
@@ -222,7 +203,6 @@ final class WhisperService {
             }
         }
         
-        // Resample to 16kHz if needed
         let targetSampleRate: Double = 16000.0
         if abs(sampleRate - targetSampleRate) < 1.0 {
             return monoSamples
@@ -247,7 +227,6 @@ final class WhisperService {
         return resampled
     }
     
-    // MARK: -  Helpers
       
      func loadModelSync() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -277,13 +256,10 @@ final class WhisperService {
         }
     }
     
-    // MARK: - Shared Config
     
-    /// Single source of truth for Whisper parameters
      static func makeWhisperParams() -> WhisperParams {
         let params = WhisperParams(strategy: .greedy)
-        // Set to English (.english) to force Roman Hindi (Hinglish) transliteration
-        // If set to .hindi, it outputs Devanagari. If set to .english, it spells Hindi in Latin script.
+       
         params.language = .english
         
         params.n_threads = 4
@@ -292,54 +268,59 @@ final class WhisperService {
         params.print_progress = false
         params.print_timestamps = false
         
-        // --- Anti-hallucination settings ---
-        // Suppress blank/silence outputs at decoder level
+
         params.suppress_blank = true
-        // Suppress non-speech tokens (music notes, laughter, sound effects, etc.)
+
         params.suppress_non_speech_tokens = true
-        // Fully deterministic decoding — no randomness (disabled, allowing default fallback)
-        // params.temperature = 0.0
-        // Reject high-entropy segments (hallucinations are usually high-entropy)
-        params.entropy_thold = 2.4           // default is 2.4, keeping it
-        // Reject segments with very low log probability (gibberish)
-        params.logprob_thold = -1.0          // default is -1.0, keeping it
-        // Single segment mode — prevents Whisper from generating multiple segments from short audio
+      
+        params.entropy_thold = 2.4           
+
+        params.logprob_thold = -1.0          
+
         params.single_segment = true
-        // No speech threshold — segments with no-speech probability above this are suppressed
-        params.no_speech_thold = 0.6         // 60% no-speech probability = skip
+
+        params.no_speech_thold = 0.6         
         
-        // Rich initial prompt to bias model toward retail domain
-        let prompt = "Shivraj ko 3 kg Aloo at rate 40 rupees, 2 kg Pyaaz 25 rupees per kg, sold to Ramesh Sharma, 4 kg Lehsun, 5 Maggi packets, 10 Maida, Bill banao. Customer Sunil, 2 pieces soap ₹30, 1 kg sugar."
+
+        let prompt = """
+        Shivraj ko aadha kilo Aloo 40 rupees per kg, dedh kg Pyaaz 25 rupees, \
+        paav kilo Dhaniya, sawa kilo Dal, dhai kg Lehsun, \
+        500g Tamatar at rate 30, 250 gram Adrak, 2 liter Doodh ₹60, \
+        3 kg Chawal 80 rupees, 1 kg Cheeni, 2 packet Maggi, \
+        5 piece Sabun ₹30, 10 pcs Biscuit, 1 dozen Banana, \
+        Paneer 200g ₹80, Ghee 1 ltr, Atta 5 kg ₹250, \
+        Gobhi Gajar Matar Palak Bhindi Shimla Mirch Baingan Mooli, \
+        Jeera Haldi Namak Tel Maida Besan Suji, \
+        sold to Ramesh Sharma, customer Sunil Kumar. Bill banao.
+        """
         params.initial_prompt = (prompt as NSString).utf8String
         
         return params
     }
     
-    // MARK: - Silence Trimming
-    
-    /// Strips leading and trailing silence from audio frames to reduce Whisper hallucinations
+
     static func trimSilence(from frames: [Float], threshold: Float = 0.01, windowSize: Int = 1600) -> [Float] {
         guard frames.count > windowSize else { return frames }
         
-        // Find first window where energy exceeds threshold
+
         var startIndex = 0
         for i in stride(from: 0, to: frames.count - windowSize, by: windowSize / 2) {
             let end = min(i + windowSize, frames.count)
             let windowMax = frames[i..<end].map { abs($0) }.max() ?? 0
             if windowMax > threshold {
-                startIndex = max(0, i - windowSize) // Keep a small buffer before speech
+                startIndex = max(0, i - windowSize) 
                 break
             }
         }
         
-        // Find last window where energy exceeds threshold
+
         var endIndex = frames.count
         for i in stride(from: frames.count - windowSize, through: 0, by: -(windowSize / 2)) {
             let start = max(0, i)
             let end = min(start + windowSize, frames.count)
             let windowMax = frames[start..<end].map { abs($0) }.max() ?? 0
             if windowMax > threshold {
-                endIndex = min(frames.count, end + windowSize) // Keep a small buffer after speech
+                endIndex = min(frames.count, end + windowSize) 
                 break
             }
         }
@@ -348,9 +329,8 @@ final class WhisperService {
         return Array(frames[startIndex..<endIndex])
     }
     
-    /// Detect garbage/hallucinated output from Whisper
+
      func isGarbageTranscription(_ text: String) -> Bool {
-        // Delegate to the duration-aware version with a generous duration
         return isGarbageTranscription(text, duration: 999.0)
     }
 }

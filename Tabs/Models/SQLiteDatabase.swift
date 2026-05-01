@@ -1,19 +1,15 @@
 import Foundation
 import SQLite3
 
-// MARK: - SQLite transient destructor (tells SQLite to copy bound values immediately)
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 final class SQLiteDatabase: Database {
 
-    // MARK: - Singleton
     static let shared = SQLiteDatabase()
 
-    // MARK: - Connection
     private var db: OpaquePointer?
     let dbPath: String
 
-    // MARK: - Date Formatting
     private static let iso8601: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -25,7 +21,6 @@ final class SQLiteDatabase: Database {
         return f
     }()
 
-    // MARK: - Init
 
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -48,7 +43,6 @@ final class SQLiteDatabase: Database {
         sqlite3_close(db)
     }
 
-    // MARK: - Table Creation
 
     private func createTables() {
         let ddl = """
@@ -216,18 +210,15 @@ final class SQLiteDatabase: Database {
         exec(ddl)
     }
 
-    // MARK: - GST Migration
 
     private func migrateGSTColumns() {
         let key = "didMigrateGSTColumns_v1"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
 
-        // Items table — 3 new columns
         exec("ALTER TABLE items ADD COLUMN hsn_code TEXT")
         exec("ALTER TABLE items ADD COLUMN gst_rate REAL")
         exec("ALTER TABLE items ADD COLUMN cess_rate REAL")
 
-        // Transactions table — 10 new columns
         exec("ALTER TABLE transactions ADD COLUMN buyer_gstin TEXT")
         exec("ALTER TABLE transactions ADD COLUMN place_of_supply TEXT")
         exec("ALTER TABLE transactions ADD COLUMN place_of_supply_code TEXT")
@@ -239,7 +230,6 @@ final class SQLiteDatabase: Database {
         exec("ALTER TABLE transactions ADD COLUMN total_cess REAL")
         exec("ALTER TABLE transactions ADD COLUMN is_reverse_charge INTEGER DEFAULT 0")
 
-        // Transaction items table — 7 new columns
         exec("ALTER TABLE transaction_items ADD COLUMN hsn_code TEXT")
         exec("ALTER TABLE transaction_items ADD COLUMN gst_rate REAL")
         exec("ALTER TABLE transaction_items ADD COLUMN taxable_value REAL")
@@ -248,7 +238,6 @@ final class SQLiteDatabase: Database {
         exec("ALTER TABLE transaction_items ADD COLUMN igst_amount REAL")
         exec("ALTER TABLE transaction_items ADD COLUMN cess_amount REAL")
 
-        // App settings table — 7 new columns
         exec("ALTER TABLE app_settings ADD COLUMN is_gst_registered INTEGER NOT NULL DEFAULT 0")
         exec("ALTER TABLE app_settings ADD COLUMN gst_scheme TEXT")
         exec("ALTER TABLE app_settings ADD COLUMN business_state TEXT")
@@ -261,13 +250,11 @@ final class SQLiteDatabase: Database {
         print("[SQLiteDB] ✅ GST columns migration complete.")
     }
 
-    // MARK: - One-Time Migration: Capitalize Item Names
 
     private func capitalizeExistingItemNames() {
         let key = "didCapitalizeItemNames_v1"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
 
-        // 1. Capitalize names in `items` table
         if let stmt = prepare("SELECT id, name FROM items") {
             var updates: [(String, String)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -289,7 +276,6 @@ final class SQLiteDatabase: Database {
             }
         }
 
-        // 2. Capitalize item_name in `transaction_items` table
         if let stmt = prepare("SELECT id, item_name FROM transaction_items") {
             var updates: [(String, String)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -311,7 +297,6 @@ final class SQLiteDatabase: Database {
             }
         }
 
-        // 3. Capitalize item_name in `incomplete_sale_items` table
         if let stmt = prepare("SELECT id, item_name FROM incomplete_sale_items") {
             var updates: [(String, String)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -337,11 +322,7 @@ final class SQLiteDatabase: Database {
         print("[SQLiteDB] ✅ One-time item name capitalization complete.")
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Low-Level Helpers
-    // ═══════════════════════════════════════════════════════
 
-    /// Run SQL that doesn't return rows (DDL, INSERT, UPDATE, DELETE)
     @discardableResult
     func exec(_ sql: String) -> Bool {
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -355,7 +336,6 @@ final class SQLiteDatabase: Database {
         return true
     }
 
-    /// Prepare a statement
     private func prepare(_ sql: String) -> OpaquePointer? {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -365,7 +345,6 @@ final class SQLiteDatabase: Database {
         return stmt
     }
 
-    // MARK: - Bind Helpers
 
     private func bindText(_ stmt: OpaquePointer, _ idx: Int32, _ val: String) {
         sqlite3_bind_text(stmt, idx, val, -1, SQLITE_TRANSIENT)
@@ -411,7 +390,6 @@ final class SQLiteDatabase: Database {
         }
     }
 
-    // MARK: - Read Helpers
 
     private func readUUID(_ stmt: OpaquePointer, _ col: Int32) -> UUID {
         UUID(uuidString: readString(stmt, col)) ?? UUID()
@@ -453,9 +431,6 @@ final class SQLiteDatabase: Database {
         return Data(bytes: ptr, count: count)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Row Readers (construct model structs)
-    // ═══════════════════════════════════════════════════════
 
     private func readItem(_ s: OpaquePointer) -> Item {
         Item(
@@ -657,9 +632,6 @@ final class SQLiteDatabase: Database {
         )
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Item CRUD
-    // ═══════════════════════════════════════════════════════
 
     func getItem(id: UUID) throws -> Item? {
         let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate FROM items WHERE id=?"
@@ -733,9 +705,6 @@ final class SQLiteDatabase: Database {
         sqlite3_step(stmt)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Batch CRUD
-    // ═══════════════════════════════════════════════════════
 
     func getBatches(for itemID: UUID) throws -> [ItemBatch] {
         let sql = "SELECT id,item_id,purchase_transaction_id,quantity_purchased,quantity_remaining,cost_price,selling_price,expiry_date,received_date FROM item_batches WHERE item_id=?"
@@ -772,9 +741,6 @@ final class SQLiteDatabase: Database {
         sqlite3_step(stmt)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Transaction CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertTransaction(_ transaction: Transaction) throws {
         let sql = "INSERT INTO transactions (id,type,date,invoice_number,customer_name,customer_phone,supplier_name,total_amount,notes,buyer_gstin,place_of_supply,place_of_supply_code,is_inter_state,total_taxable_value,total_cgst,total_sgst,total_igst,total_cess,is_reverse_charge) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
@@ -811,9 +777,6 @@ final class SQLiteDatabase: Database {
         return result
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - TransactionItem CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertTransactionItems(_ items: [TransactionItem]) throws {
         let sql = "INSERT INTO transaction_items (id,transaction_id,item_id,item_name,unit,quantity,selling_price_per_unit,cost_price_per_unit,created_date,hsn_code,gst_rate,taxable_value,cgst_amount,sgst_amount,igst_amount,cess_amount) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
@@ -880,9 +843,6 @@ final class SQLiteDatabase: Database {
         sqlite3_step(stmt)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - SaleItemBatch CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertSaleItemBatches(_ batches: [SaleItemBatch]) throws {
         let sql = "INSERT INTO sale_item_batches (id,transaction_item_id,batch_id,quantity_consumed,cost_price_used,selling_price_used,batch_received_date,batch_expiry_date) VALUES (?,?,?,?,?,?,?,?)"
@@ -912,9 +872,6 @@ final class SQLiteDatabase: Database {
         return result
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - IncompleteSaleItem CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertIncompleteSaleItem(_ item: IncompleteSaleItem) throws {
         let sql = "INSERT INTO incomplete_sale_items (id,transaction_id,transaction_item_id,item_name,quantity,selling_price_per_unit,is_completed,completed_at,unit,cost_price_per_unit,supplier_name,expiry_date,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
@@ -978,9 +935,6 @@ final class SQLiteDatabase: Database {
         sqlite3_step(stmt)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - DailySummary CRUD
-    // ═══════════════════════════════════════════════════════
 
     func getDailySummary(for date: Date) throws -> DailySummary? {
         let dayStr = Self.dayString(date)
@@ -1017,7 +971,6 @@ final class SQLiteDatabase: Database {
         sqlite3_step(stmt)
     }
 
-    /// Convert Date to a day-only string for daily_summaries comparison
     private static func dayString(_ date: Date) -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -1025,9 +978,6 @@ final class SQLiteDatabase: Database {
         return df.string(from: date)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Settings CRUD
-    // ═══════════════════════════════════════════════════════
 
     func getSettings() throws -> AppSettings {
         let sql = "SELECT invoice_prefix,invoice_number_counter,current_year,include_year_in_invoice,owner_name,business_name,profile_name,business_phone,profile_image_data,business_address,gst_number,expiry_notice_days,expiry_warning_days,expiry_critical_days,is_gst_registered,gst_scheme,business_state,business_state_code,prices_include_gst,default_gst_rate,composition_rate FROM app_settings WHERE key='main'"
@@ -1036,7 +986,6 @@ final class SQLiteDatabase: Database {
         if sqlite3_step(stmt) == SQLITE_ROW {
             return readSettings(stmt)
         }
-        // Insert default settings if none exist
         let defaults = defaultSettings()
         try updateSettings(defaults)
         return defaults
@@ -1113,9 +1062,6 @@ final class SQLiteDatabase: Database {
         )
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - ProductPhoto CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertProductPhoto(_ photo: ProductPhoto) throws {
         let sql = "INSERT INTO product_photos (id,item_id,local_path,created_at) VALUES (?,?,?,?)"
@@ -1146,9 +1092,6 @@ final class SQLiteDatabase: Database {
         sqlite3_step(stmt)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Credit: Customer CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertCustomer(_ customer: Customer) {
         let sql = "INSERT INTO customers (id,name,phone,profile_image_data) VALUES (?,?,?,?)"
@@ -1194,9 +1137,6 @@ final class SQLiteDatabase: Database {
         return result
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Credit: Supplier CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertSupplier(_ supplier: Supplier) {
         let sql = "INSERT INTO suppliers (id,name,phone,profile_image_data) VALUES (?,?,?,?)"
@@ -1242,9 +1182,6 @@ final class SQLiteDatabase: Database {
         return result
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Credit: Payment CRUD
-    // ═══════════════════════════════════════════════════════
 
     func insertCustomerPayment(_ payment: Payment) {
         let sql = "INSERT INTO customer_payments (id,customer_id,amount,date,type,note) VALUES (?,?,?,?,?,?)"
@@ -1292,9 +1229,6 @@ final class SQLiteDatabase: Database {
         return result
     }
 
-    // ═══════════════════════════════════════════════════════
-    // MARK: - Utility
-    // ═══════════════════════════════════════════════════════
 
     var isEmpty: Bool {
         let sql = "SELECT COUNT(*) FROM items"
@@ -1315,7 +1249,6 @@ final class SQLiteDatabase: Database {
         exec("COMMIT")
     }
 
-    /// Close and reopen the database (used after restore)
     func reopenDatabase() {
         sqlite3_close(db)
         db = nil
@@ -1325,9 +1258,7 @@ final class SQLiteDatabase: Database {
         }
     }
 
-    /// Create an atomic backup copy of the database
     func backupDatabase(to destinationPath: String) -> Bool {
-        // Checkpoint WAL first to consolidate all data
         sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_FULL, nil, nil)
 
         var destDB: OpaquePointer?
@@ -1338,7 +1269,7 @@ final class SQLiteDatabase: Database {
             return false
         }
 
-        sqlite3_backup_step(backup, -1)  // Copy everything
+        sqlite3_backup_step(backup, -1)
         sqlite3_backup_finish(backup)
 
         return sqlite3_errcode(destDB) == SQLITE_OK

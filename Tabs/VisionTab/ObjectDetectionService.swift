@@ -21,15 +21,9 @@ final class ObjectDetectionService: ObjectDetectionServiceProtocol {
      init() {}
 
     func detectObjects(in image: CGImage, completion: @escaping ([DetectedObjectBox]) -> Void) {
-        if YOLOv8SegService.shared.isAvailable {
-            YOLOv8SegService.shared.detect(in: image) { detections in
-                let boxes = detections.map {
-                    DetectedObjectBox(rect: $0.rect, confidence: $0.confidence, mask: $0.mask)
-                }
-                completion(self.filterUsableBoxes(boxes, image: image))
-            }
-            return
-        }
+        // ALWAYS use Vision Saliency (class-agnostic foreground detection).
+        // Bypassing YOLOv8 because it only detects 80 COCO classes and misses 95% of retail items,
+        // which forces a massive background center-crop that ruins MobileCLIP cosine similarity.
         runVisionFallback(image: image, completion: completion)
     }
 

@@ -88,7 +88,6 @@ class VoiceEntryViewController: UIViewController {
         
         lastSpeechActivity = CFAbsoluteTimeGetCurrent()
 
-        // Audio session setup
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -101,11 +100,8 @@ class VoiceEntryViewController: UIViewController {
             return
         }
 
-        // Enable partial results for live display
         recognitionRequest.shouldReportPartialResults = true
         
-        // Inject inventory names as contextual hints so the speech recognizer
-        // biases toward known product names (e.g., "Parle G" instead of "pali g")
         let inventoryItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         let itemNames = inventoryItems.map { $0.name }
         if !itemNames.isEmpty {
@@ -127,7 +123,6 @@ class VoiceEntryViewController: UIViewController {
                 
                 self.lastSpeechActivity = CFAbsoluteTimeGetCurrent()
                 
-                // Real-time update from SFSpeech (live visual feedback)
                 DispatchQueue.main.async {
                     self.resultLabel.text = spokenText
                 }
@@ -166,7 +161,6 @@ class VoiceEntryViewController: UIViewController {
             
             recognitionRequest.append(buffer)
             
-            // Simultaneously accumulate audio for Whisper
             if let frames = WhisperService.convertBufferToFrames(buffer) {
                 self.whisperLock.lock()
                 self.whisperAudioFrames.append(contentsOf: frames)
@@ -199,7 +193,6 @@ class VoiceEntryViewController: UIViewController {
     }
     
 
-    // MARK: - Stop Listening
      func stopListening() {
         silenceTimer?.invalidate()
         silenceTimer = nil
@@ -230,7 +223,6 @@ class VoiceEntryViewController: UIViewController {
         let recordingDuration = stopTime - recordingStartTime
         let sfSpeechText = lastSFSpeechText
         
-        // Grab the accumulated whisper audio
         whisperLock.lock()
         let audioFrames = whisperAudioFrames
         whisperAudioFrames.removeAll()
@@ -238,7 +230,6 @@ class VoiceEntryViewController: UIViewController {
         
         let whisperAudioDuration = Double(audioFrames.count) / 16000.0
         
-        // Quick RMS energy check — if audio is mostly silence, skip Whisper entirely
         let rmsEnergy: Float = {
             guard !audioFrames.isEmpty else { return 0 }
             let sumOfSquares = audioFrames.reduce(Float(0)) { $0 + $1 * $1 }
@@ -253,7 +244,6 @@ class VoiceEntryViewController: UIViewController {
             self.micButton?.isEnabled = false
         }
         
-        // If mostly silence, skip Whisper and go straight to SFSpeech or show error
         if isMostlySilence {
             DispatchQueue.main.async {
                 self.micButton?.isEnabled = true
@@ -267,7 +257,6 @@ class VoiceEntryViewController: UIViewController {
             return
         }
         
-        // Run Whisper transcription in background, fallback to SFSpeech if it fails or hallucinates
         Task {
             let whisperStart = CFAbsoluteTimeGetCurrent()
             let whisperResult = await WhisperService.shared.transcribe(audioFrames: audioFrames)
@@ -287,7 +276,6 @@ class VoiceEntryViewController: UIViewController {
                 }
                 
                 if useWhisper, let whisperText = whisperResult {
-                    // Hallucination Check: verify Whisper output makes sense
                     if WhisperService.shared.isGarbageTranscription(whisperText, duration: whisperAudioDuration) {
                         print("[VoiceSale] Whisper hallucination detected: \(whisperText)")
                         useWhisper = false
@@ -320,16 +308,13 @@ class VoiceEntryViewController: UIViewController {
     }
     
     
-   
     var onItemsParsed: ((ParsedResult) -> Void)?
     
-    // MARK: - Process and Navigate
      func processFinalTextAndNavigate(_ text: String) {
         guard !text.isEmpty, text != "Listening...", text != "Say customer, items, quantity or price to add sale" else {
             return
         }
         
-        // Try Gemini first, fall back to on-device MLInference
         if GeminiService.shared.isConfigured {
             print("[VoiceSale] Trying Gemini for: \(text)")
             GeminiService.shared.parseVoiceForSale(text: text) { [weak self] geminiResult in
@@ -345,17 +330,14 @@ class VoiceEntryViewController: UIViewController {
                 }
             }
         } else {
-            // Show one-time alert if user just hit their Gemini limit
             if GeminiService.shared.hasAPIKey && GeminiService.shared.isLimitReached {
                 showFreemiumLimitAlertIfNeeded()
             }
-            // No API key or limit reached — use on-device only
             let result = MLInference.shared.run(text: text)
             deliverResult(result)
         }
     }
 
-    /// Shows a one-time alert per app session when the user exhausts their free Gemini scans.
     private static var didShowFreemiumAlert = false
     private func showFreemiumLimitAlertIfNeeded() {
         guard !Self.didShowFreemiumAlert else { return }
@@ -372,7 +354,6 @@ class VoiceEntryViewController: UIViewController {
         }
     }
     
-    /// Deliver parsed result to the next screen (shared by Gemini and MLInference paths).
      func deliverResult(_ result: ParsedResult) {
         if let onItemsParsed = onItemsParsed {
             onItemsParsed(result)
@@ -397,7 +378,6 @@ class VoiceEntryViewController: UIViewController {
         }
     }
     
-    // Create Attributed Text with Entity Highlighting
      func createAttributedText(from result: ParsedResult, originalText: String) -> NSAttributedString {
         let attributedString = NSMutableAttributedString()
         
@@ -407,7 +387,6 @@ class VoiceEntryViewController: UIViewController {
             .foregroundColor: UIColor.label
         ]
         
-        // Entity color mapping
         let itemColor = UIColor.systemBlue
         let quantityColor = UIColor(named: "Lime Moss")!
         let customerColor = UIColor.systemOrange

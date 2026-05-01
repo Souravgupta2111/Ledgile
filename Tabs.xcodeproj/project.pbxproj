@@ -192,6 +192,8 @@
 				DEVELOPMENT_TEAM = A92V46D8LJ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tabs/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "B-easy";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture product photos for object detection.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = OK;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Add product photos for object detection during sale.";
@@ -235,6 +237,8 @@
 				DEVELOPMENT_TEAM = A92V46D8LJ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tabs/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "B-easy";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture product photos for object detection.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = OK;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Add product photos for object detection during sale.";

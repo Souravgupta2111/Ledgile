@@ -880,7 +880,7 @@ extension ProfileTableViewController: UIDocumentPickerDelegate {
         // Verify it's a sqlite file
         let ext = fileURL.pathExtension.lowercased()
         guard ext == "sqlite" || ext == "db" || ext == "sqlite3" else {
-            showSimpleInfo(title: "Invalid File", message: "Please select a .sqlite backup file exported from Ledgile.")
+            showSimpleInfo(title: "Invalid File", message: "Please select a .sqlite backup file exported from B-easy.")
             return
         }
 
@@ -888,7 +888,7 @@ extension ProfileTableViewController: UIDocumentPickerDelegate {
         if success {
             // Refresh everything
             let alert = UIAlertController(
-                title: "Restore Complete ✅",
+                title: "Restore Complete",
                 message: "Your data has been restored from the backup. The app will now reload.",
                 preferredStyle: .alert
             )

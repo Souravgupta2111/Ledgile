@@ -57,11 +57,7 @@ class BertTokenizer {
         
         var ids = tokens.compactMap { vocab[$0] ?? vocab[unkToken] }
         
-        // Pad if needed (optional, depending on model requirement. BERT usually takes fixed size or dynamic)
-        // For CoreML dynamic input, padding might not be strictly necessary if we pass actual length, 
-        // but typically we pad to a fixed length or match the model input shape.
-        // Here we just return the IDs, the Encoder will handle array construction.
-        
+   
         return ids
     }
     

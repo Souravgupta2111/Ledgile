@@ -23,7 +23,6 @@ class ScanCameraViewController: UIViewController {
     var onItemsParsed: ((ParsedResult) -> Void)?
     var onPurchaseResult: ((ParsedPurchaseResult) -> Void)?
 
-    // MARK: - Camera
      var captureSession: AVCaptureSession?
      var photoOutput: AVCapturePhotoOutput?
      var videoDataOutput: AVCaptureVideoDataOutput?
@@ -31,7 +30,6 @@ class ScanCameraViewController: UIViewController {
      let sessionQueue = DispatchQueue(label: "camera.session")
      let videoQueue = DispatchQueue(label: "camera.video")
 
-    // MARK: - Live Barcode Scanning State
      var isBarcodeScanning = false
      var barcodeItemLookup: [String: Item] = [:]
      var barcodeAllItems: [Item] = []
@@ -43,7 +41,6 @@ class ScanCameraViewController: UIViewController {
      var barcodePendingCode: String?
      var barcodeFilteredItems: [Item] = []
 
-    // MARK: - Barcode UI (overlaid on same screen)
      var barcodeToastView: UIVisualEffectView?
      var barcodeToastIcon: UILabel?
      var barcodeToastLabel: UILabel?
@@ -54,16 +51,14 @@ class ScanCameraViewController: UIViewController {
      var barcodePickerTable: UITableView?
      var barcodePickerBarcodeLabel: UILabel?
 
-    // MARK: - Live Product Scanning State (offline mode)
      var isProductScanning = false
      var productCandidates: [UUID: (item: Item, score: Float, frameCount: Int)] = [:]
      var productConfirmedItems: [(item: Item, quantity: Int)] = []
      var productConfirmedIDs: Set<UUID> = []
      var productLastProcessTime: CFTimeInterval = 0
-     let productScanInterval: CFTimeInterval = 0.33  // ~3 FPS
-     var productIsProcessingFrame = false  // prevent overlap
+     let productScanInterval: CFTimeInterval = 0.33
+     var productIsProcessingFrame = false
 
-    // MARK: - Product Bill Panel UI
      var productBillPanel: UIVisualEffectView?
      var productBillTable: UITableView?
      var productTotalLabel: UILabel?
@@ -71,12 +66,10 @@ class ScanCameraViewController: UIViewController {
      var productStopButton: UIButton?
      var productScanLineView: UIView?
 
-    // MARK: - UI
      let previewView = UIView()
      let captureButton = UIButton(type: .system)
      let statusLabel = UILabel()
      let activityIndicator = UIActivityIndicatorView(style: .large)
-    /// Sale only: toggle Bill / Products (replaces auto-detect).
      var segmentedControl: UISegmentedControl?
 
     init(mode: ScanMode) {
@@ -191,7 +184,6 @@ class ScanCameraViewController: UIViewController {
 
     @objc  func scanIntentChanged() {
         updateStatusLabel()
-        // If switching away from active modes, stop them
         if currentSaleIntent() != .barcode && isBarcodeScanning {
             stopBarcodeScanning()
         }
@@ -255,7 +247,6 @@ class ScanCameraViewController: UIViewController {
                 session.addOutput(output)
                 self.photoOutput = output
             }
-            // Video output for live barcode + product scanning
             let videoOut = AVCaptureVideoDataOutput()
             videoOut.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
             videoOut.alwaysDiscardsLateVideoFrames = true
@@ -283,7 +274,6 @@ class ScanCameraViewController: UIViewController {
     }
 
     @objc  func captureTapped() {
-        // Barcode mode → toggle live barcode scanning on THIS screen
         if currentSaleIntent() == .barcode {
             if isBarcodeScanning {
                 finishBarcodeScanning()
@@ -293,7 +283,6 @@ class ScanCameraViewController: UIViewController {
             return
         }
 
-        // Products mode → ALWAYS live video-frame scanning (never single photo)
         if currentSaleIntent() == .products {
             if isProductScanning {
                 finishProductScanning()
@@ -306,7 +295,6 @@ class ScanCameraViewController: UIViewController {
         captureButton.isEnabled = false
         activityIndicator.startAnimating()
 
-        // Bill mode → take a single photo
         statusLabel.text = "Processing..."
         guard let output = photoOutput else {
             captureButton.isEnabled = true
@@ -326,8 +314,8 @@ class ScanCameraViewController: UIViewController {
         if mode == .sale {
             switch currentSaleIntent() {
             case .bill: processBill(image: image, cgImage: cgImage)
-            case .products: break // handled by live scanning, not single-photo
-            case .barcode: break // handled by live scanning, not single-photo
+            case .products: break
+            case .barcode: break
             }
         } else {
             processBill(image: image, cgImage: cgImage)
@@ -335,9 +323,7 @@ class ScanCameraViewController: UIViewController {
     }
 
 
-
      func processBill(image: UIImage, cgImage: CGImage) {
-        // Try Gemini first for superior OCR + parsing in one call
         if GeminiService.shared.isConfigured {
             print("[ScanCamera] Trying Gemini bill OCR...")
             if self.mode == .sale {
@@ -364,7 +350,6 @@ class ScanCameraViewController: UIViewController {
                 }
             }
         } else {
-            // Show one-time alert if user just hit their Gemini limit
             if GeminiService.shared.hasAPIKey && GeminiService.shared.isLimitReached {
                 showFreemiumLimitAlertIfNeeded()
             }
@@ -372,7 +357,6 @@ class ScanCameraViewController: UIViewController {
         }
     }
 
-    /// Shows a one-time alert per app session when the user exhausts their free Gemini scans.
     private static var didShowFreemiumAlert = false
     private func showFreemiumLimitAlertIfNeeded() {
         guard !Self.didShowFreemiumAlert else { return }
@@ -452,7 +436,6 @@ extension ScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        // Live barcode scanning
         if isBarcodeScanning && !barcodePickerShowing {
             let ci = CIImage(cvPixelBuffer: pixelBuffer)
             let ctx = CIContext()
@@ -470,7 +453,6 @@ extension ScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate
             return
         }
 
-        // Live product scanning (CLIP + Barcode + OCR via video frames)
         if isProductScanning && !productIsProcessingFrame {
             let now = CACurrentMediaTime()
             guard now - productLastProcessTime >= productScanInterval else { return }
@@ -484,24 +466,18 @@ extension ScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate
                 return
             }
 
-            // Run all three detection strategies in parallel on this frame:
-            //   1. CLIP matching (product recognition via trained embeddings)
-            //   2. Barcode scanning (instant match if barcode found in inventory)
-            //   3. OCR label reading (extract weight, variant from packaging text)
             let group = DispatchGroup()
 
             var clipMatches: [(Item, Float, Int)] = []
-            var barcodeMatches: [(Item, String)] = []  // (item, barcode)
+            var barcodeMatches: [(Item, String)] = []
             var ocrLabels: [String] = []
 
-            // ── Strategy 1: CLIP matching ──
             group.enter()
             ProductFingerprintManager.shared.matchObjectsWithScores(in: cgImage) { matches in
                 clipMatches = matches
                 group.leave()
             }
 
-            // ── Strategy 2: Barcode scanning (parallel) ──
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 defer { group.leave() }
@@ -512,14 +488,12 @@ extension ScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate
                 guard let results = request.results as? [VNBarcodeObservation] else { return }
                 for obs in results {
                     guard let payload = obs.payloadStringValue, !payload.isEmpty else { continue }
-                    // Look up barcode in inventory
                     if let item = self.barcodeItemLookup[payload] {
                         barcodeMatches.append((item, payload))
                     }
                 }
             }
 
-            // ── Strategy 3: OCR label read (parallel) ──
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 defer { group.leave() }
@@ -537,12 +511,10 @@ extension ScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate
                 }
             }
 
-            // ── Combine results ──
             group.notify(queue: .main) { [weak self] in
                 guard let self = self else { return }
                 self.productIsProcessingFrame = false
 
-                // Process barcode matches first (highest confidence, skip consensus)
                 for (item, barcode) in barcodeMatches {
                     if !self.productConfirmedIDs.contains(item.id) {
                         self.productConfirmedIDs.insert(item.id)
@@ -557,12 +529,10 @@ extension ScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate
                     }
                 }
 
-                // Process CLIP matches (needs multi-frame consensus)
                 for (item, score, _) in clipMatches {
                     self.handleProductDetected(item: item, score: score)
                 }
 
-                // Extract weight/variant info from OCR and attach to confirmed items
                 if !ocrLabels.isEmpty {
                     self.processOCRLabels(ocrLabels)
                 }
@@ -572,14 +542,11 @@ extension ScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDelegate
     }
 }
 
-// MARK: - Inline Live Barcode Scanning
 
 extension ScanCameraViewController: UISearchBarDelegate {
 
-    // MARK: Start / Stop
 
      func startBarcodeScanning() {
-        // Load inventory for barcode lookup
         barcodeAllItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         barcodeItemLookup = Dictionary(
             barcodeAllItems.compactMap { item -> (String, Item)? in
@@ -593,12 +560,10 @@ extension ScanCameraViewController: UISearchBarDelegate {
         barcodeSeenCodes = []
         isBarcodeScanning = true
 
-        // Change button to "Stop" style
         captureButton.setImage(UIImage(systemName: "stop.fill"), for: .normal)
         captureButton.backgroundColor = .systemRed
         statusLabel.text = "Scanning… point at barcodes"
 
-        // Setup glass UI overlays
         setupBarcodeToast()
         setupBarcodeItemPicker()
 
@@ -611,7 +576,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         captureButton.backgroundColor = .systemBlue
         updateStatusLabel()
 
-        // Remove overlays
         barcodeToastView?.removeFromSuperview()
         barcodePickerOverlay?.removeFromSuperview()
         barcodeToastView = nil
@@ -667,7 +631,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         }
     }
 
-    // MARK: - Live Product Scanning (Offline YOLO→CLIP via Video Frames)
 
      func startProductScanning() {
         productCandidates = [:]
@@ -676,7 +639,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         productIsProcessingFrame = false
         isProductScanning = true
 
-        // Load barcode inventory for inline barcode matching
         barcodeAllItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         barcodeItemLookup = Dictionary(
             barcodeAllItems.compactMap { item -> (String, Item)? in
@@ -686,12 +648,10 @@ extension ScanCameraViewController: UISearchBarDelegate {
             uniquingKeysWith: { first, _ in first }
         )
 
-        // Change button to "Stop" style
         captureButton.setImage(UIImage(systemName: "stop.fill"), for: .normal)
         captureButton.backgroundColor = .systemRed
         statusLabel.isHidden = true
 
-        // Setup glass overlays
         setupBarcodeToast()
         setupProductBillPanel()
         setupProductScanLine()
@@ -707,7 +667,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         statusLabel.isHidden = false
         updateStatusLabel()
 
-        // Remove overlays
         barcodeToastView?.removeFromSuperview()
         barcodeToastView = nil
         productBillPanel?.removeFromSuperview()
@@ -721,29 +680,21 @@ extension ScanCameraViewController: UISearchBarDelegate {
     }
 
     func handleProductDetected(item: Item, score: Float) {
-        // All mutations MUST be on main thread (Bug 3 fix)
         assert(Thread.isMainThread, "handleProductDetected must be called on main thread")
 
-        // Strict threshold: Now that vectors are Zero-Centered (LayerNormed),
-        // baseline random similarity is ~0.30. A score of 0.68+ mathematically 
-        // represents a highly confident true match.
         guard score >= 0.68 else { return }
 
-        // Already confirmed — ignore (user changes quantity manually)
         guard !productConfirmedIDs.contains(item.id) else { return }
 
-        // Multi-frame consensus: track how many frames this item appears in
         if var candidate = productCandidates[item.id] {
             candidate.frameCount += 1
             candidate.score = max(candidate.score, score)
             productCandidates[item.id] = candidate
 
-            // Confirmed: seen in ≥3 frames (1 solid second at 3 FPS) with high score
             if candidate.frameCount >= 3 {
                 productConfirmedIDs.insert(item.id)
                 productCandidates.removeValue(forKey: item.id)
 
-                // Always qty=1 — user adjusts manually
                 productConfirmedItems.append((item: item, quantity: 1))
 
                 showBarcodeToast(
@@ -756,20 +707,14 @@ extension ScanCameraViewController: UISearchBarDelegate {
                 print("[ProductScanner] Confirmed: \(item.name) (score: \(String(format: "%.2f", score)), frames: \(candidate.frameCount))")
             }
         } else {
-            // First time seeing this item
             productCandidates[item.id] = (item: item, score: score, frameCount: 1)
         }
     }
 
-    /// Process OCR text found on product labels to:
-    ///   1. Extract weight/volume from packaging (500g, 1kg, 250ml)
-    ///   2. Match product names against inventory with variant disambiguation
-    ///   3. When CLIP has multiple similar candidates, use OCR weight to pick correct variant
      func processOCRLabels(_ labels: [String]) {
         let allText = labels.joined(separator: " ").lowercased()
         guard !allText.isEmpty else { return }
 
-        // ── Step 1: Extract all weight/volume mentions from the label ──
         var detectedWeights: [(value: Double, unit: String, normalized: String)] = []
         let weightPattern = #"(\d+\.?\d*)\s*(g|gm|gms|gram|grams|kg|kgs|ml|l|ltr|litre|litres|liter|liters)\b"#
         if let regex = try? NSRegularExpression(pattern: weightPattern, options: .caseInsensitive) {
@@ -779,7 +724,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
                    let unitRange = Range(match.range(at: 2), in: allText),
                    let value = Double(allText[valueRange]) {
                     let unit = String(allText[unitRange]).lowercased()
-                    // Normalize to base unit for comparison
                     let normalized = normalizeWeight(value: value, unit: unit)
                     detectedWeights.append((value: value, unit: unit, normalized: normalized))
                     print("[OCR] Detected weight: \(value) \(unit) → \(normalized)")
@@ -787,7 +731,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
             }
         }
 
-        // ── Step 2: Extract MRP/price mentions ──
         var detectedPrices: [Double] = []
         let pricePattern = #"(?:mrp|rs\.?|₹|price|m\.r\.p)[\s.:]*(\d+\.?\d*)"#
         if let regex = try? NSRegularExpression(pattern: pricePattern, options: .caseInsensitive) {
@@ -800,7 +743,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
                 }
             }
         }
-        // Also catch standalone ₹ followed by number (e.g., "₹20" without MRP prefix)
         let standalonePrice = #"₹\s*(\d+\.?\d*)"#
         if let regex = try? NSRegularExpression(pattern: standalonePrice, options: []) {
             let matches = regex.matches(in: allText, range: NSRange(allText.startIndex..., in: allText))
@@ -814,12 +756,10 @@ extension ScanCameraViewController: UISearchBarDelegate {
             }
         }
 
-        // ── Step 3: Match OCR text against inventory with variant awareness ──
         let allItems = barcodeAllItems.isEmpty
             ? ((try? AppDataModel.shared.dataModel.db.getAllItems()) ?? [])
             : barcodeAllItems
 
-        // Group items by base name (e.g., "Lays Classic" groups "Lays Classic 20g" and "Lays Classic 52g")
         var candidateMatches: [(item: Item, nameScore: Float, weightMatch: Bool, priceMatch: Bool)] = []
 
         for item in allItems {
@@ -828,7 +768,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
             let itemName = item.name.lowercased()
             let words = itemName.split(separator: " ").map(String.init)
 
-            // Check how many product name words appear in OCR text
             let matchingWords = words.filter { word in
                 word.count >= 3 && allText.contains(word)
             }
@@ -836,10 +775,8 @@ extension ScanCameraViewController: UISearchBarDelegate {
 
             guard nameScore >= 0.4 && matchingWords.count >= 1 else { continue }
 
-            // Check if item name contains a weight that matches OCR weight
             var weightMatch = false
             if !detectedWeights.isEmpty {
-                // Extract weight from item name (e.g., "Lays Classic 52g" → "52g")
                 if let weightRegex = try? NSRegularExpression(pattern: weightPattern, options: .caseInsensitive) {
                     let nameMatches = weightRegex.matches(in: itemName, range: NSRange(itemName.startIndex..., in: itemName))
                     for nm in nameMatches {
@@ -849,7 +786,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
                             let itemUnit = String(itemName[ur]).lowercased()
                             let itemNorm = normalizeWeight(value: itemValue, unit: itemUnit)
 
-                            // Check if any detected weight matches this item's weight
                             for dw in detectedWeights {
                                 if dw.normalized == itemNorm {
                                     weightMatch = true
@@ -862,7 +798,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
                 }
             }
 
-            // Check if OCR price matches item's selling price (±2 tolerance for rounding)
             var priceMatch = false
             if !detectedPrices.isEmpty {
                 let itemPrice = item.defaultSellingPrice
@@ -878,10 +813,7 @@ extension ScanCameraViewController: UISearchBarDelegate {
             candidateMatches.append((item: item, nameScore: nameScore, weightMatch: weightMatch, priceMatch: priceMatch))
         }
 
-        // ── Step 4: Resolve variants ──
-        // Priority: weight+price match > weight only > price only > name score
         let sorted = candidateMatches.sorted { a, b in
-            // Both weight and price match is strongest
             let aStrength = (a.weightMatch ? 2 : 0) + (a.priceMatch ? 1 : 0)
             let bStrength = (b.weightMatch ? 2 : 0) + (b.priceMatch ? 1 : 0)
             if aStrength != bStrength { return aStrength > bStrength }
@@ -893,20 +825,16 @@ extension ScanCameraViewController: UISearchBarDelegate {
             let item = match.item
             guard !confirmedInThisPass.contains(item.id) else { continue }
 
-            // Strong match: weight OR price match (or both), plus reasonable name score
             let isStrongMatch = match.weightMatch || match.priceMatch || match.nameScore >= 0.7
 
             if isStrongMatch {
-                // Determine the confirmation method for toast
                 var methods: [String] = []
                 if match.weightMatch { methods.append("weight") }
                 if match.priceMatch { methods.append("price") }
                 if methods.isEmpty { methods.append("label") }
                 let methodStr = methods.joined(separator: "+")
 
-                // OCR confirms this specific variant
                 if productCandidates[item.id] != nil {
-                    // Already a CLIP candidate → instant confirm
                     productConfirmedIDs.insert(item.id)
                     productCandidates.removeValue(forKey: item.id)
                     productConfirmedItems.append((item: item, quantity: 1))
@@ -920,24 +848,21 @@ extension ScanCameraViewController: UISearchBarDelegate {
                     updateProductBillUI()
                     print("[ProductScanner] OCR confirmed: \(item.name) (method: \(methodStr), nameScore: \(match.nameScore))")
                 } else {
-                    // Start as candidate with high frame count (will confirm fast)
                     productCandidates[item.id] = (item: item, score: 0.6, frameCount: 1)
                 }
             }
         }
     }
 
-    /// Normalize weight to a standard string for comparison.
-    /// "52 g" and "52 gm" and "0.052 kg" all normalize to "52g"
      func normalizeWeight(value: Double, unit: String) -> String {
         let u = unit.lowercased()
         switch u {
         case "kg", "kgs":
-            return "\(Int(value * 1000))g"  // Convert to grams
+            return "\(Int(value * 1000))g"
         case "g", "gm", "gms", "gram", "grams":
             return "\(Int(value))g"
         case "l", "ltr", "litre", "litres", "liter", "liters":
-            return "\(Int(value * 1000))ml"  // Convert to ml
+            return "\(Int(value * 1000))ml"
         case "ml":
             return "\(Int(value))ml"
         default:
@@ -948,7 +873,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
 
      func finishProductScanning() {
         guard !productConfirmedItems.isEmpty else {
-            // Show toast if nothing detected
             showBarcodeToast("No products detected", isError: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 self?.stopProductScanning()
@@ -999,7 +923,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         }
     }
 
-    // MARK: Barcode Detection Handler
 
      func handleBarcodeDetected(_ payload: String) {
         if barcodeSeenCodes.contains(payload) { return }
@@ -1032,7 +955,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         }
     }
 
-    // MARK: Glass Toast
 
      func setupBarcodeToast() {
         let toast = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
@@ -1087,7 +1009,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         }
     }
 
-    // MARK: - Product Bill Panel (Glass Bottom Sheet)
 
      func setupProductBillPanel() {
         let panel = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
@@ -1097,14 +1018,12 @@ extension ScanCameraViewController: UISearchBarDelegate {
         panel.clipsToBounds = true
         view.addSubview(panel)
 
-        // Drag indicator
         let dragIndicator = UIView()
         dragIndicator.translatesAutoresizingMaskIntoConstraints = false
         dragIndicator.backgroundColor = UIColor.white.withAlphaComponent(0.3)
         dragIndicator.layer.cornerRadius = 2.5
         panel.contentView.addSubview(dragIndicator)
 
-        // Item count label
         let itemCount = UILabel()
         itemCount.translatesAutoresizingMaskIntoConstraints = false
         itemCount.text = "Point camera at products"
@@ -1113,18 +1032,16 @@ extension ScanCameraViewController: UISearchBarDelegate {
         itemCount.textAlignment = .center
         panel.contentView.addSubview(itemCount)
 
-        // Bill table
         let table = UITableView(frame: .zero, style: .plain)
         table.translatesAutoresizingMaskIntoConstraints = false
         table.backgroundColor = .clear
         table.separatorColor = UIColor.white.withAlphaComponent(0.1)
         table.dataSource = self
-        table.tag = 999  // product bill table
+        table.tag = 999
         table.register(UITableViewCell.self, forCellReuseIdentifier: "ProductBillCell")
         table.showsVerticalScrollIndicator = false
         panel.contentView.addSubview(table)
 
-        // Total label
         let total = UILabel()
         total.translatesAutoresizingMaskIntoConstraints = false
         total.text = "₹0"
@@ -1133,7 +1050,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         total.textAlignment = .center
         panel.contentView.addSubview(total)
 
-        // Stop button
         let stop = UIButton(type: .system)
         stop.translatesAutoresizingMaskIntoConstraints = false
         stop.setTitle("Stop & Review", for: .normal)
@@ -1184,7 +1100,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         productItemCountLabel = itemCount
         productStopButton = stop
 
-        // Hide capture button while panel is showing
         captureButton.isHidden = true
     }
 
@@ -1203,7 +1118,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
 
         productScanLineView = line
 
-        // Animate
         line.alpha = 0.8
         UIView.animate(withDuration: 1.8, delay: 0, options: [.repeat, .autoreverse, .curveEaseInOut]) {
             line.transform = CGAffineTransform(translationX: 0, y: 60)
@@ -1232,7 +1146,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         finishProductScanning()
     }
 
-    // MARK: Glass Item Picker (Scan & Link)
 
      func setupBarcodeItemPicker() {
         let overlay = UIView()
@@ -1391,7 +1304,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
         hideBarcodeItemPicker()
     }
 
-    // MARK: Search delegate
 
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
         if searchText.isEmpty {
@@ -1403,7 +1315,6 @@ extension ScanCameraViewController: UISearchBarDelegate {
     }
 }
 
-// MARK: - Barcode Bill + Picker + Product Bill Table Support
 
 extension ScanCameraViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {

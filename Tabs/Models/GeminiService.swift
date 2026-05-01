@@ -1,5 +1,3 @@
-// GeminiService.swift
-// Unified Gemini 2.5 Flash Lite API client for OCR, voice parsing, and object detection.
 
 import UIKit
 import Foundation
@@ -8,7 +6,6 @@ final class GeminiService {
     
     static let shared = GeminiService()
     
-    // MARK: - Configuration
     
     private let apiKey: String = {
         Bundle.main.infoDictionary?["GEMINI_API_KEY"] as? String ?? ""
@@ -17,24 +14,18 @@ final class GeminiService {
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
     private let session = URLSession.shared
     
-    /// Max image dimension before sending (cost optimization)
     private let maxImageDimension: CGFloat = 768
     private let timeoutInterval: TimeInterval = 15
     
     private init() {}
     
-    // MARK: - Freemium Usage
     
-    /// Whether the user has exhausted their free Gemini actions.
     var isLimitReached: Bool {
         return !UsageTracker.shared.canUseGemini
     }
     
-    // MARK: - Public API
     
-    /// Parse Whisper-transcribed text into a structured sale result.
     func parseVoiceForSale(text: String, completion: @escaping (ParsedResult?) -> Void) {
-        // Core Cost Optimization: Check local cache first
         if let cachedJSON = RequestCacheManager.shared.getCachedSaleResponse(for: text),
            let result = Self.parseSaleJSON(cachedJSON) {
             print("[GeminiService] Cache Hit! Zero latency and $0.00 cost for: '\(text)'")
@@ -61,16 +52,13 @@ final class GeminiService {
                 return
             }
             
-            // Cache successful result and track usage
             RequestCacheManager.shared.cacheSaleResponse(for: text, json: jsonString)
             UsageTracker.shared.recordGeminiUsage()
             completion(result)
         }
     }
     
-    /// Parse Whisper-transcribed text into a structured purchase result.
     func parseVoiceForPurchase(text: String, completion: @escaping (ParsedResult?) -> Void) {
-        // Core Cost Optimization: Check local cache first
         if let cachedJSON = RequestCacheManager.shared.getCachedPurchaseResponse(for: text),
            let result = Self.parsePurchaseVoiceJSON(cachedJSON) {
             print("[GeminiService] Cache Hit! Zero latency and $0.00 cost for: '\(text)'")
@@ -97,14 +85,12 @@ final class GeminiService {
                 return
             }
             
-            // Cache successful result and track usage
             RequestCacheManager.shared.cachePurchaseResponse(for: text, json: jsonString)
             UsageTracker.shared.recordGeminiUsage()
             completion(result)
         }
     }
     
-    /// Parse a bill image into a sale result (OCR + structured extraction in one call).
     func parseBillForSale(image: UIImage, completion: @escaping (ParsedResult?) -> Void) {
         let userPrompt = """
         Extract all sale line items from this bill image.
@@ -127,7 +113,6 @@ final class GeminiService {
         }
     }
     
-    /// Parse a bill image into a purchase result.
     func parseBillForPurchase(image: UIImage, completion: @escaping (ParsedPurchaseResult?) -> Void) {
         let isGST = (try? AppDataModel.shared.dataModel.db.getSettings())?.isGSTRegistered ?? false
         
@@ -155,7 +140,6 @@ final class GeminiService {
         }
     }
     
-    /// Identify products in a photo (object detection replacement).
     func identifyProducts(image: UIImage, completion: @escaping (ParsedResult?) -> Void) {
         let userPrompt = """
         Identify EVERY distinct retail product visible in this image.
@@ -179,9 +163,7 @@ final class GeminiService {
         }
     }
     
-    // MARK: - Network Layer
     
-    /// Send a text-only request to Gemini.
     private func sendTextRequest(
         systemPrompt: String,
         userPrompt: String,
@@ -207,14 +189,12 @@ final class GeminiService {
         performRequest(body: body, completion: completion)
     }
     
-    /// Send an image + text request to Gemini.
     private func sendImageRequest(
         image: UIImage,
         systemPrompt: String,
         userPrompt: String,
         completion: @escaping (String?) -> Void
     ) {
-        // Compress and resize image for cost optimization
         guard let imageData = compressImage(image) else {
             print("[GeminiService] Failed to compress image")
             completion(nil)
@@ -251,7 +231,6 @@ final class GeminiService {
         performRequest(body: body, completion: completion)
     }
     
-    /// Execute the HTTP request to Gemini API.
     private func performRequest(body: [String: Any], completion: @escaping (String?) -> Void) {
         let urlString = "\(baseURL)/\(model):generateContent?key=\(apiKey)"
         
@@ -291,7 +270,6 @@ final class GeminiService {
                 return
             }
             
-            // Parse Gemini response
             do {
                 guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     print("[GeminiService] Invalid response format")
@@ -299,7 +277,6 @@ final class GeminiService {
                     return
                 }
                 
-                // Check for error
                 if let error = json["error"] as? [String: Any],
                    let message = error["message"] as? String {
                     print("[GeminiService] API error: \(message)")
@@ -307,7 +284,6 @@ final class GeminiService {
                     return
                 }
                 
-                // Extract text from candidates[0].content.parts[0].text
                 if let candidates = json["candidates"] as? [[String: Any]],
                    let content = candidates.first?["content"] as? [String: Any],
                    let parts = content["parts"] as? [[String: Any]],
@@ -328,9 +304,7 @@ final class GeminiService {
         }.resume()
     }
     
-    // MARK: - Image Compression
     
-    /// Resize image to max dimension and compress as JPEG for cost-effective API calls.
     private func compressImage(_ image: UIImage) -> Data? {
         let size = image.size
         let maxDim = maxImageDimension
@@ -349,9 +323,7 @@ final class GeminiService {
         return resized?.jpegData(compressionQuality: 0.8)
     }
     
-    // MARK: - JSON Parsing → App Models
     
-    /// Strip Markdown code blocks from JSON string
     private static func sanitizeJSONString(_ jsonString: String) -> String {
         var clean = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
         if clean.hasPrefix("```json") {
@@ -365,8 +337,6 @@ final class GeminiService {
         return clean.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    /// Parse sale JSON (from voice or bill) into ParsedResult.
-    /// Uses category_alias only for inventory matching, never for display.
     static func parseSaleJSON(_ jsonString: String) -> ParsedResult? {
         let cleanJSON = sanitizeJSONString(jsonString)
         guard let data = cleanJSON.data(using: .utf8) else { return nil }
@@ -380,7 +350,6 @@ final class GeminiService {
             let paymentMode = json["payment_mode"] as? String
             let isNegation = json["is_negation"] as? Bool ?? false
             
-            // Collect raw products with both display name and matching name
             var rawProducts: [(displayName: String, matchingName: String, quantity: String, unit: String?, price: String?)] = []
             
             if let items = json["items"] as? [[String: Any]] {
@@ -393,14 +362,13 @@ final class GeminiService {
                     
                     guard !nameRaw.isEmpty else { continue }
                     
-                    // Alias is used ONLY for matching, not displayed
                     let matchingName = alias.isEmpty ? nameRaw : "\(nameRaw) \(alias)"
                     
                     rawProducts.append((
                         displayName: nameRaw.trimmingCharacters(in: .whitespaces),
                         matchingName: matchingName.trimmingCharacters(in: .whitespaces),
                         quantity: quantity,
-                        unit: unit ?? "pcs",
+                        unit: unit,
                         price: price
                     ))
                 }
@@ -408,7 +376,6 @@ final class GeminiService {
             
             guard !rawProducts.isEmpty else { return nil }
             
-            // Run inventory matching using the matching name (with alias)
             let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
             InventoryMatcher.shared.indexInventory(inventory)
             
@@ -417,15 +384,12 @@ final class GeminiService {
             }
             let matched = InventoryMatcher.shared.matchProducts(products: matchInput, items: inventory)
             
-            // Build final products: use inventory name if matched, else original display name
             var products: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?)] = []
             for (i, m) in matched.enumerated() {
                 let displayName = rawProducts[i].displayName
                 if m.itemID != nil {
-                    // Matched: use canonical inventory name and fill missing info
                     products.append((name: m.name, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: m.costPrice))
                 } else {
-                    // Unmatched: use original display name (no alias)
                     products.append((name: displayName, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: nil))
                 }
             }
@@ -457,8 +421,6 @@ final class GeminiService {
         }
     }
     
-    /// Parse purchase voice JSON into ParsedResult (used by VoicePurchaseEntryViewController).
-    /// Uses category_alias only for inventory matching, never for display.
     static func parsePurchaseVoiceJSON(_ jsonString: String) -> ParsedResult? {
         guard let data = jsonString.data(using: .utf8) else { return nil }
         
@@ -497,7 +459,6 @@ final class GeminiService {
             
             guard !rawProducts.isEmpty else { return nil }
             
-            // Run inventory matching
             let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
             InventoryMatcher.shared.indexInventory(inventory)
             
@@ -518,7 +479,6 @@ final class GeminiService {
             
             print("[GeminiService] Parsed purchase: \(products.count) items, supplier=\(supplier ?? "nil")")
             
-            // Store supplier in customerName field (same as MLInference does)
             return ParsedResult(
                 entities: [],
                 products: products,
@@ -534,8 +494,6 @@ final class GeminiService {
         }
     }
     
-    /// Parse purchase bill JSON into ParsedPurchaseResult.
-    /// Uses category_alias only for inventory matching, never for display.
     static func parsePurchaseBillJSON(_ jsonString: String) -> ParsedPurchaseResult? {
         let cleanJSON = sanitizeJSONString(jsonString)
         guard let data = cleanJSON.data(using: .utf8) else { return nil }
@@ -554,7 +512,6 @@ final class GeminiService {
             let totalIGST = json["total_igst"] as? String
             let totalTaxableValue = json["total_taxable_value"] as? String
             
-            // Collect raw items with both display and matching names
             var rawItems: [(displayName: String, matchingName: String, quantity: String, unit: String?, costPrice: String?, sellingPrice: String?, hsnCode: String?, gstRate: String?)] = []
             
             if let jsonItems = json["items"] as? [[String: Any]] {
@@ -587,14 +544,12 @@ final class GeminiService {
             
             guard !rawItems.isEmpty else { return nil }
             
-            // Run inventory matching
             let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
             InventoryMatcher.shared.indexInventory(inventory)
             
             var items: [ParsedPurchaseItem] = []
             for raw in rawItems {
                 if let match = InventoryMatcher.shared.match(name: raw.matchingName, against: inventory) {
-                    // Matched: use canonical inventory name and fill inventory info
                     items.append(ParsedPurchaseItem(
                         name: match.item.name,
                         quantity: raw.quantity,
@@ -606,7 +561,6 @@ final class GeminiService {
                         gstRate: raw.gstRate ?? (match.item.gstRate != nil ? String(format: "%.0f", match.item.gstRate!) : nil)
                     ))
                 } else {
-                    // Unmatched: use original display name (no alias)
                     items.append(ParsedPurchaseItem(
                         name: raw.displayName,
                         quantity: raw.quantity,
@@ -650,9 +604,6 @@ final class GeminiService {
         }
     }
     
-    /// Parse object detection JSON into ParsedResult.
-    /// Uses category_alias only for inventory matching, never for display.
-    /// If item matches inventory, fills price/unit from inventory.
     static func parseObjectJSON(_ jsonString: String) -> ParsedResult? {
         let cleanJSON = sanitizeJSONString(jsonString)
         guard let data = cleanJSON.data(using: .utf8) else { return nil }
@@ -686,7 +637,6 @@ final class GeminiService {
             
             guard !rawProducts.isEmpty else { return nil }
             
-            // Run inventory matching
             let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
             InventoryMatcher.shared.indexInventory(inventory)
             
@@ -701,11 +651,9 @@ final class GeminiService {
             for (i, m) in matched.enumerated() {
                 let displayName = rawProducts[i].displayName
                 if m.itemID != nil {
-                    // Matched: use inventory name, price, unit
                     products.append((name: m.name, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: m.costPrice))
                     itemIDs.append(m.itemID!)
                 } else {
-                    // Unmatched: use original display name (still useful, user can fill rest)
                     products.append((name: displayName, quantity: m.quantity, unit: "pcs", price: rawProducts[i].price, costPrice: nil))
                 }
             }
@@ -734,15 +682,11 @@ final class GeminiService {
         }
     }
     
-    // MARK: - Availability Check
     
-    /// Check if GeminiService has a valid API key configured AND the user can still use it.
     var isConfigured: Bool {
         return !apiKey.isEmpty && apiKey != "YOUR_KEY_HERE" && !isLimitReached
     }
     
-    /// Check if the API key is present (regardless of usage limit).
-    /// Use this to determine if the app was ever configured with Gemini.
     var hasAPIKey: Bool {
         return !apiKey.isEmpty && apiKey != "YOUR_KEY_HERE"
     }

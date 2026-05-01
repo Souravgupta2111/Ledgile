@@ -459,10 +459,11 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         )
     }
 
-    // MARK: - PDF Rendering
-
     private func renderBillAsPDF() -> Data {
         guard let details = details else { return Data() }
+
+        typealias PDFColumn = (title: String, width: CGFloat, alignment: NSTextAlignment)
+        typealias PDFValueColumn = (value: String, width: CGFloat, alignment: NSTextAlignment)
 
         let pageWidth: CGFloat = 595.0
         let pageHeight: CGFloat = 842.0
@@ -473,7 +474,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
 
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight))
 
-        let data = renderer.pdfData { context in
+    func drawPDF(context: UIGraphicsPDFRendererContext) {
             context.beginPage()
             var y: CGFloat = margin
 
@@ -605,16 +606,22 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             // ═══════════════════════════════════════════
             if isGST {
                 // GST table: # | Item | HSN | Qty | Rate | Taxable | Tax | Amount
-                let cols: [(String, CGFloat, NSTextAlignment)] = [
-                    ("#", 20, .center), ("Item", contentWidth * 0.25, .left), ("HSN", 52, .center),
-                    ("Qty", 32, .center), ("Rate", 52, .right), ("Taxable", 60, .right),
-                    ("GST%", 36, .center), ("Tax", 52, .right), ("Amount", 62, .right)
+                let itemColumnWidth = contentWidth * 0.25
+                let cols: [PDFColumn] = [
+                    (title: "#", width: 20, alignment: .center),
+                    (title: "Item", width: itemColumnWidth, alignment: .left),
+                    (title: "HSN", width: 52, alignment: .center),
+                    (title: "Qty", width: 32, alignment: .center),
+                    (title: "Rate", width: 52, alignment: .right),
+                    (title: "Taxable", width: 60, alignment: .right),
+                    (title: "GST%", width: 36, alignment: .center),
+                    (title: "Tax", width: 52, alignment: .right),
+                    (title: "Amount", width: 62, alignment: .right)
                 ]
-                // Adjust last column to fill remaining
                 var cx = margin
-                for (title, w, align) in cols {
-                    drawText(title, font: headingFont, rect: CGRect(x: cx, y: y, width: w, height: 14), alignment: align)
-                    cx += w + 2
+                for column in cols {
+                    drawText(column.title, font: headingFont, rect: CGRect(x: cx, y: y, width: column.width, height: 14), alignment: column.alignment)
+                    cx += column.width + 2
                 }
                 y += 16; drawLine(at: y); y += 4
 
@@ -624,19 +631,35 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                     let amount = Double(item.quantity) * rate
                     let taxable = item.taxableValue ?? amount
                     let hsn = item.hsnCode ?? "—"
-                    let gstPct = item.gstRate != nil ? String(format: "%g%%", item.gstRate!) : "—"
-                    let taxAmt = (item.cgstAmount ?? 0) + (item.sgstAmount ?? 0) + (item.igstAmount ?? 0) + (item.cessAmount ?? 0)
+                    let gstRate = item.gstRate
+                    let gstPct = gstRate.map { String(format: "%g%%", $0) } ?? "—"
+                    let cgstAmount = item.cgstAmount ?? 0
+                    let sgstAmount = item.sgstAmount ?? 0
+                    let igstAmount = item.igstAmount ?? 0
+                    let cessAmount = item.cessAmount ?? 0
+                    let taxAmt = cgstAmount + sgstAmount + igstAmount + cessAmount
+                    let indexValue = "\(idx + 1)"
+                    let quantityValue = "\(item.quantity)"
+                    let rateValue = String(format: "₹%.2f", rate)
+                    let taxableValue = String(format: "₹%.2f", taxable)
+                    let taxAmountValue = String(format: "₹%.2f", taxAmt)
+                    let amountValue = String(format: "₹%.2f", amount)
 
                     cx = margin
-                    let vals: [(String, CGFloat, NSTextAlignment)] = [
-                        ("\(idx+1)", 20, .center), (item.itemName, contentWidth * 0.25, .left), (hsn, 52, .center),
-                        ("\(item.quantity)", 32, .center), (String(format: "₹%.2f", rate), 52, .right),
-                        (String(format: "₹%.2f", taxable), 60, .right), (gstPct, 36, .center),
-                        (String(format: "₹%.2f", taxAmt), 52, .right), (String(format: "₹%.2f", amount), 62, .right)
+                    let vals: [PDFValueColumn] = [
+                        (value: indexValue, width: 20, alignment: .center),
+                        (value: item.itemName, width: itemColumnWidth, alignment: .left),
+                        (value: hsn, width: 52, alignment: .center),
+                        (value: quantityValue, width: 32, alignment: .center),
+                        (value: rateValue, width: 52, alignment: .right),
+                        (value: taxableValue, width: 60, alignment: .right),
+                        (value: gstPct, width: 36, alignment: .center),
+                        (value: taxAmountValue, width: 52, alignment: .right),
+                        (value: amountValue, width: 62, alignment: .right)
                     ]
-                    for (val, w, align) in vals {
-                        drawText(val, font: bodyFont, rect: CGRect(x: cx, y: y, width: w, height: 14), alignment: align)
-                        cx += w + 2
+                    for valueColumn in vals {
+                        drawText(valueColumn.value, font: bodyFont, rect: CGRect(x: cx, y: y, width: valueColumn.width, height: 14), alignment: valueColumn.alignment)
+                        cx += valueColumn.width + 2
                     }
                     y += 16
                 }
@@ -696,14 +719,21 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                     ensureSpace(16)
                     tx = margin
                     let rowTax = entry.cgst + entry.sgst + entry.igst + entry.cess
-                    let vals = [
-                        String(format: "%g%%", entry.gstRate),
-                        String(format: "₹%.2f", entry.taxableValue),
-                        String(format: "₹%.2f", entry.cgst),
-                        String(format: "₹%.2f", entry.sgst),
-                        String(format: "₹%.2f", entry.igst),
-                        String(format: "₹%.2f", entry.cess),
-                        String(format: "₹%.2f", rowTax)
+                    let rateText = String(format: "%g%%", entry.gstRate)
+                    let taxableText = String(format: "₹%.2f", entry.taxableValue)
+                    let cgstText = String(format: "₹%.2f", entry.cgst)
+                    let sgstText = String(format: "₹%.2f", entry.sgst)
+                    let igstText = String(format: "₹%.2f", entry.igst)
+                    let cessText = String(format: "₹%.2f", entry.cess)
+                    let rowTaxText = String(format: "₹%.2f", rowTax)
+                    let vals: [String] = [
+                        rateText,
+                        taxableText,
+                        cgstText,
+                        sgstText,
+                        igstText,
+                        cessText,
+                        rowTaxText
                     ]
                     for (i, val) in vals.enumerated() {
                         drawText(val, font: bodyFont, rect: CGRect(x: tx, y: y, width: tCols[i], height: 14), alignment: i == 0 ? .left : .right)
@@ -751,8 +781,12 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             }
 
             ensureSpace(20)
-            drawText("E. & O.E.  |  Generated by Ledgile", font: smallFont, color: .gray,
-                     rect: CGRect(x: margin, y: y, width: contentWidth, height: 12), alignment: .center)
+            drawText("E. & O.E.  |  Generated by B-easy", font: smallFont, color: .limeMoss,
+                     rect: CGRect(x: margin, y: y, width: contentWidth, height: 12), alignment: .left)
+        }
+
+        let data = renderer.pdfData { context in
+            drawPDF(context: context)
         }
 
         return data

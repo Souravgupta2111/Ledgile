@@ -45,9 +45,6 @@ class StockAnalysisViewController: UIViewController {
         reloadData()
     }
     
-    @IBAction func downloadTapped(_ sender: UIBarButtonItem) {
-        
-    }
     
 }
 extension StockAnalysisViewController: UITableViewDataSource, UITableViewDelegate {
@@ -120,5 +117,20 @@ extension StockAnalysisViewController: UITableViewDataSource, UITableViewDelegat
             ])
         }
         return view
+    }
+    
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard indexPath.section == 1 else { return }
+        tableView.deselectRow(at: indexPath, animated: true)
+        let item = salesItems[indexPath.row]
+        performSegue(withIdentifier: "item_profile", sender: item)
+    }
+    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "item_profile",
+           let itemProfileVC = segue.destination as? ItemProfileTableViewController,
+           let profitItem = sender as? ChartDataProvider.ProfitItem {
+            itemProfileVC.itemID = profitItem.itemID
+        }
     }
 }

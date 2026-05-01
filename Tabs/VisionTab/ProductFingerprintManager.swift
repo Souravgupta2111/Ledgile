@@ -1,5 +1,3 @@
-//  Simplified CLIP-only product matching pipeline.
-//  YOLO detects objects → bbox crop → CLIP embedding → cosine similarity → match.
 
 import Vision
 import UIKit
@@ -16,10 +14,6 @@ final class ProductFingerprintManager {
 
     static let shared = ProductFingerprintManager()
 
-    // Raw CLIP cosine scores are still compressed for grocery objects, so we require:
-    // 1) a stronger calibrated score than before,
-    // 2) a stronger raw top hit, and
-    // 3) a healthy gap over the runner-up unless OCR disambiguates the tie.
     let clipThreshold: Float = 0.72
     let rawScoreFloor: Float = 0.78
     let minCalibratedMargin: Float = 0.04
@@ -31,10 +25,9 @@ final class ProductFingerprintManager {
     private let rebuildQueue = DispatchQueue(label: "com.tabs.embeddings.rebuild", qos: .utility)
     private var rebuildInProgress = false
 
-    // In-memory embedding cache — avoids SQLite read on every frame
      var cachedEmbeddings: [(itemID: UUID, embedding: [Float], sampleCount: Int, colorHistogram: [Float]?, geometricFeatures: [Float]?)]?
      var cacheTimestamp: TimeInterval = 0
-     let cacheTTL: TimeInterval = 5  // Refresh cache every 5 seconds
+     let cacheTTL: TimeInterval = 5
 
      func getStoredEmbeddings() -> [(itemID: UUID, embedding: [Float], sampleCount: Int, colorHistogram: [Float]?, geometricFeatures: [Float]?)] {
         ensureEmbeddingsCurrent()
@@ -52,7 +45,6 @@ final class ProductFingerprintManager {
         return loaded
     }
 
-    /// Call after storing new embeddings to force a cache refresh.
     func invalidateEmbeddingCache() {
         cachedEmbeddings = nil
         cacheTimestamp = 0
@@ -106,9 +98,7 @@ final class ProductFingerprintManager {
         }
     }
 
-    // MARK: - Public API
 
-    /// Entry: match objects in image; returns items only.
     func matchObjects(in image: CGImage, completion: @escaping ([Item]) -> Void) {
         matchObjectsWithScores(in: image) { triples in
             completion(triples.map { $0.0 })
@@ -126,7 +116,6 @@ final class ProductFingerprintManager {
         }
     }
 
-    /// Multi-frame: match pre-aggregated tracks (averaged embedding per track).
     func matchTracksWithScores(tracks: [[Float]], completion: @escaping ([(Item, Float, Int)]) -> Void) {
         let stored = getStoredEmbeddings()
         guard !stored.isEmpty else {
@@ -145,7 +134,6 @@ final class ProductFingerprintManager {
         DispatchQueue.main.async { completion(aggregated) }
     }
 
-    // MARK: - Core CLIP Matching Pipeline
 
      func matchWithCLIP(image: CGImage, extractor: FeatureVectorExtractor, completion: @escaping ([(Item, Float, Int)]) -> Void) {
         let pipelineStart = CFAbsoluteTimeGetCurrent()
@@ -254,15 +242,6 @@ final class ProductFingerprintManager {
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // Self-Learning Detection Pipeline
-        // ═══════════════════════════════════════════════════════════════════
-        // No YOLO dependency. Uses CLIP embeddings trained from YOUR videos.
-        // Three complementary strategies run in parallel:
-        //   1. Full frame → matches dominant/centered product (1 CLIP call)
-        //   2. 2×2 grid  → catches multiple products on counter (4 CLIP calls)
-        //   3. Vision saliency → focused crops of prominent objects (~2 CLIP calls)
-        // Total: ~7 CLIP inferences per frame — fast enough for 3 FPS live scan.
 
         ObjectDetectionService.shared.detectObjects(in: image) { [weak self] visionBoxes in
             guard let self = self else { return }
@@ -284,9 +263,7 @@ final class ProductFingerprintManager {
         }
     }
 
-    // MARK: - Simple CLIP Cosine Similarity Match
 
-   
      func matchBestItem(vector: [Float], stored: [(itemID: UUID, embedding: [Float], sampleCount: Int, colorHistogram: [Float]?, geometricFeatures: [Float]?)], itemByID: [UUID: Item]) -> (Item?, Float) {
         let ranked = rankCandidates(vector: vector, stored: stored, itemByID: itemByID, topK: 2)
         guard let best = ranked.first else { return (nil, 0) }
@@ -296,8 +273,6 @@ final class ProductFingerprintManager {
         return (best.item, best.calibratedScore)
     }
 
-    /// Returns the top K best-matching items from CLIP cosine similarity.
-    /// Used to enable OCR-based disambiguation when scores are close.
      func matchTopItems(vector: [Float], stored: [(itemID: UUID, embedding: [Float], sampleCount: Int, colorHistogram: [Float]?, geometricFeatures: [Float]?)], itemByID: [UUID: Item], topK: Int = 3) -> [(item: Item, score: Float)] {
         rankCandidates(vector: vector, stored: stored, itemByID: itemByID, topK: topK).map { ($0.item, $0.calibratedScore) }
     }
@@ -365,12 +340,9 @@ final class ProductFingerprintManager {
         return calibratedMargin >= minCalibratedMargin || rawMargin >= minRawMargin
     }
     
-    /// When CLIP returns multiple candidates with close scores, use OCR info to pick the right variant.
-    /// For example, "Lays Classic 52g" vs "Lays Classic 25g" — CLIP can't distinguish, but OCR weight can.
      func disambiguateWithOCR(candidates: [(item: Item, score: Float)], ocrWeight: String?, ocrMRP: String?, ocrProductName: String?) -> (item: Item, score: Float)? {
         guard candidates.count >= 2 else { return candidates.first }
         
-        // Extract numeric weight from OCR (e.g., "52g" → 52, "g")
         let weightPattern = try? NSRegularExpression(pattern: #"(\d+\.?\d*)\s*(g|gm|kg|ml|l|ltr)"#, options: .caseInsensitive)
         var ocrWeightValue: Double?
         var ocrWeightUnit: String?
@@ -385,17 +357,14 @@ final class ProductFingerprintManager {
             }
         }
         
-        // Extract MRP from OCR
         let ocrMRPValue = ocrMRP.flatMap { Double($0.filter { $0.isNumber || $0 == "." }) }
         
-        // Score each candidate based on OCR match
         var scored: [(item: Item, totalScore: Float)] = []
         
         for candidate in candidates {
             var ocrBonus: Float = 0
             let itemName = candidate.item.name.lowercased()
             
-            // Check weight match: extract weight from item name and compare
             if let ocrVal = ocrWeightValue, let ocrUnit = ocrWeightUnit, let regex = weightPattern {
                 let nameMatches = regex.matches(in: itemName, range: NSRange(itemName.startIndex..., in: itemName))
                 for nm in nameMatches {
@@ -403,25 +372,22 @@ final class ProductFingerprintManager {
                        let ur = Range(nm.range(at: 2), in: itemName),
                        let itemVal = Double(itemName[vr]) {
                         let itemUnit = String(itemName[ur]).lowercased()
-                        // Normalize both to grams/ml for comparison
                         let ocrNorm = normalizeWeightToBase(value: ocrVal, unit: ocrUnit)
                         let itemNorm = normalizeWeightToBase(value: itemVal, unit: itemUnit)
                         if abs(ocrNorm - itemNorm) < 1.0 {
-                            ocrBonus += 0.10  // Strong weight match
+                            ocrBonus += 0.10
                             print("[ProductFinger] Weight match for \(candidate.item.name): OCR=\(ocrVal)\(ocrUnit) vs Item=\(itemVal)\(itemUnit)")
                         }
                     }
                 }
             }
             
-            // Check MRP match
             if let mrp = ocrMRPValue {
                 if abs(candidate.item.defaultSellingPrice - mrp) <= 2.0 {
-                    ocrBonus += 0.05  // Price match
+                    ocrBonus += 0.05
                 }
             }
             
-            // Check product name match
             if let ocrName = ocrProductName?.lowercased() {
                 let nameWords = itemName.split(separator: " ").map(String.init)
                 let matchingWords = nameWords.filter { $0.count >= 3 && ocrName.contains($0) }
@@ -433,11 +399,9 @@ final class ProductFingerprintManager {
             scored.append((item: candidate.item, totalScore: candidate.score + ocrBonus))
         }
         
-        // Return the highest-scoring candidate after OCR adjustment
         let best = scored.max { $0.totalScore < $1.totalScore }
         guard let winner = best else { return candidates.first }
         
-        // Only return if OCR actually made a difference
         let originalBest = candidates.first!
         if winner.item.id != originalBest.item.id {
             return (item: winner.item, score: winner.totalScore)
@@ -445,11 +409,9 @@ final class ProductFingerprintManager {
         return (item: originalBest.item, score: originalBest.score)
     }
     
-    /// Check if OCR weight/MRP matches a specific item's properties.
      func ocrMatchesItem(item: Item, ocrWeight: String?, ocrMRP: String?) -> Bool {
         let itemName = item.name.lowercased()
         
-        // Check weight
         if let w = ocrWeight {
             let weightPattern = try? NSRegularExpression(pattern: #"(\d+\.?\d*)\s*(g|gm|kg|ml|l)"#, options: .caseInsensitive)
             if let regex = weightPattern {
@@ -469,7 +431,6 @@ final class ProductFingerprintManager {
             }
         }
         
-        // Check MRP
         if let mrp = ocrMRP, let val = Double(mrp.filter { $0.isNumber || $0 == "." }) {
             if abs(item.defaultSellingPrice - val) <= 2.0 { return true }
         }
@@ -477,7 +438,6 @@ final class ProductFingerprintManager {
         return false
     }
     
-    /// Normalize weight to base unit (grams or ml) for comparison.
      func normalizeWeightToBase(value: Double, unit: String) -> Double {
         switch unit.lowercased() {
         case "kg", "kgs": return value * 1000
@@ -488,9 +448,7 @@ final class ProductFingerprintManager {
         }
     }
 
-    // MARK: - Aggregation
 
-    /// Aggregate: count how many times each product was detected, keep best score per product.
      static func aggregateMatches(_ matches: [(Item, Float)]) -> [(Item, Float, Int)] {
         var bestByID: [UUID: (Item, Float, Int)] = [:]
         for (item, score) in matches {
@@ -503,10 +461,7 @@ final class ProductFingerprintManager {
         return Array(bestByID.values)
     }
 
-    // MARK: - Cross-class IoU Dedup
 
-    /// YOLO may detect the same physical object under multiple COCO classes
-   
     static func dedupDetectionsByIoU(_ detections: [YOLODetection], iouThreshold: Float) -> [YOLODetection] {
         let sorted = detections.sorted { $0.confidence > $1.confidence }
         var kept: [YOLODetection] = []
@@ -523,13 +478,11 @@ final class ProductFingerprintManager {
         return kept
     }
 
-    // MARK: - Barcode Detection
 
      func detectBarcode(in image: CGImage) -> String? {
         detectBarcodeInImage(image)
     }
 
-    /// Call from inventory capture to save barcode on item.
     func detectBarcodeInImage(_ image: CGImage) -> String? {
         let request = VNDetectBarcodesRequest()
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
@@ -537,7 +490,6 @@ final class ProductFingerprintManager {
         return (request.results as? [VNBarcodeObservation])?.first?.payloadStringValue
     }
 
-    // MARK: - Vision Feature Print Fallback
 
      func matchWithVision(image: CGImage, completion: @escaping ([Item]) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -613,11 +565,7 @@ final class ProductFingerprintManager {
         return image.cropping(to: CGRect(x: x, y: y, width: w, height: h))
     }
 
-    // MARK: - Update Embeddings (when user adds product photos)
 
-    /// Call after saving product photos for an item. Runs YOLO crop on each photo,
-    /// computes CLIP embedding for each, and stores them INDIVIDUALLY (not averaged).
-    /// This preserves view-specific information for max-of-K matching.
     func updateEmbeddings(for itemID: UUID, completion: (() -> Void)? = nil) {
         guard let extractor = FeatureExtractorProvider.vectorExtractor else {
             completion?()
@@ -660,22 +608,16 @@ final class ProductFingerprintManager {
                 return
             }
 
-            // Store each embedding individually (not averaged) for max-of-K matching
             ProductEmbeddingStore.shared.replaceEmbeddings(itemID: itemID, embeddings: vectors)
             self.invalidateEmbeddingCache()
             DispatchQueue.main.async { completion?() }
         }
     }
 
-    /// Run Vision Saliency to get the best crop from a training photo.
-    /// Safely isolates the product from the background so the embedding doesn't
-    /// memorize the floor/counter. THIS IS CRITICAL because MobileCLIP matches
-    /// "full indoor scenes" with 94%+ similarity regardless of the object.
      func extractBestCrop(from image: CGImage, completion: @escaping (CGImage?, CGRect?) -> Void) {
         ObjectDetectionService.shared.detectObjects(in: image) { [weak self] boxes in
             guard let self = self else { return }
             
-            // Pick the largest/most confident saliency box (which will inherently isolate the product)
             if let best = boxes.max(by: {
                 let aArea = $0.rect.width * $0.rect.height
                 let bArea = $1.rect.width * $1.rect.height
@@ -684,8 +626,6 @@ final class ProductFingerprintManager {
                 let crop = self.makeFocusedCrop(from: image, box: best)
                 completion(crop, best.rect)
             } else {
-                // FALLBACK: Saliency failed. NEVER use the full background frame.
-                // Just take the middle of the frame where the user is holding the product.
                 let w = CGFloat(image.width)
                 let h = CGFloat(image.height)
                 let centerRect = CGRect(x: w * 0.15, y: h * 0.15, width: w * 0.7, height: h * 0.7)
@@ -695,7 +635,6 @@ final class ProductFingerprintManager {
         }
     }
 
-    /// Remove stored embedding when product photos are removed.
     func removeEmbeddings(for itemID: UUID) {
         ProductEmbeddingStore.shared.deleteEmbedding(itemID: itemID)
     }

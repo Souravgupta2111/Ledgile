@@ -25,7 +25,7 @@ extension FeatureVectorExtractor {
 import TensorFlowLite
 #endif
 
-// MARK: - Vision fallback (no vector; ProductFingerprintManager uses photo-by-photo comparison when this is the only path)
+
 
 
 final class VisionFeatureExtractor {
@@ -46,7 +46,7 @@ final class VisionFeatureExtractor {
     }
 }
 
-// MARK: - CLIP CoreML (512-dim, preferred for inventory/sales matching)
+
 
 final class CLIPFeatureExtractor: FeatureVectorExtractor {
     static let shared = CLIPFeatureExtractor()
@@ -126,8 +126,8 @@ final class CLIPFeatureExtractor: FeatureVectorExtractor {
 
    
     static func postProcess(_ vec: inout [Float]) {
-        // Dataset-level mean-centering dramatically improves separation for grocery items.
-        // This uses the precomputed corpus mean bundled with the app, then L2-normalizes.
+        // Dataset-level mean-centering
+
         if globalMean.count == vec.count {
             vDSP_vsub(globalMean, 1, vec, 1, &vec, 1, vDSP_Length(vec.count))
         }
@@ -154,8 +154,8 @@ final class CLIPFeatureExtractor: FeatureVectorExtractor {
         }
     }
 
-    // MARK: - Batch Extraction (potato-sorter speed)
-    // Process all crops in ONE CoreML batch prediction call.
+    // MARK: - Batch Extraction 
+
     
 
     func extractVectorBatch(from images: [CGImage]) -> [[Float]?] {
@@ -275,8 +275,7 @@ final class CLIPFeatureExtractor: FeatureVectorExtractor {
         return results
     }
 
-    // MARK: - MultiArray input path (most CLIP/MobileCLIP exports)
-    // Model expects normalized float tensor [1, 3, H, W] (NCHW) or [1, H, W, 3] (NHWC)
+
 
      func extractViaMultiArray(model: MLModel, image: CGImage) -> [Float]? {
         guard let resized = resizeToInput(cgImage: image, width: inputSize, height: inputSize) else {
@@ -293,7 +292,7 @@ final class CLIPFeatureExtractor: FeatureVectorExtractor {
         }
 
         let isNCHW = shape.count == 4 && shape[1] == 3
-        // isNHWC: shape[3] == 3
+        
 
         guard let multiArray = imageToMultiArray(cgImage: resized, shape: shape, nchw: isNCHW) else {
             return nil
@@ -577,7 +576,7 @@ final class TFLiteFeatureExtractor: FeatureVectorExtractor {
 // MARK: - Unified extractor (CLIP preferred, then TFLite, else nil for Vision fallback)
 
 enum FeatureExtractorProvider {
-    /// Prefer CLIP (CoreML 512-dim); else TFLite; else nil -> Vision photo-by-photo.
+
     static var vectorExtractor: FeatureVectorExtractor? {
         if CLIPFeatureExtractor.shared.isAvailable {
             return CLIPFeatureExtractor.shared

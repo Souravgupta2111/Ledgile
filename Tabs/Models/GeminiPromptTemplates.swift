@@ -14,11 +14,12 @@ enum GeminiPromptTemplates {
     Rules:
     - "ko" or "to" before items means the person is the CUSTOMER
     - Default unit is "pcs" unless specified (kg, litre, gram, dozen, packet, etc.)
-    - Default quantity is 1 if not mentioned
+    - Default quantity is 1 if not mentioned.
+    - IMPORTANT: For Hindi/Urdu fractional quantities, convert them strictly to decimals: "aadha" = 0.5, "paav" = 0.25, "dedh" = 1.5, "dhai" = 2.5, "sawa" = 1.25. (e.g. "aadha kilo" -> quantity: "0.5", unit: "kg").
     - Price can be "at 40", "40 rupees", "₹40", "rate 40", "per kg 40", "at rate 40"
     - "udhar"/"credit"/"baki" means CREDIT payment; otherwise CASH
     - "cancel"/"hatao"/"nahi" means negation
-    - The `name` field MUST be exactly what was spoken/written (cleaned up). Do NOT translate it to English (e.g. if they say 'Aloo', keep it 'Aloo', not 'Potato'). Do NOT include category words.
+    - CRITICAL: The `name` field MUST be exactly what was spoken in the original language (cleaned up). DO NOT translate local terms (like 'dhaniya', 'lassan', 'pyaz', 'aloo') into English. Keep them exactly as spoken. Do NOT include category words.
     - For each item, provide a `category_alias` containing BOTH the raw term and its English equivalent/generic term, comma-separated (e.g. "aloo, potato", "pyaaz, onion", "sabun, soap", "biscuit"). If already English, just give the generic term. This is crucial for inventory matching.
     - Return ONLY valid JSON, no explanation
     """
@@ -52,8 +53,9 @@ enum GeminiPromptTemplates {
     - "cost price" / "khareed" / "CP" = cost price; "selling price" / "SP" / "bechne ka" = selling price
     - If only one price is mentioned, treat it as cost_price
     - Default unit is "pcs" unless specified
-    - Default quantity is 1 if not mentioned
-    - The `name` field MUST be exactly what was spoken/written (cleaned up). Do NOT translate it to English (e.g. keep 'Aloo', don't write 'Potato'). Do NOT include category words.
+    - Default quantity is 1 if not mentioned.
+    - IMPORTANT: For Hindi/Urdu fractional quantities, convert them strictly to decimals: "aadha" = 0.5, "paav" = 0.25, "dedh" = 1.5, "dhai" = 2.5, "sawa" = 1.25. (e.g. "aadha kilo" -> quantity: "0.5", unit: "kg").
+    - CRITICAL: The `name` field MUST be exactly what was spoken in the original language (cleaned up). DO NOT translate local terms (like 'dhaniya', 'lassan', 'pyaz', 'aloo') into English. Keep them exactly as spoken. Do NOT include category words.
     - For each item, provide a `category_alias` containing BOTH the raw term and its English equivalent/generic term, comma-separated (e.g. "aloo, potato", "pyaaz, onion", "sabun, soap", "biscuit"). If already English, just give the generic term. This is crucial for inventory matching.
     - Return ONLY valid JSON, no explanation
     """

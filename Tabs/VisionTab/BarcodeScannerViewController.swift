@@ -1,5 +1,3 @@
-// Live barcode scanner — continuous video stream with auto-detection,
-// glassmorphism UI, scan-and-link item picker, and running bill.
 
 import AVFoundation
 import UIKit
@@ -7,33 +5,27 @@ import Vision
 
 final class BarcodeScannerViewController: UIViewController {
 
-    // MARK: - Callbacks
     var onSaleResult: ((ParsedResult) -> Void)?
     var onPurchaseResult: ((ParsedPurchaseResult) -> Void)?
     var mode: ScanMode = .sale
 
-    // MARK: - Camera
      var captureSession: AVCaptureSession?
      var previewLayer: AVCaptureVideoPreviewLayer?
      let sessionQueue = DispatchQueue(label: "barcode.session")
      let processingQueue = DispatchQueue(label: "barcode.processing")
 
-    // MARK: - Barcode Lookup
      var itemByBarcode: [String: Item] = [:]
      var allItems: [Item] = []
 
-    // MARK: - Scanned Items Accumulation
      var scannedItems: [(item: Item, quantity: Int)] = []
      var seenBarcodes: Set<String> = []
      var lastScanTime: CFTimeInterval = 0
      let scanCooldown: CFTimeInterval = 1.5
 
-    // MARK: - Item Picker State
      var isShowingPicker = false
      var pendingBarcode: String?
      var filteredItems: [Item] = []
 
-    // MARK: - UI Elements
      let previewView = UIView()
      var toastContainer: UIVisualEffectView!
      let toastLabel = UILabel()
@@ -45,7 +37,6 @@ final class BarcodeScannerViewController: UIViewController {
      let itemCountLabel = UILabel()
      var toastTimer: Timer?
 
-    // Item picker overlay
      var pickerOverlay: UIView!
      var pickerBlur: UIVisualEffectView!
      var pickerContainer: UIVisualEffectView!
@@ -55,10 +46,8 @@ final class BarcodeScannerViewController: UIViewController {
      var pickerBarcodeLabel: UILabel!
      var pickerCancelButton: UIButton!
 
-    // Scan line animation
      var scanLineView: UIView!
 
-    // MARK: - Lifecycle
 
     init(mode: ScanMode) {
         self.mode = mode
@@ -90,7 +79,6 @@ final class BarcodeScannerViewController: UIViewController {
         previewLayer?.frame = previewView.bounds
     }
 
-    // MARK: - Inventory
 
      func loadInventory() {
         allItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
@@ -108,20 +96,16 @@ final class BarcodeScannerViewController: UIViewController {
         )
     }
 
-    // MARK: - Glass UI Setup
 
      func setupUI() {
-        // Camera preview
         previewView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(previewView)
 
-        // Scan line animation
         scanLineView = UIView()
         scanLineView.backgroundColor = UIColor(named: "Lime Moss")!.withAlphaComponent(0.6)
         scanLineView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scanLineView)
 
-        // Close button (top-left glass pill)
         let closeBlur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
         closeBlur.translatesAutoresizingMaskIntoConstraints = false
         closeBlur.layer.cornerRadius = 20
@@ -135,7 +119,6 @@ final class BarcodeScannerViewController: UIViewController {
         closeBtn.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         closeBlur.contentView.addSubview(closeBtn)
 
-        // Title pill (top-center glass)
         let titleBlur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
         titleBlur.translatesAutoresizingMaskIntoConstraints = false
         titleBlur.layer.cornerRadius = 18
@@ -149,7 +132,6 @@ final class BarcodeScannerViewController: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleBlur.contentView.addSubview(titleLabel)
 
-        // Toast (center glass pill)
         toastContainer = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
         toastContainer.translatesAutoresizingMaskIntoConstraints = false
         toastContainer.layer.cornerRadius = 16
@@ -169,7 +151,6 @@ final class BarcodeScannerViewController: UIViewController {
         toastLabel.numberOfLines = 2
         toastContainer.contentView.addSubview(toastLabel)
 
-        // Bill panel (bottom glass)
         billPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
         billPanel.translatesAutoresizingMaskIntoConstraints = false
         billPanel.layer.cornerRadius = 24
@@ -177,14 +158,12 @@ final class BarcodeScannerViewController: UIViewController {
         billPanel.clipsToBounds = true
         view.addSubview(billPanel)
 
-        // Drag indicator
         let dragIndicator = UIView()
         dragIndicator.translatesAutoresizingMaskIntoConstraints = false
         dragIndicator.backgroundColor = UIColor.white.withAlphaComponent(0.3)
         dragIndicator.layer.cornerRadius = 2.5
         billPanel.contentView.addSubview(dragIndicator)
 
-        // Item count label
         itemCountLabel.translatesAutoresizingMaskIntoConstraints = false
         itemCountLabel.text = "Point camera at barcodes"
         itemCountLabel.textColor = UIColor.white.withAlphaComponent(0.7)
@@ -192,7 +171,6 @@ final class BarcodeScannerViewController: UIViewController {
         itemCountLabel.textAlignment = .center
         billPanel.contentView.addSubview(itemCountLabel)
 
-        // Bill table
         billTableView.translatesAutoresizingMaskIntoConstraints = false
         billTableView.backgroundColor = .clear
         billTableView.separatorColor = UIColor.white.withAlphaComponent(0.1)
@@ -201,7 +179,6 @@ final class BarcodeScannerViewController: UIViewController {
         billTableView.showsVerticalScrollIndicator = false
         billPanel.contentView.addSubview(billTableView)
 
-        // Total label
         totalLabel.translatesAutoresizingMaskIntoConstraints = false
         totalLabel.text = "₹0"
         totalLabel.textColor = .white
@@ -209,7 +186,6 @@ final class BarcodeScannerViewController: UIViewController {
         totalLabel.textAlignment = .center
         billPanel.contentView.addSubview(totalLabel)
 
-        // Stop button (gradient green)
         stopButton.translatesAutoresizingMaskIntoConstraints = false
         stopButton.setTitle("Done", for: .normal)
         stopButton.setImage(UIImage(systemName: "stop.circle"), for: .normal)
@@ -221,19 +197,16 @@ final class BarcodeScannerViewController: UIViewController {
         billPanel.contentView.addSubview(stopButton)
 
         NSLayoutConstraint.activate([
-            // Preview
             previewView.topAnchor.constraint(equalTo: view.topAnchor),
             previewView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             previewView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             previewView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            // Scan line
             scanLineView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             scanLineView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
             scanLineView.heightAnchor.constraint(equalToConstant: 2),
             scanLineView.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -80),
 
-            // Close button
             closeBlur.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             closeBlur.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             closeBlur.widthAnchor.constraint(equalToConstant: 40),
@@ -241,7 +214,6 @@ final class BarcodeScannerViewController: UIViewController {
             closeBtn.centerXAnchor.constraint(equalTo: closeBlur.centerXAnchor),
             closeBtn.centerYAnchor.constraint(equalTo: closeBlur.centerYAnchor),
 
-            // Title pill
             titleBlur.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             titleBlur.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             titleBlur.heightAnchor.constraint(equalToConstant: 36),
@@ -249,7 +221,6 @@ final class BarcodeScannerViewController: UIViewController {
             titleLabel.trailingAnchor.constraint(equalTo: titleBlur.contentView.trailingAnchor, constant: -12),
             titleLabel.centerYAnchor.constraint(equalTo: titleBlur.centerYAnchor),
 
-            // Toast
             toastContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             toastContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40),
             toastContainer.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -48),
@@ -262,34 +233,28 @@ final class BarcodeScannerViewController: UIViewController {
             toastLabel.topAnchor.constraint(equalTo: toastContainer.contentView.topAnchor, constant: 12),
             toastLabel.bottomAnchor.constraint(equalTo: toastContainer.contentView.bottomAnchor, constant: -12),
 
-            // Bill panel
             billPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             billPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             billPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            // Drag indicator
             dragIndicator.topAnchor.constraint(equalTo: billPanel.contentView.topAnchor, constant: 8),
             dragIndicator.centerXAnchor.constraint(equalTo: billPanel.centerXAnchor),
             dragIndicator.widthAnchor.constraint(equalToConstant: 36),
             dragIndicator.heightAnchor.constraint(equalToConstant: 5),
 
-            // Item count
             itemCountLabel.topAnchor.constraint(equalTo: dragIndicator.bottomAnchor, constant: 10),
             itemCountLabel.leadingAnchor.constraint(equalTo: billPanel.contentView.leadingAnchor, constant: 16),
             itemCountLabel.trailingAnchor.constraint(equalTo: billPanel.contentView.trailingAnchor, constant: -16),
 
-            // Bill table
             billTableView.topAnchor.constraint(equalTo: itemCountLabel.bottomAnchor, constant: 6),
             billTableView.leadingAnchor.constraint(equalTo: billPanel.contentView.leadingAnchor),
             billTableView.trailingAnchor.constraint(equalTo: billPanel.contentView.trailingAnchor),
             billTableView.heightAnchor.constraint(lessThanOrEqualToConstant: 140),
 
-            // Total
             totalLabel.topAnchor.constraint(equalTo: billTableView.bottomAnchor, constant: 6),
             totalLabel.leadingAnchor.constraint(equalTo: billPanel.contentView.leadingAnchor, constant: 16),
             totalLabel.trailingAnchor.constraint(equalTo: billPanel.contentView.trailingAnchor, constant: -16),
 
-            // Stop button
             stopButton.topAnchor.constraint(equalTo: totalLabel.bottomAnchor, constant: 10),
             stopButton.centerXAnchor.constraint(equalTo: billPanel.centerXAnchor),
             stopButton.heightAnchor.constraint(equalToConstant: 50),
@@ -301,7 +266,6 @@ final class BarcodeScannerViewController: UIViewController {
         startScanLineAnimation()
     }
 
-    // MARK: - Scan Line Animation
 
      func startScanLineAnimation() {
         scanLineView.alpha = 0.8
@@ -311,22 +275,18 @@ final class BarcodeScannerViewController: UIViewController {
         }
     }
 
-    // MARK: - Item Picker Setup (Glass)
 
      func setupItemPicker() {
-        // Full-screen overlay
         pickerOverlay = UIView()
         pickerOverlay.translatesAutoresizingMaskIntoConstraints = false
         pickerOverlay.alpha = 0
         pickerOverlay.isHidden = true
         view.addSubview(pickerOverlay)
 
-        // Background blur
         pickerBlur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
         pickerBlur.translatesAutoresizingMaskIntoConstraints = false
         pickerOverlay.addSubview(pickerBlur)
 
-        // Glass card container
         pickerContainer = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
         pickerContainer.translatesAutoresizingMaskIntoConstraints = false
         pickerContainer.layer.cornerRadius = 24
@@ -335,7 +295,6 @@ final class BarcodeScannerViewController: UIViewController {
         pickerContainer.layer.borderColor = UIColor.white.withAlphaComponent(0.2).cgColor
         pickerOverlay.addSubview(pickerContainer)
 
-        // Title
         pickerTitleLabel = UILabel()
         pickerTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         pickerTitleLabel.text = "Link Barcode to Item"
@@ -344,7 +303,6 @@ final class BarcodeScannerViewController: UIViewController {
         pickerTitleLabel.textAlignment = .center
         pickerContainer.contentView.addSubview(pickerTitleLabel)
 
-        // Barcode display
         pickerBarcodeLabel = UILabel()
         pickerBarcodeLabel.translatesAutoresizingMaskIntoConstraints = false
         pickerBarcodeLabel.textColor = UIColor(named: "Lime Moss")!
@@ -352,7 +310,6 @@ final class BarcodeScannerViewController: UIViewController {
         pickerBarcodeLabel.textAlignment = .center
         pickerContainer.contentView.addSubview(pickerBarcodeLabel)
 
-        // Search bar
         pickerSearchBar = UISearchBar()
         pickerSearchBar.translatesAutoresizingMaskIntoConstraints = false
         pickerSearchBar.placeholder = "Search items..."
@@ -365,7 +322,6 @@ final class BarcodeScannerViewController: UIViewController {
         pickerSearchBar.delegate = self
         pickerContainer.contentView.addSubview(pickerSearchBar)
 
-        // Item list
         pickerTableView = UITableView(frame: .zero, style: .plain)
         pickerTableView.translatesAutoresizingMaskIntoConstraints = false
         pickerTableView.backgroundColor = .clear
@@ -376,7 +332,6 @@ final class BarcodeScannerViewController: UIViewController {
         pickerTableView.showsVerticalScrollIndicator = false
         pickerContainer.contentView.addSubview(pickerTableView)
 
-        // Cancel button
         pickerCancelButton = UIButton(type: .system)
         pickerCancelButton.translatesAutoresizingMaskIntoConstraints = false
         pickerCancelButton.setTitle("Skip", for: .normal)
@@ -425,7 +380,6 @@ final class BarcodeScannerViewController: UIViewController {
         ])
     }
 
-    // MARK: - Camera
 
      func checkCameraPermission() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -484,7 +438,6 @@ final class BarcodeScannerViewController: UIViewController {
         }
     }
 
-    // MARK: - Barcode Processing
 
      func processBarcode(_ payload: String) {
         if seenBarcodes.contains(payload) { return }
@@ -515,7 +468,6 @@ final class BarcodeScannerViewController: UIViewController {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
         } else {
-            // Unknown barcode → try Open Food Facts lookup first
             print("[BarcodeScanner] ✗ Unknown barcode: \(payload) — looking up online...")
 
             DispatchQueue.main.async {
@@ -530,12 +482,10 @@ final class BarcodeScannerViewController: UIViewController {
                     let displayName = [info.brand, info.name].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
                     print("[BarcodeScanner] 🌐 Found online: \(displayName). Running matcher...")
 
-                    // Run Inventory Matcher
                     let matches = BarcodeMatcher.shared.findMatches(for: info.name, in: self.allItems)
                     let highestConfidence = matches.first?.confidence ?? 0.0
 
                     if highestConfidence > 0.4 {
-                        // MATCH FOUND (Clash / Variant)
                         print("[BarcodeScanner] 🔍 Match found (confidence: \(highestConfidence)). Handling clash.")
                         let bestMatchName = matches.first!.item.name
 
@@ -543,13 +493,11 @@ final class BarcodeScannerViewController: UIViewController {
                             self.showToast("Variant Found?", icon: "🔍", isWarning: true, isError: false)
                             self.showItemPicker(for: payload)
                             self.pickerBarcodeLabel.text = "Barcode: \(payload) • \(displayName)"
-                            // Filter list to the best match
                             self.pickerSearchBar.text = bestMatchName
                             self.searchBar(self.pickerSearchBar, textDidChange: bestMatchName)
                         }
 
                     } else {
-                        // NO LOCAL MATCH -> Auto-Create Temporary Item with Yellow Tick
                         print("[BarcodeScanner] ⚠️ No local match. Auto-creating temporary item...")
                         let newItem = Item(
                             id: UUID(),
@@ -597,7 +545,6 @@ final class BarcodeScannerViewController: UIViewController {
                     }
 
                 } else {
-                    // Not found online — show standard picker (Manual Mapping)
                     print("[BarcodeScanner] ✗ Not found anywhere — showing manual picker")
                     DispatchQueue.main.async {
                         self.showItemPicker(for: payload)
@@ -607,7 +554,6 @@ final class BarcodeScannerViewController: UIViewController {
         }
     }
 
-    // MARK: - Item Picker
 
      func showItemPicker(for barcode: String) {
         isShowingPicker = true
@@ -640,18 +586,15 @@ final class BarcodeScannerViewController: UIViewController {
     }
 
      func linkBarcodeToItem(_ item: Item, barcode: String) {
-        // Save barcode on the item in DB
         var updated = item
         updated.barcode = barcode
         try? AppDataModel.shared.dataModel.db.updateItem(updated)
 
-        // Update local caches
         if let idx = allItems.firstIndex(where: { $0.id == item.id }) {
             allItems[idx] = updated
         }
         itemByBarcode[barcode] = updated
 
-        // Add to bill
         seenBarcodes.insert(barcode)
         if let idx = scannedItems.firstIndex(where: { $0.item.id == item.id }) {
             scannedItems[idx].quantity += 1
@@ -678,7 +621,6 @@ final class BarcodeScannerViewController: UIViewController {
         showToast("Barcode skipped", icon: "")
     }
 
-    // MARK: - Toast
 
      func showToast(_ message: String, icon: String, isWarning: Bool = false, isError: Bool = false) {
         toastTimer?.invalidate()
@@ -686,7 +628,6 @@ final class BarcodeScannerViewController: UIViewController {
         toastIcon.text = icon
         toastLabel.text = message
 
-        // Color tint on the glass border
         if isError {
             toastContainer.layer.borderColor = UIColor.systemRed.withAlphaComponent(0.5).cgColor
         } else if isWarning {
@@ -708,7 +649,6 @@ final class BarcodeScannerViewController: UIViewController {
         }
     }
 
-    // MARK: - Bill UI Updates
 
      func updateBillUI() {
         let count = scannedItems.reduce(0) { $0 + $1.quantity }
@@ -727,7 +667,6 @@ final class BarcodeScannerViewController: UIViewController {
         }
     }
 
-    // MARK: - Actions
 
     @objc  func cancelTapped() {
         dismiss(animated: true)
@@ -785,7 +724,6 @@ final class BarcodeScannerViewController: UIViewController {
     }
 }
 
-// MARK: - Video Frame Processing
 
 extension BarcodeScannerViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -810,7 +748,6 @@ extension BarcodeScannerViewController: AVCaptureVideoDataOutputSampleBufferDele
     }
 }
 
-// MARK: - Bill Table DataSource
 
 extension BarcodeScannerViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -847,7 +784,6 @@ extension BarcodeScannerViewController: UITableViewDataSource {
     }
 }
 
-// MARK: - Item Picker TableView Delegate
 
 extension BarcodeScannerViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -860,7 +796,6 @@ extension BarcodeScannerViewController: UITableViewDelegate {
     }
 }
 
-// MARK: - Search Bar Delegate
 
 extension BarcodeScannerViewController: UISearchBarDelegate {
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {

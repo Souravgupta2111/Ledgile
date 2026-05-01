@@ -130,8 +130,8 @@ extension DashboardViewController: UITableViewDataSource, UITableViewDelegate {
             cell.configure(
                 revenueAmount: String(format: "₹%.0f", revenue),
                 investmentAmount: String(format: "₹%.0f", investment),
-                lowStockCountText: "\(lowStockCount.count) items need restocking",
-                expiryCountText: "\(expiryAlerts.count) items expiring soon",
+                lowStockCountText: "\(lowStockCount.count) items",
+                expiryCountText: "\(expiryAlerts.count) items",
                 youWillGetAmount: youWillGet,
                 youWillPayAmount: youWillPay
             )

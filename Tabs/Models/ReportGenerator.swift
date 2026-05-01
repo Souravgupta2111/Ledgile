@@ -1,7 +1,6 @@
 import UIKit
 import QuickLook
 
-// MARK: - Report Type Enum
 
 enum ReportType: String, CaseIterable {
     case profitAndLoss       = "Profit & Loss"
@@ -54,7 +53,6 @@ enum ReportType: String, CaseIterable {
     }
 }
 
-// MARK: - PDF Report Generator
 
 final class ReportGenerator {
 
@@ -63,15 +61,14 @@ final class ReportGenerator {
 
     private var dm: DataModel { AppDataModel.shared.dataModel }
 
-    // MARK: - Public Entry Point
 
     func generateReport(type: ReportType, from startDate: Date, to endDate: Date) -> URL? {
         if type == .gstr1 || type == .gstr3b {
             return generateJSONReport(type: type, from: startDate, to: endDate)
         }
 
-        let pageWidth: CGFloat = 595.28   // A4 width in points
-        let pageHeight: CGFloat = 841.89  // A4 height in points
+        let pageWidth: CGFloat = 595.28
+        let pageHeight: CGFloat = 841.89
         let margin: CGFloat = 40
         let contentWidth = pageWidth - margin * 2
 
@@ -97,13 +94,10 @@ final class ReportGenerator {
                 settings: settings
             )
 
-            // Begin first page
             context.beginPage()
 
-            // Header
             drawHeader(&ctx, title: type.rawValue, from: startDate, to: endDate)
 
-            // Content
             switch type {
             case .profitAndLoss:
                 drawProfitAndLoss(&ctx, from: startDate, to: endDate)
@@ -130,7 +124,7 @@ final class ReportGenerator {
             case .outstandingPayables:
                 drawOutstandingPayables(&ctx)
             case .gstr1, .gstr3b:
-                break // handled by generateJSONReport before reaching here
+                break
             case .hsnSummary:
                 drawHSNSummary(&ctx, from: startDate, to: endDate)
             case .inputTaxRegister:
@@ -139,7 +133,6 @@ final class ReportGenerator {
                 drawOutputTaxRegister(&ctx, from: startDate, to: endDate)
             }
 
-            // Footer on last page
             drawFooter(&ctx)
         }
 
@@ -147,7 +140,6 @@ final class ReportGenerator {
         return pdfURL
     }
 
-    // MARK: - Drawing Context
 
     private struct PDFContext {
         let pdfContext: UIGraphicsPDFRendererContext
@@ -166,7 +158,6 @@ final class ReportGenerator {
         }
     }
 
-    // MARK: - Header & Footer
 
     private func drawHeader(_ ctx: inout PDFContext, title: String, from: Date, to: Date) {
         let businessName = ctx.settings?.businessName ?? "My Business"
@@ -174,14 +165,12 @@ final class ReportGenerator {
         let phone = ctx.settings?.businessPhone
         let address = ctx.settings?.businessAddress
 
-        // Business name
         let nameFont = UIFont.systemFont(ofSize: 18, weight: .bold)
         let nameAttrs: [NSAttributedString.Key: Any] = [.font: nameFont, .foregroundColor: UIColor.black]
         let nameStr = NSAttributedString(string: businessName, attributes: nameAttrs)
         nameStr.draw(at: CGPoint(x: ctx.margin, y: ctx.cursorY))
         ctx.cursorY += 24
 
-        // Contact line
         var contactParts: [String] = []
         if let phone, !phone.isEmpty { contactParts.append(phone) }
         if let gst, !gst.isEmpty { contactParts.append("GST: \(gst)") }
@@ -199,17 +188,14 @@ final class ReportGenerator {
             ctx.cursorY += 16
         }
 
-        // Divider
         drawLine(&ctx)
 
-        // Report title
         let titleFont = UIFont.systemFont(ofSize: 14, weight: .semibold)
         let onyx = UIColor(named: "Onyx") ?? .black
         let titleAttrs: [NSAttributedString.Key: Any] = [.font: titleFont, .foregroundColor: onyx]
         let titleStr = NSAttributedString(string: title, attributes: titleAttrs)
         titleStr.draw(at: CGPoint(x: ctx.margin, y: ctx.cursorY))
 
-        // Date range (right-aligned)
         let df = DateFormatter()
         df.dateStyle = .medium
         let dateStr = "\(df.string(from: from)) — \(df.string(from: to))"
@@ -238,7 +224,7 @@ final class ReportGenerator {
         )
         
         let ledgileText = NSAttributedString(
-            string: "Ledgile",
+            string: "B-easy",
             attributes: [
                 .font: UIFont.systemFont(ofSize: 11, weight: .bold),
                 .foregroundColor: UIColor(named: "Lime Moss") ?? UIColor.systemGreen
@@ -263,7 +249,6 @@ final class ReportGenerator {
         ))
     }
 
-    // MARK: - Reusable Drawing Helpers
 
     private func drawLine(_ ctx: inout PDFContext) {
         let path = UIBezierPath()
@@ -300,14 +285,12 @@ final class ReportGenerator {
         ctx.cursorY += 18
     }
 
-    /// Draws a table header row
     private func drawTableHeader(_ ctx: inout PDFContext, columns: [(String, CGFloat)]) {
         ctx.checkPageBreak(needed: 24)
         let font = UIFont.systemFont(ofSize: 9, weight: .bold)
         let onyx = UIColor(named: "Onyx") ?? .black
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: onyx]
 
-        // Background
         let rect = CGRect(x: ctx.margin, y: ctx.cursorY, width: ctx.contentWidth, height: 18)
         let beige = UIColor(named: "Beige") ?? .systemGray5
         beige.setFill()
@@ -323,7 +306,6 @@ final class ReportGenerator {
         ctx.cursorY += 20
     }
 
-    /// Draws a table data row
     private func drawTableRow(_ ctx: inout PDFContext, values: [String], columns: [(String, CGFloat)], highlight: Bool = false) {
         ctx.checkPageBreak(needed: 18)
         let font = UIFont.systemFont(ofSize: 9, weight: .regular)
@@ -347,7 +329,6 @@ final class ReportGenerator {
         ctx.cursorY += 16
     }
 
-    /// Draws a "totals" row at the bottom of a table
     private func drawTotalsRow(_ ctx: inout PDFContext, values: [String], columns: [(String, CGFloat)]) {
         ctx.checkPageBreak(needed: 22)
         drawLine(&ctx)
@@ -372,11 +353,7 @@ final class ReportGenerator {
         ctx.cursorY += 20
     }
 
-    // MARK: - Report Content Generators
 
-    // ─────────────────────────────────────────────
-    // 1. PROFIT & LOSS
-    // ─────────────────────────────────────────────
     private func drawProfitAndLoss(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
         let filtered = allTx.filter { $0.date >= from && $0.date <= to }
@@ -422,16 +399,12 @@ final class ReportGenerator {
         drawKeyValue(&ctx, key: "Total Payable (You'll Pay)", value: formatCurrency(payable))
         drawKeyValue(&ctx, key: "Net Credit Position", value: formatCurrency(receivable - payable), bold: true)
 
-        // Investment
         let investment = dm.getTotalInvestment()
         ctx.cursorY += 6
         drawSectionTitle(&ctx, "Inventory")
         drawKeyValue(&ctx, key: "Current Inventory Value (at cost)", value: formatCurrency(investment))
     }
 
-    // ─────────────────────────────────────────────
-    // 2. SALES REGISTER
-    // ─────────────────────────────────────────────
     private func drawSalesRegister(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
         let sales = allTx.filter { $0.type == .sale && $0.date >= from && $0.date <= to }
@@ -480,9 +453,6 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // ─────────────────────────────────────────────
-    // 3. PURCHASE REGISTER
-    // ─────────────────────────────────────────────
     private func drawPurchaseRegister(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
         let purchases = allTx.filter { $0.type == .purchase && $0.date >= from && $0.date <= to }
@@ -526,9 +496,6 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // ─────────────────────────────────────────────
-    // 4. STOCK SUMMARY
-    // ─────────────────────────────────────────────
     private func drawStockSummary(_ ctx: inout PDFContext) {
         let items = (try? dm.db.getAllItems()) ?? []
 
@@ -572,9 +539,6 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // ─────────────────────────────────────────────
-    // 5. EXPIRY ALERT
-    // ─────────────────────────────────────────────
     private func drawExpiryAlert(_ ctx: inout PDFContext) {
         let alerts = (try? dm.getLowStockAlerts()) ?? []
         let expiryAlerts = (try? dm.getExpiryAlerts()) ?? []
@@ -614,9 +578,6 @@ final class ReportGenerator {
         }
     }
 
-    // ─────────────────────────────────────────────
-    // 6. FAST MOVING ITEMS
-    // ─────────────────────────────────────────────
     private func drawFastMovingItems(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
         let sales = allTx.filter { $0.type == .sale && $0.date >= from && $0.date <= to }
@@ -667,9 +628,6 @@ final class ReportGenerator {
         }
     }
 
-    // ─────────────────────────────────────────────
-    // 7. SLOW / DEAD STOCK
-    // ─────────────────────────────────────────────
     private func drawSlowDeadStock(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allItems = (try? dm.db.getAllItems()) ?? []
         let allTx = (try? dm.db.getTransactions()) ?? []
@@ -718,9 +676,6 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // ─────────────────────────────────────────────
-    // 8. ITEM PROFITABILITY
-    // ─────────────────────────────────────────────
     private func drawItemProfitability(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
         let sales = allTx.filter { $0.type == .sale && $0.date >= from && $0.date <= to }
@@ -784,9 +739,6 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // ─────────────────────────────────────────────
-    // 9. CUSTOMER LEDGER
-    // ─────────────────────────────────────────────
     private func drawCustomerLedger(_ ctx: inout PDFContext) {
         let customers = CreditStore.shared.getAllCustomers()
 
@@ -847,9 +799,6 @@ final class ReportGenerator {
         }
     }
 
-    // ─────────────────────────────────────────────
-    // 10. SUPPLIER LEDGER
-    // ─────────────────────────────────────────────
     private func drawSupplierLedger(_ ctx: inout PDFContext) {
         let suppliers = CreditStore.shared.getAllSuppliers()
 
@@ -910,9 +859,6 @@ final class ReportGenerator {
         }
     }
 
-    // ─────────────────────────────────────────────
-    // 11. OUTSTANDING RECEIVABLES
-    // ─────────────────────────────────────────────
     private func drawOutstandingReceivables(_ ctx: inout PDFContext) {
         let customers = CreditStore.shared.getAllCustomers()
         let withBalance = customers.filter { $0.netBalance > 0.01 }
@@ -947,9 +893,6 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // ─────────────────────────────────────────────
-    // 12. OUTSTANDING PAYABLES
-    // ─────────────────────────────────────────────
     private func drawOutstandingPayables(_ ctx: inout PDFContext) {
         let suppliers = CreditStore.shared.getAllSuppliers()
         let withBalance = suppliers.filter { $0.netBalance > 0.01 }
@@ -984,16 +927,11 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // ─────────────────────────────────────────────
-    // GST REPORTS
-    // ─────────────────────────────────────────────
     
     private func drawHSNSummary(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
-        // Usually HSN summary is required for Outward Supplies (Sales)
         let sales = allTx.filter { $0.type == .sale && $0.date >= from && $0.date <= to }
         
-        // Group by HSN and Rate
         struct HSNGroup {
             var hsnCode: String
             var rate: Double
@@ -1074,7 +1012,6 @@ final class ReportGenerator {
 
     private func drawInputTaxRegister(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
-        // Purchases (Input Tax)
         let purchases = allTx.filter { $0.type == .purchase && $0.date >= from && $0.date <= to }
             .sorted { $0.date > $1.date }
         
@@ -1137,7 +1074,6 @@ final class ReportGenerator {
 
     private func drawOutputTaxRegister(_ ctx: inout PDFContext, from: Date, to: Date) {
         let allTx = (try? dm.db.getTransactions()) ?? []
-        // Sales (Output Tax)
         let sales = allTx.filter { $0.type == .sale && $0.date >= from && $0.date <= to }
             .sorted { $0.date > $1.date }
         
@@ -1198,7 +1134,6 @@ final class ReportGenerator {
         ], columns: columns)
     }
 
-    // MARK: - Formatting
 
     private func formatCurrency(_ amount: Double) -> String {
         let formatter = NumberFormatter()
@@ -1245,9 +1180,7 @@ final class ReportGenerator {
     }
 }
 
-// MARK: - QLPreviewController Helper
 
-/// A small helper so any ViewController can preview a PDF
 class PDFPreviewItem: NSObject, QLPreviewItem {
     let url: URL
     let name: String
