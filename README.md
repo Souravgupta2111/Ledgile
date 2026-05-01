@@ -1,4 +1,4 @@
-# Ledgile 📱
+# B-easy 📱
 
 <div align="center">
   <img src="https://img.shields.io/badge/Platform-iOS-blue.svg?style=flat-square" alt="Platform: iOS" />
@@ -9,7 +9,7 @@
 
 <br/>
 
-**Ledgile** is a next-generation, AI-first ledger and inventory management iOS application designed specifically for modern shopkeepers and retailers. It streamlines daily retail operations through state-of-the-art on-device machine learning, voice commerce, and intelligent visual scanning.
+**B-easy** is a next-generation, AI-first ledger and inventory management iOS application designed specifically for modern shopkeepers and retailers. It streamlines daily retail operations through state-of-the-art on-device machine learning, voice commerce, and intelligent visual scanning.
 
 ---
 
