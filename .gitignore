@@ -5,14 +5,5 @@ Secrets.xcconfig
 .DS_Store
 **/.DS_Store
 
-# Personal and assignment files
-GST_Integration_Plan.md
-Shivraj Business Assignment.pdf
-Subscription_Integration_Plan.md
-add_file.rb
-ledgile_new UI.key
-new sub.md
-story .pdf
-
 # Scratch directory
 scratch/
