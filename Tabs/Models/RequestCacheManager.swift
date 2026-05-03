@@ -1,8 +1,7 @@
 import Foundation
 
 /// A persistent cache for repetitive Voice AI requests.
-/// Massively reduces API costs by caching common, recurring queries locally.
-/// E.g. "2 maggi" -> 0.0s latency, $0.00 cost after the first time.
+
 final class RequestCacheManager {
     static let shared = RequestCacheManager()
     
