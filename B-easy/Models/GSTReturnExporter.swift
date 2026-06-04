@@ -196,7 +196,7 @@ final class GSTReturnExporter {
     // MARK: - HSN Summary Builder
 
     private func buildHSNSummary(transactions: [Transaction]) throws -> [[String: Any]] {
-        var hsnMap: [String: (qty: Int, taxable: Double, cgst: Double, sgst: Double, igst: Double, cess: Double)] = [:]
+        var hsnMap: [String: (qty: Double, taxable: Double, cgst: Double, sgst: Double, igst: Double, cess: Double)] = [:]
 
         for tx in transactions {
             let items = (try? db.getTransactionItems(for: tx.id)) ?? []

@@ -12,12 +12,12 @@ class ChartDataProvider {
     struct ProfitItem {
         let itemID: UUID?
         let name: String
-        let quantity: Int
+        let quantity: Double
         let costPrice: Double
         let sellingPrice: Double
 
         var unitProfit: Double { sellingPrice - costPrice }
-        var totalProfit: Double { unitProfit * Double(quantity) }
+        var totalProfit: Double { unitProfit * quantity }
     }
 
     struct ChartPoint {
@@ -56,7 +56,7 @@ class ChartDataProvider {
             let profit = items.reduce(0.0) { sum, item in
                 let sell = item.sellingPricePerUnit ?? 0
                 let cost = item.costPricePerUnit ?? 0
-                return sum + Double(item.quantity) * (sell - cost)
+                return sum + item.quantity * (sell - cost)
             }
             profitMap[tx.id] = profit
         }
@@ -112,14 +112,14 @@ class ChartDataProvider {
     func getProfitItems(period: Period) -> [ProfitItem] {
         let filteredSales = saleTransactions(startingAt: startDate(for: period))
 
-        var aggregated: [UUID: (name: String, qty: Int, totalCost: Double, totalRevenue: Double)] = [:]
+        var aggregated: [UUID: (name: String, qty: Double, totalCost: Double, totalRevenue: Double)] = [:]
 
         for tx in filteredSales {
             let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
             for item in items {
                 let existing = aggregated[item.itemID] ?? (name: item.itemName, qty: 0, totalCost: 0, totalRevenue: 0)
-                let itemCost = Double(item.quantity) * (item.costPricePerUnit ?? 0)
-                let itemRevenue = Double(item.quantity) * (item.sellingPricePerUnit ?? 0)
+                let itemCost = item.quantity * (item.costPricePerUnit ?? 0)
+                let itemRevenue = item.quantity * (item.sellingPricePerUnit ?? 0)
                 aggregated[item.itemID] = (
                     name: existing.name,
                     qty: existing.qty + item.quantity,
@@ -130,8 +130,8 @@ class ChartDataProvider {
         }
 
         return aggregated.map { itemID, data in
-            let avgCost = data.qty > 0 ? data.totalCost / Double(data.qty) : 0
-            let avgSell = data.qty > 0 ? data.totalRevenue / Double(data.qty) : 0
+            let avgCost = data.qty > 0 ? data.totalCost / data.qty : 0
+            let avgSell = data.qty > 0 ? data.totalRevenue / data.qty : 0
             return ProfitItem(
                 itemID: itemID,
                 name: data.name,
@@ -146,14 +146,14 @@ class ChartDataProvider {
     func getSalesItems(period: Period) -> [ProfitItem] {
         let filteredSales = saleTransactions(startingAt: startDate(for: period))
 
-        var aggregated: [UUID: (name: String, qty: Int, totalCost: Double, totalRevenue: Double)] = [:]
+        var aggregated: [UUID: (name: String, qty: Double, totalCost: Double, totalRevenue: Double)] = [:]
 
         for tx in filteredSales {
             let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
             for item in items {
                 let existing = aggregated[item.itemID] ?? (name: item.itemName, qty: 0, totalCost: 0, totalRevenue: 0)
-                let itemCost = Double(item.quantity) * (item.costPricePerUnit ?? 0)
-                let itemRevenue = Double(item.quantity) * (item.sellingPricePerUnit ?? 0)
+                let itemCost = item.quantity * (item.costPricePerUnit ?? 0)
+                let itemRevenue = item.quantity * (item.sellingPricePerUnit ?? 0)
                 aggregated[item.itemID] = (
                     name: existing.name,
                     qty: existing.qty + item.quantity,
@@ -164,8 +164,8 @@ class ChartDataProvider {
         }
 
         return aggregated.map { itemID, data in
-            let avgCost = data.qty > 0 ? data.totalCost / Double(data.qty) : 0
-            let avgSell = data.qty > 0 ? data.totalRevenue / Double(data.qty) : 0
+            let avgCost = data.qty > 0 ? data.totalCost / data.qty : 0
+            let avgSell = data.qty > 0 ? data.totalRevenue / data.qty : 0
             return ProfitItem(
                 itemID: itemID,
                 name: data.name,
@@ -179,14 +179,14 @@ class ChartDataProvider {
     func getPurchaseItems(period: Period) -> [ProfitItem] {
         let filteredPurchases = purchaseTransactions(startingAt: startDate(for: period))
 
-        var aggregated: [UUID: (name: String, qty: Int, totalCost: Double, totalRevenue: Double)] = [:]
+        var aggregated: [UUID: (name: String, qty: Double, totalCost: Double, totalRevenue: Double)] = [:]
 
         for tx in filteredPurchases {
             let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
             for item in items {
                 let existing = aggregated[item.itemID] ?? (name: item.itemName, qty: 0, totalCost: 0, totalRevenue: 0)
-                let itemCost = Double(item.quantity) * (item.costPricePerUnit ?? 0)
-                let itemRevenue = Double(item.quantity) * (item.sellingPricePerUnit ?? 0)
+                let itemCost = item.quantity * (item.costPricePerUnit ?? 0)
+                let itemRevenue = item.quantity * (item.sellingPricePerUnit ?? 0)
                 aggregated[item.itemID] = (
                     name: existing.name,
                     qty: existing.qty + item.quantity,
@@ -197,8 +197,8 @@ class ChartDataProvider {
         }
 
         return aggregated.map { itemID, data in
-            let avgCost = data.qty > 0 ? data.totalCost / Double(data.qty) : 0
-            let avgSell = data.qty > 0 ? data.totalRevenue / Double(data.qty) : 0
+            let avgCost = data.qty > 0 ? data.totalCost / data.qty : 0
+            let avgSell = data.qty > 0 ? data.totalRevenue / data.qty : 0
             return ProfitItem(
                 itemID: itemID,
                 name: data.name,
@@ -206,20 +206,20 @@ class ChartDataProvider {
                 costPrice: avgCost,
                 sellingPrice: avgSell
             )
-        }.sorted { ($0.costPrice * Double($0.quantity)) > ($1.costPrice * Double($1.quantity)) }
+        }.sorted { ($0.costPrice * $0.quantity) > ($1.costPrice * $1.quantity) }
     }
    
     func getSalesItems() -> [ProfitItem] {
         let sales = saleTransactions()
 
-        var aggregated: [UUID: (name: String, qty: Int, totalCost: Double, totalRevenue: Double)] = [:]
+        var aggregated: [UUID: (name: String, qty: Double, totalCost: Double, totalRevenue: Double)] = [:]
 
         for tx in sales {
             let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
             for item in items {
                 let existing = aggregated[item.itemID] ?? (name: item.itemName, qty: 0, totalCost: 0, totalRevenue: 0)
-                let itemCost = Double(item.quantity) * (item.costPricePerUnit ?? 0)
-                let itemRevenue = Double(item.quantity) * (item.sellingPricePerUnit ?? 0)
+                let itemCost = item.quantity * (item.costPricePerUnit ?? 0)
+                let itemRevenue = item.quantity * (item.sellingPricePerUnit ?? 0)
                 aggregated[item.itemID] = (
                     name: existing.name,
                     qty: existing.qty + item.quantity,
@@ -230,8 +230,8 @@ class ChartDataProvider {
         }
 
         return aggregated.map { itemID, data in
-            let avgCost = data.qty > 0 ? data.totalCost / Double(data.qty) : 0
-            let avgSell = data.qty > 0 ? data.totalRevenue / Double(data.qty) : 0
+            let avgCost = data.qty > 0 ? data.totalCost / data.qty : 0
+            let avgSell = data.qty > 0 ? data.totalRevenue / data.qty : 0
             return ProfitItem(
                 itemID: itemID,
                 name: data.name,
@@ -540,7 +540,7 @@ class ChartDataProvider {
                 let profit = items.reduce(0.0) { s, item in
                     let sell = item.sellingPricePerUnit ?? 0
                     let cost = item.costPricePerUnit ?? 0
-                    return s + Double(item.quantity) * (sell - cost)
+                    return s + item.quantity * (sell - cost)
                 }
                 return sum + profit
             }
@@ -582,7 +582,7 @@ class ChartDataProvider {
             let profit = items.reduce(0.0) { sum, item in
                 let sell = item.sellingPricePerUnit ?? 0
                 let cost = item.costPricePerUnit ?? 0
-                return sum + Double(item.quantity) * (sell - cost)
+                return sum + item.quantity * (sell - cost)
             }
             profitMap[tx.id] = profit
         }
@@ -658,8 +658,8 @@ class ChartDataProvider {
             return lhs.quantity > rhs.quantity
         }
 
-        let lhsRevenue = lhs.sellingPrice * Double(lhs.quantity)
-        let rhsRevenue = rhs.sellingPrice * Double(rhs.quantity)
+        let lhsRevenue = lhs.sellingPrice * lhs.quantity
+        let rhsRevenue = rhs.sellingPrice * rhs.quantity
         if lhsRevenue != rhsRevenue {
             return lhsRevenue > rhsRevenue
         }
@@ -1037,5 +1037,84 @@ class ChartDataProvider {
             result.append(ChartPoint(label: "\(year + offset)", value: yearTotal))
         }
         return result
+    }
+
+    func getSalesItems(for period: Period, atIndex index: Int, totalBars: Int) -> [ProfitItem] {
+        let now = Date()
+        var start: Date!
+        var end: Date!
+        
+        switch period {
+        case .daily:
+            let i = totalBars - 1 - index
+            guard let targetDate = calendar.date(byAdding: .day, value: -i, to: now) else { return [] }
+            start = calendar.startOfDay(for: targetDate)
+            end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        case .monthly:
+            let i = totalBars - 1 - index
+            guard let date = calendar.date(byAdding: .month, value: -i, to: now) else { return [] }
+            guard let interval = calendar.dateInterval(of: .month, for: date) else { return [] }
+            start = interval.start
+            end = interval.end
+        case .quarterly:
+            let currentYear = calendar.component(.year, from: Date())
+            let startMonth = index * 3 + 1
+            var startComps = DateComponents()
+            startComps.year = currentYear
+            startComps.month = startMonth
+            startComps.day = 1
+            start = calendar.date(from: startComps) ?? now
+            
+            var endComps = DateComponents()
+            endComps.year = currentYear
+            endComps.month = startMonth + 3
+            endComps.day = 1
+            end = calendar.date(from: endComps) ?? start
+        case .yearly:
+            let currentYear = calendar.component(.year, from: Date())
+            let year = currentYear - 5 + index
+            
+            var startComps = DateComponents()
+            startComps.year = year
+            startComps.month = 1
+            startComps.day = 1
+            start = calendar.date(from: startComps) ?? now
+            
+            var endComps = DateComponents()
+            endComps.year = year + 1
+            endComps.month = 1
+            endComps.day = 1
+            end = calendar.date(from: endComps) ?? start
+        }
+        
+        let filteredSales = saleTransactions().filter { $0.date >= start && $0.date < end }
+        var aggregated: [UUID: (name: String, qty: Double, totalCost: Double, totalRevenue: Double)] = [:]
+
+        for tx in filteredSales {
+            let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
+            for item in items {
+                let existing = aggregated[item.itemID] ?? (name: item.itemName, qty: 0, totalCost: 0, totalRevenue: 0)
+                let itemCost = item.quantity * (item.costPricePerUnit ?? 0)
+                let itemRevenue = item.quantity * (item.sellingPricePerUnit ?? 0)
+                aggregated[item.itemID] = (
+                    name: existing.name,
+                    qty: existing.qty + item.quantity,
+                    totalCost: existing.totalCost + itemCost,
+                    totalRevenue: existing.totalRevenue + itemRevenue
+                )
+            }
+        }
+
+        return aggregated.map { itemID, data in
+            let avgCost = data.qty > 0 ? data.totalCost / data.qty : 0
+            let avgSell = data.qty > 0 ? data.totalRevenue / data.qty : 0
+            return ProfitItem(
+                itemID: itemID,
+                name: data.name,
+                quantity: data.qty,
+                costPrice: avgCost,
+                sellingPrice: avgSell
+            )
+        }.sorted { ($0.sellingPrice * $0.quantity) > ($1.sellingPrice * $1.quantity) }
     }
 }

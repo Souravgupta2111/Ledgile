@@ -4,8 +4,8 @@ import UIKit
 class EditSalesItemTableViewCell: UITableViewCell {
 
     @IBOutlet var nameLabel: UITextField!
-    @IBOutlet var stepper: UIStepper!
-    @IBOutlet var quantityLabel: UILabel!
+    
+    @IBOutlet weak var quantityLabel: UITextField!
     @IBOutlet var unitLabel: UITextField!
     @IBOutlet var priceLabel: UITextField!
     @IBOutlet var deleteButton: UIButton!

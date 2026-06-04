@@ -11,7 +11,7 @@ protocol ItemInformationDelegate: AnyObject {
     func itemInformation(
         _ controller: ItemInformationTableViewController,
         item: Item,
-        quantity: Int,
+        quantity: Double,
         sellingPrice: Double
     )
     func incompleteItemEntered(
@@ -31,10 +31,10 @@ class ItemInformationTableViewController: UITableViewController {
     private var typedItemName: String?
 
     private var selectedItem: Item?
-    private var quantity: Int = 0
+    private var quantity: Double = 0
     private var sellingPrice: Double = 0
     
-    private var total: Double { Double(quantity) * sellingPrice }
+    private var total: Double { quantity * sellingPrice }
     weak var delegate: ItemInformationDelegate?
     
     override func viewDidLoad() {
@@ -48,7 +48,7 @@ class ItemInformationTableViewController: UITableViewController {
     }
     
     @objc private func quantityChanged(_ sender: UITextField) {
-        if let text = sender.text, let value = Int(text.replacingOccurrences(of: ",", with: ".")) {
+        if let text = sender.text, let value = Double(text.replacingOccurrences(of: ",", with: ".")) {
             quantity = value
         } else {
             quantity = 0
@@ -181,9 +181,9 @@ extension ItemInformationTableViewController {
                 cell.titleLabel.textColor = .systemRed
                 cell.textField.placeholder = "0"
 
-                cell.textField.text = quantity > 0 ? String(quantity) : nil
+                cell.textField.text = quantity > 0 ? quantity.cleanString : nil
                 cell.textField.addTarget(self, action: #selector(quantityChanged(_:)), for: .editingChanged)
-                cell.textField.keyboardType = .numberPad
+                cell.textField.keyboardType = .decimalPad
 
                 return cell
             case 3:

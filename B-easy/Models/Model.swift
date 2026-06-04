@@ -13,14 +13,18 @@ struct Item: Identifiable, Codable, Equatable {
     var defaultPriceUpdatedAt: Date
 
     // Inventory helpers
-    var lowStockThreshold: Int
-    var currentStock: Int
+    var lowStockThreshold: Double
+    var currentStock: Double
  
     let createdDate: Date
     var lastRestockDate: Date?
     var isActive: Bool
     var salesCount: Int? = nil
     var salesTier: Int? = nil
+
+    // Alternate custom unit (e.g., 1 Katta = 50 kg)
+    var alternateUnitName: String? = nil
+    var alternateUnitFactor: Double? = nil
 
     // GST fields (all optional — no impact on existing items)
     var hsnCode: String? = nil       // e.g., "19021100"
@@ -41,8 +45,8 @@ struct ItemBatch: Identifiable, Codable, Equatable {
     let itemID: UUID                    // FK → Item.id
     let purchaseTransactionID: UUID     // FK → Transaction.id
 
-    let quantityPurchased: Int
-    var quantityRemaining: Int
+    let quantityPurchased: Double
+    var quantityRemaining: Double
 
     let costPrice: Double
     let sellingPrice: Double
@@ -77,7 +81,7 @@ struct SaleItemBatch: Identifiable, Codable, Equatable {
     let transactionItemID: UUID      // FK → TransactionItem.id
     let batchID: UUID                 // FK → ItemBatch.id
     
-    let quantityConsumed: Int
+    let quantityConsumed: Double
     let costPriceUsed: Double
     let sellingPriceUsed: Double
     
@@ -87,11 +91,11 @@ struct SaleItemBatch: Identifiable, Codable, Equatable {
     // MARK: - Computed
     
     var profit: Double {
-        Double(quantityConsumed) * (sellingPriceUsed - costPriceUsed)
+        quantityConsumed * (sellingPriceUsed - costPriceUsed)
     }
     
     var revenue: Double {
-        Double(quantityConsumed) * sellingPriceUsed
+        quantityConsumed * sellingPriceUsed
     }
 }
 
@@ -131,7 +135,7 @@ struct TransactionItem: Identifiable, Codable, Equatable {
     let itemID: UUID                    // FK → Item.id
     let itemName: String
     let unit: String
-    let quantity: Int
+    let quantity: Double
     let sellingPricePerUnit: Double?
     let costPricePerUnit: Double?
     let createdDate: Date
@@ -147,17 +151,17 @@ struct TransactionItem: Identifiable, Codable, Equatable {
 
     var totalRevenue: Double {
         guard let price = sellingPricePerUnit else { return 0 }
-        return Double(quantity) * price
+        return quantity * price
     }
     
     var totalCost: Double {
         guard let price = costPricePerUnit else { return 0 }
-        return Double(quantity) * price
+        return quantity * price
     }
     
     var profit: Double {
         guard let sell = sellingPricePerUnit, let cost = costPricePerUnit else { return 0 }
-        return Double(quantity) * (sell - cost)
+        return quantity * (sell - cost)
     }
     
     var profitMargin: Double {
@@ -173,7 +177,7 @@ struct DailySummary: Identifiable, Codable {
     let totalRevenue: Double
     let totalProfit: Double
     let salesTransactionCount: Int
-    let itemsSoldCount: Int
+    let itemsSoldCount: Double
 
     let totalPurchaseAmount: Double
     let purchaseTransactionCount: Int
@@ -187,7 +191,7 @@ struct DailySummary: Identifiable, Codable {
 struct ItemSalesStats {
     let itemID: UUID
     let itemName: String
-    let quantitySold: Int
+    let quantitySold: Double
     let totalRevenue: Double
     let totalProfit: Double
     let profitMargin: Double
@@ -200,7 +204,7 @@ struct ItemProfitStats {
     let itemName: String
     let totalProfit: Double
     let profitPercentage: Double
-    let quantitySold: Int
+    let quantitySold: Double
     let profitPerUnit: Double
 }
 
@@ -209,7 +213,7 @@ struct TodaySnapshot {
     let revenue: Double
     let profit: Double
     let profitMargin: Double
-    let itemsSold: Int
+    let itemsSold: Double
     let transactionCount: Int
 
     let revenueChange: Double
@@ -245,7 +249,7 @@ struct ExpiryAlert: Identifiable {
     let itemID: UUID
     let itemName: String
     let batchID: UUID
-    let quantityRemaining: Int
+    let quantityRemaining: Double
     let expiryDate: Date
     let daysUntilExpiry: Int
     let severity: ExpirySeverity
@@ -266,8 +270,8 @@ struct LowStockAlert: Identifiable {
     let id: UUID
     let itemID: UUID
     let itemName: String
-    let currentStock: Int
-    let threshold: Int
+    let currentStock: Double
+    let threshold: Double
     let unit: String
 }
 
@@ -332,7 +336,7 @@ struct IncompleteSaleItem: Identifiable, Codable, Equatable {
     let transactionItemID: UUID
     
     let itemName: String
-    let quantity: Int
+    let quantity: Double
     let sellingPricePerUnit: Double
     
     var isCompleted: Bool
@@ -346,12 +350,12 @@ struct IncompleteSaleItem: Identifiable, Codable, Equatable {
     let createdAt: Date
     
     var totalRevenue: Double {
-        Double(quantity) * sellingPricePerUnit
+        quantity * sellingPricePerUnit
     }
     
     var estimatedProfit: Double? {
         guard let cost = costPricePerUnit else { return nil }
-        return Double(quantity) * (sellingPricePerUnit - cost)
+        return quantity * (sellingPricePerUnit - cost)
     }
     
     var daysIncomplete: Int {

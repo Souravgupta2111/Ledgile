@@ -69,8 +69,8 @@ class StockAnalysisTopTileTableViewCell: UITableViewCell {
                     return lhs.quantity > rhs.quantity
                 }
 
-                let lhsRevenue = lhs.sellingPrice * Double(lhs.quantity)
-                let rhsRevenue = rhs.sellingPrice * Double(rhs.quantity)
+                let lhsRevenue = lhs.sellingPrice * lhs.quantity
+                let rhsRevenue = rhs.sellingPrice * rhs.quantity
                 if lhsRevenue != rhsRevenue {
                     return lhsRevenue > rhsRevenue
                 }

@@ -2,7 +2,7 @@
 
 import Foundation
 
-// MARK: - Database Protocol (storage abstraction)
+
 
 protocol Database {
     // Item
@@ -53,7 +53,7 @@ protocol Database {
 enum DataModelError: Error, LocalizedError {
     case invalidQuantity
     case itemNotFound
-    case insufficientStock(available: Int, requested: Int)
+    case insufficientStock(available: Double, requested: Double)
     case insufficientStockMulti(items: [String])
     case incompleteSaleNotFound
     case incompleteSaleAlreadyCompleted
@@ -88,7 +88,7 @@ final class DataModel {
     // MARK: - PURCHASE FLOW
     func addPurchase(
         itemID: UUID,
-        quantity: Int,
+        quantity: Double,
         costPrice: Double,
         sellingPrice: Double,
         expiryDate: Date?,
@@ -167,7 +167,7 @@ final class DataModel {
             customerName: nil,
             customerPhone: nil,
             supplierName: supplierName,
-            totalAmount: Double(quantity) * costPrice,
+            totalAmount: quantity * costPrice,
             notes: nil,
             buyerGSTIN: txBuyerGSTIN,
             placeOfSupply: txPlaceOfSupply,
@@ -225,14 +225,14 @@ final class DataModel {
         
         let summary = try updatedDailySummary(
             date: day,
-            purchaseAmount: Double(quantity) * costPrice
+            purchaseAmount: quantity * costPrice
         )
         try db.upsertDailySummary(summary)
         return invoiceNumber
     }
 
     func addMultiItemPurchase(
-        items: [(itemID: UUID, quantity: Int, costPrice: Double, sellingPrice: Double, expiryDate: Date?)],
+        items: [(itemID: UUID, quantity: Double, costPrice: Double, sellingPrice: Double, expiryDate: Date?)],
         supplierName: String?,
         invoiceNumber: String? = nil,
         supplierGSTIN: String? = nil
@@ -342,7 +342,7 @@ final class DataModel {
             item.lastRestockDate = now
             inMemoryItems[purchaseItem.itemID] = item
             
-            totalPurchaseAmount += Double(purchaseItem.quantity) * purchaseItem.costPrice
+            totalPurchaseAmount += purchaseItem.quantity * purchaseItem.costPrice
         }
         
         let transaction = Transaction(
@@ -393,7 +393,7 @@ final class DataModel {
     
 
     struct BatchConsumptionResult {
-        let consumptions: [(batch: ItemBatch, consumed: Int)]
+        let consumptions: [(batch: ItemBatch, consumed: Double)]
         let updatedBatches: [ItemBatch]
         let totalCost: Double
         let totalRevenue: Double
@@ -402,7 +402,7 @@ final class DataModel {
    
     func consumeBatchesFIFO(
         itemID: UUID,
-        quantity: Int,
+        quantity: Double,
         sellingPrice: Double? = nil
     ) throws -> BatchConsumptionResult {
         var batches = try db.getBatches(for: itemID)
@@ -419,7 +419,7 @@ final class DataModel {
         }
 
         var remaining = quantity
-        var consumptions: [(batch: ItemBatch, consumed: Int)] = []
+        var consumptions: [(batch: ItemBatch, consumed: Double)] = []
         var totalCost: Double = 0
         var totalRevenue: Double = 0
 
@@ -428,9 +428,9 @@ final class DataModel {
             batches[i].quantityRemaining -= consumeQty
             consumptions.append((batch: batches[i], consumed: consumeQty))
 
-            totalCost += Double(consumeQty) * batches[i].costPrice
+            totalCost += consumeQty * batches[i].costPrice
             let price = sellingPrice ?? batches[i].sellingPrice
-            totalRevenue += Double(consumeQty) * price
+            totalRevenue += consumeQty * price
             remaining -= consumeQty
         }
 
@@ -445,7 +445,7 @@ final class DataModel {
     // MARK: - SALE FLOW (FIFO/FEFO)
     func addSale(
         itemID: UUID,
-        quantity: Int,
+        quantity: Double,
         customerName: String?,
         customerPhone: String?,
         buyerGSTIN: String? = nil,
@@ -488,7 +488,7 @@ final class DataModel {
         }
         
         var remainingToSell = quantity
-        var batchConsumptions: [(batch: ItemBatch, consumed: Int)] = []
+        var batchConsumptions: [(batch: ItemBatch, consumed: Double)] = []
         var totalCost: Double = 0
         var totalRevenue: Double = 0
         
@@ -502,8 +502,8 @@ final class DataModel {
             
             // Track consumption
             batchConsumptions.append((batch: batch, consumed: consumeQty))
-            let batchRevenue = Double(consumeQty) * batch.sellingPrice
-            let batchCost = Double(consumeQty) * batch.costPrice
+            let batchRevenue = consumeQty * batch.sellingPrice
+            let batchCost = consumeQty * batch.costPrice
             
             totalRevenue += batchRevenue
             totalCost += batchCost
@@ -511,8 +511,8 @@ final class DataModel {
             remainingToSell -= consumeQty
         }
         
-        let avgSellingPrice = totalRevenue / Double(quantity)
-        let avgCostPrice = totalCost / Double(quantity)
+        let avgSellingPrice = totalRevenue / quantity
+        let avgCostPrice = totalCost / quantity
         let totalProfit = totalRevenue - totalCost
         
         let isGST = settings.isGSTRegistered && settings.gstScheme != "composition"
@@ -706,7 +706,7 @@ final class DataModel {
         date: Date,
         revenue: Double = 0,
         profit: Double = 0,
-        itemsSold: Int = 0,
+        itemsSold: Double = 0,
         purchaseAmount: Double = 0
     ) throws -> DailySummary {
         let existing = try db.getDailySummary(for: date)
@@ -727,8 +727,7 @@ final class DataModel {
         return try db.getAllItems()
     }
     
-    /// Reconcile every item's currentStock with the true sum of batch quantityRemaining.
-    /// Call once at app startup to fix any drifted counters.
+
     func reconcileAllStock() {
         do {
             let items = try db.getAllItems()
@@ -751,7 +750,7 @@ final class DataModel {
     }
     
     func addMultiItemSale(
-        items: [(itemID: UUID, quantity: Int, sellingPrice: Double)],
+        items: [(itemID: UUID, quantity: Double, sellingPrice: Double)],
         customerName: String?,
         customerPhone: String?,
         discount: Double = 0,
@@ -791,7 +790,7 @@ final class DataModel {
         var billTotalIGST: Double = 0
         var billTotalCess: Double = 0
         
-        // 1. Pre-check stock for all items to provide a comprehensive alert
+
         var outOfStockItemNames: [String] = []
         var preCheckBatches: [UUID: [ItemBatch]] = [:]
         
@@ -842,20 +841,20 @@ final class DataModel {
                 }
             
             let totalAvailable = batches.reduce(0) { $0 + $1.quantityRemaining }
-            // Assuming totalAvailable >= saleItem.quantity based on pre-check
+
             
             var remaining = saleItem.quantity
-            var batchConsumptions: [(batch: ItemBatch, consumed: Int)] = []
+            var batchConsumptions: [(batch: ItemBatch, consumed: Double)] = []
             var itemCost: Double = 0
             for i in batches.indices where remaining > 0 {
                 let consumeQty = min(batches[i].quantityRemaining, remaining)
                 batches[i].quantityRemaining -= consumeQty
                 batchConsumptions.append((batch: batches[i], consumed: consumeQty))
-                itemCost += Double(consumeQty) * batches[i].costPrice
+                itemCost += consumeQty * batches[i].costPrice
                 remaining -= consumeQty
             }
-            let itemRevenue = Double(saleItem.quantity) * saleItem.sellingPrice
-            let avgCostPrice = itemCost / Double(saleItem.quantity)
+            let itemRevenue = saleItem.quantity * saleItem.sellingPrice
+            let avgCostPrice = itemCost / saleItem.quantity
             let txItemID = UUID()
             var txItem = TransactionItem(
                 id: txItemID,
@@ -961,7 +960,7 @@ final class DataModel {
             date: day,
             revenue: grandTotal,
             profit: totalProfit,
-            itemsSold: totalItemsSold
+            itemsSold: Double(totalItemsSold)
         )
         try db.upsertDailySummary(summary)
         let sold = items.map { (itemID: $0.itemID, quantity: $0.quantity) }
@@ -969,10 +968,10 @@ final class DataModel {
         
         return transaction
     }
-     func updateSalesCountAndTiers(sold: [(itemID: UUID, quantity: Int)]) throws {
+     func updateSalesCountAndTiers(sold: [(itemID: UUID, quantity: Double)]) throws {
         for (id, qty) in sold {
             guard var item = try db.getItem(id: id) else { continue }
-            item.salesCount = (item.salesCount ?? 0) + qty
+            item.salesCount = (item.salesCount ?? 0) + Int(qty)
             try db.updateItem(item)
         }
         var all = try db.getAllItems()
@@ -988,7 +987,7 @@ final class DataModel {
         }
     }
     func recordSaleWithoutStockCheck(
-        items: [(itemID: UUID, quantity: Int, sellingPrice: Double)],
+        items: [(itemID: UUID, quantity: Double, sellingPrice: Double)],
         customerName: String?,
         customerPhone: String?,
         discount: Double = 0,
@@ -1038,7 +1037,7 @@ final class DataModel {
                 createdDate: now
             )
 
-            // Per-item GST calculation (Regular scheme only)
+
             if isGST, let item = itemOpt, let gstRate = item.gstRate {
                 let taxResult = GSTEngine.calculateTax(
                     price: saleItem.sellingPrice,
@@ -1065,7 +1064,7 @@ final class DataModel {
             }
 
             allTxItems.append(txItem)
-            totalRevenue += Double(saleItem.quantity) * saleItem.sellingPrice
+            totalRevenue += saleItem.quantity * saleItem.sellingPrice
         }
         let grandTotal = totalRevenue - discount + adjustment
         let transaction = Transaction(
@@ -1095,7 +1094,7 @@ final class DataModel {
             try db.updateSettings(settings)
         }
         let summary = try updatedDailySummary(
-            date: day, revenue: grandTotal, profit: 0, itemsSold: totalItemsSold
+            date: day, revenue: grandTotal, profit: 0, itemsSold: Double(totalItemsSold)
         )
         try db.upsertDailySummary(summary)
 
@@ -1109,7 +1108,7 @@ final class DataModel {
         var profit: Double = 0
         var purchaseTotal: Double = 0
         var saleCount: Int = 0
-        var itemsSold: Int = 0
+        var itemsSold: Double = 0
         var itemsPurchased: Set<UUID> = []
     }
 
@@ -1126,7 +1125,7 @@ final class DataModel {
                 stats.saleCount += 1
                 let items = (try? db.getTransactionItems(for: tx.id)) ?? []
                 for item in items {
-                    stats.profit += Double(item.quantity) * ((item.sellingPricePerUnit ?? 0) - (item.costPricePerUnit ?? 0))
+                    stats.profit += item.quantity * ((item.sellingPricePerUnit ?? 0) - (item.costPricePerUnit ?? 0))
                     stats.itemsSold += item.quantity
                 }
             case .purchase:
@@ -1158,8 +1157,7 @@ final class DataModel {
     }
 
     func getFinancialYearInvestment() -> Double {
-        // Investment is usually "total value currently on hand", which is already what getTotalInvestment() calculates.
-        // However, if we want total spend in FY:
+
         guard let transactions = try? db.getTransactions() else { return 0 }
         let now = Date()
         let month = calendar.component(.month, from: now)
@@ -1182,14 +1180,14 @@ final class DataModel {
     func getTodayPurchaseTotal() -> Double { getTodayStats().purchaseTotal }
     func getTodayItemsPurchasedCount() -> Int { getTodayStats().itemsPurchased.count }
     func getTodaySaleCount() -> Int { getTodayStats().saleCount }
-    func getTodayItemsSoldCount() -> Int { getTodayStats().itemsSold }
+    func getTodayItemsSoldCount() -> Double { getTodayStats().itemsSold }
     func getTotalInvestment() -> Double {
         guard let items = try? db.getAllItems() else { return 0 }
         var total: Double = 0
         for item in items {
             if let batches = try? db.getBatches(for: item.id) {
                 for batch in batches where batch.quantityRemaining > 0 {
-                    total += Double(batch.quantityRemaining) * batch.costPrice
+                    total += batch.quantityRemaining * batch.costPrice
                 }
             }
         }
@@ -1202,7 +1200,7 @@ final class DataModel {
         df.dateFormat = "ddMMyy"
         let dateKey = df.string(from: Date())
         
-        // Count today's existing transactions of this type to determine sequence
+
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
         let allTx = (try? db.getTransactions()) ?? []
@@ -1244,10 +1242,10 @@ final class DataModel {
 
 extension DataModel {
     
-    // MARK: - QUICK SALE (Without Full Item Setup)
+
     func addQuickSale(
         itemName: String,
-        quantity: Int,
+        quantity: Double,
         sellingPrice: Double,
         customerName: String?,
         customerPhone: String?
@@ -1271,7 +1269,7 @@ extension DataModel {
             customerName: customerName,
             customerPhone: customerPhone,
             supplierName: nil,
-            totalAmount: Double(quantity) * sellingPrice,
+            totalAmount: quantity * sellingPrice,
             notes: "⚠️ Quick sale - item details incomplete"
         )
         
@@ -1313,7 +1311,7 @@ extension DataModel {
         
         let summary = try updatedDailySummary(
             date: day,
-            revenue: Double(quantity) * sellingPrice,
+            revenue: quantity * sellingPrice,
             profit: 0,  // Can't calculate without cost
             itemsSold: quantity
         )
@@ -1328,7 +1326,7 @@ extension DataModel {
         unit: String,
         costPrice: Double,
         defaultSellingPrice: Double?,
-        lowStockThreshold: Int,
+        lowStockThreshold: Double,
         supplierName: String?,
         expiryDate: Date?
     ) throws {
@@ -1352,13 +1350,13 @@ extension DataModel {
             defaultSellingPrice: defaultSellingPrice ?? incompleteSale.sellingPricePerUnit,
             defaultPriceUpdatedAt: now,
             lowStockThreshold: lowStockThreshold,
-            currentStock: 0,  // Will be negative after retroactive sale
+            currentStock: 0,  
             createdDate: now,
             lastRestockDate: nil,
             isActive: true
         )
         
-        // This batch will have negative stock initially
+
         let purchaseTxID = UUID()
         let virtualPurchase = Transaction(
             id: purchaseTxID,
@@ -1368,7 +1366,7 @@ extension DataModel {
             customerName: nil,
             customerPhone: nil,
             supplierName: supplierName,
-            totalAmount: Double(incompleteSale.quantity) * costPrice,
+            totalAmount: incompleteSale.quantity * costPrice,
             notes: "Retroactive purchase for incomplete sale #\(incompleteSale.id)"
         )
         
@@ -1432,13 +1430,13 @@ extension DataModel {
         incompleteSale.expiryDate = expiryDate
         
         let saleDate = calendar.startOfDay(for: incompleteSale.createdAt)
-        let profit = Double(incompleteSale.quantity) * (incompleteSale.sellingPricePerUnit - costPrice)
+        let profit = incompleteSale.quantity * (incompleteSale.sellingPricePerUnit - costPrice)
         
         let summary = try updatedDailySummary(
             date: saleDate,
-            revenue: 0,  // Already counted
-            profit: profit,  // Now we can add profit
-            itemsSold: 0  // Already counted
+            revenue: 0,  
+            profit: profit, 
+            itemsSold: 0  
         )
         
         try db.insertItem(item)

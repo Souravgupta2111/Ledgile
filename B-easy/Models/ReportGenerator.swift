@@ -11,6 +11,7 @@ enum ReportType: String, CaseIterable {
     case fastMovingItems     = "Fast Moving Items"
     case slowDeadStock       = "Slow / Dead Stock"
     case itemProfitability   = "Item Profitability"
+    case itemSalesByMonth    = "Item Sales by Month"
     case customerLedger      = "Customer Ledger"
     case supplierLedger      = "Supplier Ledger"
     case outstandingReceivables = "Outstanding Receivables"
@@ -31,6 +32,7 @@ enum ReportType: String, CaseIterable {
         case .fastMovingItems:      return "hare.fill"
         case .slowDeadStock:        return "tortoise.fill"
         case .itemProfitability:    return "indianrupeesign.circle.fill"
+        case .itemSalesByMonth:     return "calendar.badge.clock"
         case .customerLedger:       return "person.text.rectangle.fill"
         case .supplierLedger:       return "shippingbox.fill"
         case .outstandingReceivables: return "arrow.down.circle.fill"
@@ -45,7 +47,7 @@ enum ReportType: String, CaseIterable {
     var needsDateRange: Bool {
         switch self {
         case .stockSummary, .expiryAlert, .customerLedger, .supplierLedger,
-             .outstandingReceivables, .outstandingPayables:
+             .outstandingReceivables, .outstandingPayables, .itemSalesByMonth:
             return false
         default:
             return true
@@ -115,6 +117,8 @@ final class ReportGenerator {
                 drawSlowDeadStock(&ctx, from: startDate, to: endDate)
             case .itemProfitability:
                 drawItemProfitability(&ctx, from: startDate, to: endDate)
+            case .itemSalesByMonth:
+                drawItemSalesByMonth(&ctx)
             case .customerLedger:
                 drawCustomerLedger(&ctx)
             case .supplierLedger:
@@ -285,13 +289,16 @@ final class ReportGenerator {
         ctx.cursorY += 18
     }
 
-    private func drawTableHeader(_ ctx: inout PDFContext, columns: [(String, CGFloat)]) {
+    private func drawTableHeader(_ ctx: inout PDFContext, columns: [(String, CGFloat)], fontSize: CGFloat = 9) {
         ctx.checkPageBreak(needed: 24)
-        let font = UIFont.systemFont(ofSize: 9, weight: .bold)
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
         let onyx = UIColor(named: "Onyx") ?? .black
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: onyx]
 
-        let rect = CGRect(x: ctx.margin, y: ctx.cursorY, width: ctx.contentWidth, height: 18)
+        let rectHeight = fontSize == 9 ? 18.0 : fontSize * 2.0
+        let yOffset = fontSize == 9 ? 3.0 : fontSize * 0.3
+
+        let rect = CGRect(x: ctx.margin, y: ctx.cursorY, width: ctx.contentWidth, height: rectHeight)
         let beige = UIColor(named: "Beige") ?? .systemGray5
         beige.setFill()
         UIBezierPath(roundedRect: rect, cornerRadius: 3).fill()
@@ -299,20 +306,23 @@ final class ReportGenerator {
         var x = ctx.margin + 4
         for (title, width) in columns {
             NSAttributedString(string: title, attributes: attrs)
-                .draw(in: CGRect(x: x, y: ctx.cursorY + 3, width: width - 4, height: 14))
+                .draw(in: CGRect(x: x, y: ctx.cursorY + yOffset, width: width - 4, height: rectHeight))
             x += width
         }
 
-        ctx.cursorY += 20
+        ctx.cursorY += rectHeight + 2
     }
 
-    private func drawTableRow(_ ctx: inout PDFContext, values: [String], columns: [(String, CGFloat)], highlight: Bool = false) {
+    private func drawTableRow(_ ctx: inout PDFContext, values: [String], columns: [(String, CGFloat)], highlight: Bool = false, fontSize: CGFloat = 9) {
         ctx.checkPageBreak(needed: 18)
-        let font = UIFont.systemFont(ofSize: 9, weight: .regular)
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .regular)
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.black]
 
+        let rectHeight = fontSize == 9 ? 16.0 : fontSize * 1.8
+        let yOffset = fontSize == 9 ? 2.0 : fontSize * 0.2
+
         if highlight {
-            let rect = CGRect(x: ctx.margin, y: ctx.cursorY, width: ctx.contentWidth, height: 16)
+            let rect = CGRect(x: ctx.margin, y: ctx.cursorY, width: ctx.contentWidth, height: rectHeight)
             let beige = UIColor(named: "Beige") ?? .systemGray5
             beige.withAlphaComponent(0.4).setFill()
             UIBezierPath(rect: rect).fill()
@@ -322,27 +332,27 @@ final class ReportGenerator {
         for (i, (_, width)) in columns.enumerated() {
             let val = i < values.count ? values[i] : ""
             NSAttributedString(string: val, attributes: attrs)
-                .draw(in: CGRect(x: x, y: ctx.cursorY + 2, width: width - 4, height: 14))
+                .draw(in: CGRect(x: x, y: ctx.cursorY + yOffset, width: width - 4, height: rectHeight))
             x += width
         }
 
-        ctx.cursorY += 16
+        ctx.cursorY += rectHeight
     }
 
-    private func drawTotalsRow(_ ctx: inout PDFContext, values: [String], columns: [(String, CGFloat)]) {
+    private func drawTotalsRow(_ ctx: inout PDFContext, values: [String], columns: [(String, CGFloat)], fontSize: CGFloat = 9) {
         ctx.checkPageBreak(needed: 22)
         drawLine(&ctx)
-        let font = UIFont.systemFont(ofSize: 9, weight: .bold)
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.black]
 
         var x = ctx.margin + 4
         for (i, (_, width)) in columns.enumerated() {
             let val = i < values.count ? values[i] : ""
             NSAttributedString(string: val, attributes: attrs)
-                .draw(in: CGRect(x: x, y: ctx.cursorY + 2, width: width - 4, height: 14))
+                .draw(in: CGRect(x: x, y: ctx.cursorY + 2, width: width - 4, height: fontSize * 1.5))
             x += width
         }
-        ctx.cursorY += 20
+        ctx.cursorY += fontSize == 9 ? 20 : fontSize * 2.2
     }
 
     private func drawEmptyMessage(_ ctx: inout PDFContext, _ message: String) {
@@ -368,7 +378,7 @@ final class ReportGenerator {
             totalRevenue += tx.totalAmount
             let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
             for item in items {
-                totalCOGS += Double(item.quantity) * (item.costPricePerUnit ?? 0)
+                totalCOGS += item.quantity * (item.costPricePerUnit ?? 0)
             }
         }
 
@@ -582,7 +592,7 @@ final class ReportGenerator {
         let allTx = (try? dm.db.getTransactions()) ?? []
         let sales = allTx.filter { $0.type == .sale && $0.date >= from && $0.date <= to }
 
-        var itemStats: [UUID: (name: String, qty: Int, revenue: Double)] = [:]
+        var itemStats: [UUID: (name: String, qty: Double, revenue: Double)] = [:]
         for tx in sales {
             let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
             for item in items {
@@ -680,7 +690,7 @@ final class ReportGenerator {
         let allTx = (try? dm.db.getTransactions()) ?? []
         let sales = allTx.filter { $0.type == .sale && $0.date >= from && $0.date <= to }
 
-        var itemStats: [UUID: (name: String, qty: Int, revenue: Double, cogs: Double)] = [:]
+        var itemStats: [UUID: (name: String, qty: Double, revenue: Double, cogs: Double)] = [:]
         for tx in sales {
             let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
             for item in items {
@@ -737,6 +747,85 @@ final class ReportGenerator {
             totalRev > 0 ? String(format: "%.1f%%", (totalProfit / totalRev) * 100) : "0%",
             "100%"
         ], columns: columns)
+    }
+
+    private func drawItemSalesByMonth(_ ctx: inout PDFContext) {
+        let allTx = (try? dm.db.getTransactions()) ?? []
+        let sales = allTx.filter { $0.type == .sale }
+        let allItems = (try? dm.db.getAllItems()) ?? []
+        
+        let calendar = Calendar.current
+        let now = Date()
+        
+        var months: [(year: Int, month: Int, title: String)] = []
+        let df = DateFormatter()
+        df.dateFormat = "MMM yy"
+        
+        for i in 0..<12 {
+            if let d = calendar.date(byAdding: .month, value: -i, to: now) {
+                let comp = calendar.dateComponents([.year, .month], from: d)
+                months.append((year: comp.year!, month: comp.month!, title: df.string(from: d)))
+            }
+        }
+        
+        let itemColWidth: CGFloat = 85.0
+        let monthColWidth = (ctx.contentWidth - itemColWidth) / 12.0
+        var columns: [(String, CGFloat)] = [("Item", itemColWidth)]
+        
+        for m in months {
+            columns.append((m.title, monthColWidth))
+        }
+        
+        var itemData: [UUID: [Int: Double]] = [:]
+        for item in allItems {
+            itemData[item.id] = [:]
+        }
+        
+        for tx in sales {
+            let txComp = calendar.dateComponents([.year, .month], from: tx.date)
+            if let monthIndex = months.firstIndex(where: { $0.year == txComp.year && $0.month == txComp.month }) {
+                let items = (try? dm.db.getTransactionItems(for: tx.id)) ?? []
+                for item in items {
+                    let existing = itemData[item.itemID]?[monthIndex] ?? 0
+                    itemData[item.itemID]?[monthIndex] = existing + item.quantity
+                }
+            }
+        }
+        
+        let activeItems = itemData.filter { _, monthlySales in
+            monthlySales.values.reduce(0, +) > 0
+        }
+        
+        let sortedItemIDs = activeItems.keys.sorted { id1, id2 in
+            let name1 = allItems.first(where: { $0.id == id1 })?.name ?? ""
+            let name2 = allItems.first(where: { $0.id == id2 })?.name ?? ""
+            return name1 < name2
+        }
+        
+        guard !sortedItemIDs.isEmpty else {
+            drawEmptyMessage(&ctx, "No sales found in the last 12 months.")
+            return
+        }
+        
+        drawTableHeader(&ctx, columns: columns, fontSize: 7)
+        
+        for (i, itemID) in sortedItemIDs.enumerated() {
+            let name = allItems.first(where: { $0.id == itemID })?.name ?? "Unknown"
+            var rowValues = [name]
+            let monthlySales = itemData[itemID] ?? [:]
+            
+            for mIndex in 0..<12 {
+                let qty = monthlySales[mIndex] ?? 0
+                if qty == 0 {
+                    rowValues.append("-")
+                } else {
+                    let qtyStr = qty.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(qty)) : String(format: "%.1f", qty)
+                    rowValues.append(qtyStr)
+                }
+            }
+            
+            drawTableRow(&ctx, values: rowValues, columns: columns, highlight: i % 2 == 0, fontSize: 7)
+        }
     }
 
     private func drawCustomerLedger(_ ctx: inout PDFContext) {

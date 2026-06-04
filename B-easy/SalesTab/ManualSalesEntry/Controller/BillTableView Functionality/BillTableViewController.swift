@@ -247,11 +247,11 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 let item = details.items[index]
                 let isPurchase = details.transactionType == .purchase
                 let rate = isPurchase ? (item.costPricePerUnit ?? 0) : (item.sellingPricePerUnit ?? 0)
-                let totalPrice = Double(item.quantity) * rate
+                let totalPrice = item.quantity * rate
                 
                 cell.titleLabel.text = item.itemName
                 cell.priceLabel.text = String(format: "₹ %.2f", totalPrice)
-                cell.detailLabel.text = String(format: "%d × ₹%.2f", item.quantity, rate)
+                cell.detailLabel.text = String(format: "%@ × ₹%.2f", item.quantity.cleanString, rate)
                 return cell
                 
             case .tax(let type, let amount):
@@ -320,7 +320,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
     @objc private func didTapSave() {
         guard let details = details else { return }
 
-        // ── Read-only mode: export bill as PDF to Files ──
+
         if isReadOnly {
             let pdfData = renderBillAsPDF()
             let fileName = "Invoice_\(details.invoiceNumber).pdf"
@@ -336,18 +336,18 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         let dm = AppDataModel.shared.dataModel
         let db = dm.db
 
-        // Resolve items BEFORE do/catch so saleItems is accessible in catch blocks
-        var saleItems: [(itemID: UUID, quantity: Int, sellingPrice: Double)] = []
+
+        var saleItems: [(itemID: UUID, quantity: Double, sellingPrice: Double)] = []
 
         do {
-            // 1) Load all existing items for fast lookup by name (case-insensitive)
+
             let existingItems = try db.getAllItems()
             var nameToItem: [String: Item] = [:]
             for item in existingItems {
                 nameToItem[item.name.lowercased()] = item
             }
             
-            // 2) Resolve each bill line to a real Item.id, creating items when missing
+
             let now = Date()
             
             for txItem in details.items {
@@ -405,8 +405,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         }
         
         catch DataModelError.insufficientStockMulti(let items) {
-            // Still record the sale transaction (without stock deduction)
-            // so it appears in transactions and analytics
+
             let stateCode = IndianStates.stateByName(details.buyerState ?? "")?.code
             do {
                 _ = try dm.recordSaleWithoutStockCheck(
@@ -519,9 +518,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 y += 16
             }
 
-            // ═══════════════════════════════════════════
-            // TITLE
-            // ═══════════════════════════════════════════
+
             let isPurchase = details.transactionType == .purchase
 
             if isGST || isComposition {
@@ -541,16 +538,16 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y += 4
             drawLine(at: y, weight: 1.0); y += 10
 
-            // ═══════════════════════════════════════════
+
             // SELLER + INVOICE INFO (side by side)
-            // ═══════════════════════════════════════════
+
             let halfW = contentWidth * 0.5
             let leftX = margin
             let rightX = margin + halfW + 8
             let rhW = halfW - 8
             let blockTop = y
 
-            // Left: Seller info
+            // Seller info
             let settings = try? AppDataModel.shared.dataModel.db.getSettings()
             let bizName = settings?.businessName ?? "My Business"
             drawText(bizName, font: headingFont, rect: CGRect(x: leftX, y: y, width: halfW, height: 14))
@@ -573,7 +570,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             }
             let leftBottom = y
 
-            // Right: Invoice details
+            // Invoice details
             var ry = blockTop
             drawText("Invoice #: \(details.invoiceNumber)", font: boldBody, rect: CGRect(x: rightX, y: ry, width: rhW, height: 14))
             ry += 14
@@ -592,9 +589,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y = max(leftBottom, ry) + 6
             drawLine(at: y); y += 8
 
-            // ═══════════════════════════════════════════
+
             // BUYER INFO
-            // ═══════════════════════════════════════════
+
             let partyLabel = isPurchase ? "Supplier" : "Buyer"
             drawText("\(partyLabel): \(details.customerName)", font: headingFont,
                      rect: CGRect(x: margin, y: y, width: contentWidth, height: 14))
@@ -606,9 +603,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y += 4
             drawLine(at: y); y += 6
 
-            // ═══════════════════════════════════════════
+
             // ITEM TABLE
-            // ═══════════════════════════════════════════
+
             if isGST {
                 // GST table: # | Item | HSN | Qty | Rate | Taxable | Tax | Amount
                 let itemColumnWidth = contentWidth * 0.25
@@ -633,7 +630,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 for (idx, item) in details.items.enumerated() {
                     ensureSpace(18)
                     let rate = isPurchase ? (item.costPricePerUnit ?? 0) : (item.sellingPricePerUnit ?? 0)
-                    let amount = Double(item.quantity) * rate
+                    let amount = item.quantity * rate
                     let taxable = item.taxableValue ?? amount
                     let hsn = item.hsnCode ?? "—"
                     let gstRate = item.gstRate
@@ -644,7 +641,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                     let cessAmount = item.cessAmount ?? 0
                     let taxAmt = cgstAmount + sgstAmount + igstAmount + cessAmount
                     let indexValue = "\(idx + 1)"
-                    let quantityValue = "\(item.quantity)"
+                    let quantityValue = item.quantity.cleanString
                     let rateValue = String(format: "₹%.2f", rate)
                     let taxableValue = String(format: "₹%.2f", taxable)
                     let taxAmountValue = String(format: "₹%.2f", taxAmt)
@@ -679,9 +676,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 for item in details.items {
                     ensureSpace(18)
                     let rate = isPurchase ? (item.costPricePerUnit ?? 0) : (item.sellingPricePerUnit ?? 0)
-                    let amount = Double(item.quantity) * rate
+                    let amount = item.quantity * rate
                     drawText(item.itemName, font: bodyFont, rect: CGRect(x: margin, y: y, width: contentWidth * 0.5, height: 14))
-                    drawText("\(item.quantity)", font: bodyFont, rect: CGRect(x: margin + contentWidth * 0.5, y: y, width: contentWidth * 0.15, height: 14), alignment: .center)
+                    drawText(item.quantity.cleanString, font: bodyFont, rect: CGRect(x: margin + contentWidth * 0.5, y: y, width: contentWidth * 0.15, height: 14), alignment: .center)
                     drawText(String(format: "₹%.2f", rate), font: bodyFont, rect: CGRect(x: margin + contentWidth * 0.65, y: y, width: contentWidth * 0.15, height: 14), alignment: .right)
                     drawText(String(format: "₹%.2f", amount), font: bodyFont, rect: CGRect(x: margin + contentWidth * 0.8, y: y, width: contentWidth * 0.2, height: 14), alignment: .right)
                     y += 16
@@ -690,7 +687,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
 
             y += 4; drawLine(at: y, weight: 1.0); y += 8
 
-            // ═══════════════════════════════════════════
+
             // TOTALS
             let subTotal = details.items.reduce(0.0) { $0 + (isPurchase ? $1.totalCost : $1.totalRevenue) }
 
@@ -701,9 +698,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 drawRow(label: "Adjustment:", value: String(format: "₹%.2f", details.adjustment))
             }
 
-            // ═══════════════════════════════════════════
+
             // RATE-WISE TAX BREAKUP TABLE (GST only)
-            // ═══════════════════════════════════════════
+
             if let taxBreakup = details.taxBreakup, !taxBreakup.rateWiseSummary.isEmpty {
                 ensureSpace(60)
                 y += 4
@@ -755,9 +752,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 if taxBreakup.totalCess > 0 { drawRow(label: "Total Cess:", value: String(format: "₹%.2f", taxBreakup.totalCess)) }
             }
 
-            // ═══════════════════════════════════════════
+
             // GRAND TOTAL
-            // ═══════════════════════════════════════════
+
             ensureSpace(30)
             drawLine(at: y, weight: 1.0); y += 8
             let grandTotal = subTotal - details.discount + details.adjustment
@@ -773,9 +770,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                      rect: CGRect(x: margin, y: y, width: contentWidth, height: 14))
             y += 20
 
-            // ═══════════════════════════════════════════
+
             // FOOTER
-            // ═══════════════════════════════════════════
+
             if isComposition {
                 ensureSpace(30)
                 drawLine(at: y); y += 8

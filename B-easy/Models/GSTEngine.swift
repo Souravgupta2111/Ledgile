@@ -5,26 +5,17 @@ import Foundation
 
 enum GSTEngine {
 
-    // MARK: - Tax Calculation
 
-    /// Calculate tax for a single item
-    /// - Parameters:
-    ///   - price: The price per unit (MRP or exclusive depending on `pricesIncludeGST`)
-    ///   - quantity: Number of units
-    ///   - gstRate: GST rate as percentage (e.g. 18.0 for 18%)
-    ///   - cessRate: Additional cess rate as percentage (e.g. 12.0)
-    ///   - isInterState: If true → IGST; if false → CGST+SGST
-    ///   - pricesIncludeGST: If true, price is MRP (tax-inclusive), reverse calculate
     static func calculateTax(
         price: Double,
-        quantity: Int,
+        quantity: Double,
         gstRate: Double,
         cessRate: Double = 0,
         isInterState: Bool,
         pricesIncludeGST: Bool = true
     ) -> ItemTaxResult {
 
-        let totalPrice = price * Double(quantity)
+        let totalPrice = price * quantity
         let effectiveGSTRate = gstRate / 100.0
         let effectiveCessRate = cessRate / 100.0
 
@@ -67,9 +58,9 @@ enum GSTEngine {
         )
     }
 
-    // MARK: - Bill-Level Breakup
 
-    /// Generate a complete GST breakup from an array of per-item tax results with their rates
+
+
     static func generateBreakup(
         itemResults: [(gstRate: Double, result: ItemTaxResult)]
     ) -> GSTBreakup {
@@ -114,9 +105,8 @@ enum GSTEngine {
         )
     }
 
-    // MARK: - Inter-State Detection
 
-    /// Determine if a transaction is inter-state
+
     static func isInterStateSupply(sellerStateCode: String?, buyerStateCode: String?) -> Bool {
         guard let seller = sellerStateCode, let buyer = buyerStateCode,
               !seller.isEmpty, !buyer.isEmpty else {
@@ -125,35 +115,28 @@ enum GSTEngine {
         return seller != buyer
     }
 
-    // MARK: - Composition Scheme
 
-    /// Calculate composition scheme tax (flat rate on total turnover)
-    /// This is NOT charged per-invoice; it's for quarterly filing calculation
     static func compositionTax(totalTurnover: Double, compositionRate: Double) -> Double {
         return round2(totalTurnover * (compositionRate / 100.0))
     }
 
-    // MARK: - GSTIN Validation
 
-    /// Basic GSTIN format validation (15 characters, alphanumeric pattern)
     static func isValidGSTIN(_ gstin: String) -> Bool {
         let trimmed = gstin.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard trimmed.count == 15 else { return false }
 
-        // Pattern: 2 digits (state code) + 10 chars (PAN) + 1 digit (entity) + 1 char (Z default) + 1 check digit
+
         let pattern = "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$"
         return trimmed.range(of: pattern, options: .regularExpression) != nil
     }
 
-    // MARK: - Taxable Value from MRP
 
-    /// Reverse calculate taxable value from MRP (inclusive price)
     static func taxableValueFromMRP(mrp: Double, gstRate: Double, cessRate: Double = 0) -> Double {
         let totalRate = (gstRate + cessRate) / 100.0
         return round2(mrp / (1.0 + totalRate))
     }
 
-    // MARK: - Helpers
+
 
     private static func round2(_ value: Double) -> Double {
         (value * 100).rounded() / 100

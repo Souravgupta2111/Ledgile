@@ -327,7 +327,6 @@ final class CLIPFeatureExtractor: FeatureVectorExtractor {
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
 
         // CLIP/MobileCLIP normalization: ImageNet mean/std
-        // CoreML exports do NOT bake this in — we must apply it.
         let mean: [Float] = [0.48145466, 0.4578275, 0.40821073]
         let std: [Float]  = [0.26862954, 0.26130258, 0.27577711]
 

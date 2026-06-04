@@ -104,7 +104,7 @@ extension ProfitAndLossViewController: UITableViewDataSource, UITableViewDelegat
             let item = items[indexPath.row]
             cell.configure(
                 itemName: item.name,
-                qty: "\(item.quantity)",
+                qty: item.quantity.cleanString,
                 price: "₹\(String(format: "%.2f", item.totalProfit))"
             )
             

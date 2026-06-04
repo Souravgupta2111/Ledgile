@@ -44,10 +44,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     private let suggestionsTableView = UITableView(frame: .zero, style: .plain)
     private weak var activeNameField: UITextField?
 
-    // Index of the expanded item (chevron tapped to show detail fields).
+
     private var expandedItemIndex: Int? = nil
 
-    // Holds voice/scan result passed before viewDidLoad; consumed in viewDidLoad.
     var pendingResult: ParsedResult?
     var pendingPurchaseResult: ParsedPurchaseResult?
     var entryMode: EntryMode = .manual
@@ -90,7 +89,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         setupSuggestionsTableView()
         
-        // Apply any data passed before viewDidLoad (e.g. from voice or scan callback)
+
         if let result = pendingResult {
             pendingResult = nil
             appendEntries(from: result)
@@ -118,7 +117,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         suggestionsTableView.contentInset = .zero
         suggestionsTableView.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         
-        // Shadow for floating appearance
+
         suggestionsTableView.layer.shadowColor = UIColor.black.cgColor
         suggestionsTableView.layer.shadowOpacity = 0.15
         suggestionsTableView.layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -144,7 +143,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             return
         }
 
-        // Add to the application window so it floats above the table view
+
         guard let window = view.window else { return }
         
         let fieldRect = field.convert(field.bounds, to: window)
@@ -214,7 +213,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         }
     }
     
-    // MARK: - Add New Item (re-open voice/camera if entry started that way)
+
     
     private func addNewItemByEntryMode() {
         switch entryMode {
@@ -260,7 +259,12 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             var inputQty = Double(product.quantity) ?? 1.0
             var finalUnit = product.unit ?? "pcs"
             
-            // Auto-scale fractional units to avoid decimal loss (e.g. 0.5 kg -> 500 g)
+
+            if let extracted = UnitConversionService.shared.extractQuantityAndUnit(from: finalUnit) {
+                inputQty *= extracted.0
+                finalUnit = extracted.1
+            }
+            
             if floor(inputQty) != inputQty {
                 let nUnit = UnitConversionService.shared.normalizeUnit(finalUnit)
                 if nUnit == "kg" {
@@ -274,6 +278,13 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             
             var finalCostPrice: Double = Double(product.costPrice ?? "") ?? 0
             var finalSellingPrice: Double = Double(product.price ?? "") ?? 0
+            
+            // Force mapping of any extracted selling price to cost price for purchases if cost price is missing
+            if finalCostPrice == 0 && finalSellingPrice > 0 {
+                finalCostPrice = finalSellingPrice
+                finalSellingPrice = 0
+            }
+            
             var finalQty = inputQty == 0 ? 1.0 : inputQty
             
             let matchedItem = product.itemID.flatMap { id in inventoryItems.first { $0.id == id } }
@@ -285,9 +296,11 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     requestedQty: inputQty,
                     requestedUnit: finalUnit,
                     inventoryPrice: inv.defaultCostPrice,
-                    inventoryUnit: inv.unit
+                    inventoryUnit: inv.unit,
+                    alternateUnitName: inv.alternateUnitName,
+                    alternateUnitFactor: inv.alternateUnitFactor
                 ) {
-                    finalQty = Double(conversion.quantity)
+                    finalQty = conversion.quantity
                     finalUnit = conversion.unit
                     if finalCostPrice <= 0 {
                         finalCostPrice = conversion.proratedPrice
@@ -335,6 +348,11 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             var inputQty = Double(item.quantity) ?? 1.0
             var finalUnit = item.unit ?? "pcs"
             
+            if let extracted = UnitConversionService.shared.extractQuantityAndUnit(from: finalUnit) {
+                inputQty *= extracted.0
+                finalUnit = extracted.1
+            }
+            
             if floor(inputQty) != inputQty {
                 let nUnit = UnitConversionService.shared.normalizeUnit(finalUnit)
                 if nUnit == "kg" { inputQty *= 1000.0; finalUnit = "g" }
@@ -343,6 +361,13 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             
             var finalCostPrice: Double = Double(item.costPrice ?? "") ?? 0
             var finalSellingPrice: Double = Double(item.sellingPrice ?? "") ?? 0
+            
+            // Force mapping of any extracted selling price to cost price for purchases if cost price is missing
+            if finalCostPrice == 0 && finalSellingPrice > 0 {
+                finalCostPrice = finalSellingPrice
+                finalSellingPrice = 0
+            }
+            
             var finalQty = inputQty == 0 ? 1.0 : inputQty
             
             let matchedItem = inventoryItems.first(where: { $0.name.lowercased() == item.name.lowercased() })
@@ -352,9 +377,11 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     requestedQty: inputQty,
                     requestedUnit: finalUnit,
                     inventoryPrice: inv.defaultCostPrice,
-                    inventoryUnit: inv.unit
+                    inventoryUnit: inv.unit,
+                    alternateUnitName: inv.alternateUnitName,
+                    alternateUnitFactor: inv.alternateUnitFactor
                 ) {
-                    finalQty = Double(conversion.quantity)
+                    finalQty = conversion.quantity
                     finalUnit = conversion.unit
                     if finalCostPrice <= 0 { finalCostPrice = conversion.proratedPrice }
                 } else {
@@ -374,7 +401,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             entry.costPrice = finalCostPrice
             entry.sellingPrice = finalSellingPrice
             
-            // Apply extracted GST fields
+            //  extracted GST fields
             entry.hsnCode = item.hsnCode ?? matchedItem?.hsnCode
             if let rateStr = item.gstRate, let rate = Double(rateStr) {
                 entry.gstRate = rate
@@ -389,7 +416,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             supplierName = supplier
         }
         
-        // Note: result.invoiceNumber and result.totalTaxableValue can be handled later if UI fields exist for invoice number
+
         
         tableView.reloadData()
     }
@@ -433,7 +460,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     nameToItem[item.name.lowercased()] = item
                 }
 
-                var purchaseItems: [(itemID: UUID, quantity: Int, costPrice: Double, sellingPrice: Double, expiryDate: Date?)] = []
+                var purchaseItems: [(itemID: UUID, quantity: Double, costPrice: Double, sellingPrice: Double, expiryDate: Date?)] = []
                 
                 for entry in entries {
                     guard let itemNameRaw = entry.selectedItemName else { continue }
@@ -441,9 +468,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     if itemName.isEmpty { continue }
 
                     let key = itemName.lowercased()
-                    let quantity = Int(round(entry.quantity))
+                    let quantity = entry.quantity
                     let costPrice = entry.costPrice
-                    let sellingPrice = entry.sellingPrice > 0 ? entry.sellingPrice : costPrice
+                    let sellingPrice = entry.sellingPrice
 
                     let itemID: UUID
 
@@ -583,9 +610,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
         case .items:
             if entries.isEmpty {
-                return 1  // "Add Item" row
+                return 1  // "Add Item" 
             } else {
-                // Each entry = 1 summary row. If expanded, that entry also gets detail rows.
+                // Each entry = 1 summary row.
                 var count = entries.count + 1  // +1 for "Add Item" row
                 if let expanded = expandedItemIndex, expanded < entries.count {
                     count += detailRowCount()  // extra rows for the expanded item
@@ -609,7 +636,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     /// Maps an indexPath.row in the items section to (entryIndex, isDetail, detailRow)
     private func resolveItemRow(_ row: Int) -> (entryIndex: Int, isDetailRow: Bool, detailRow: Int) {
         guard let expanded = expandedItemIndex else {
-            // No expansion — simple mapping
+            // No expansion 
             return (entryIndex: row, isDetailRow: false, detailRow: -1)
         }
         
@@ -667,7 +694,6 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             }
 
         case .items:
-            // "Add Item" row (last row, accounting for expanded detail)
             let addItemRow: Int
             if entries.isEmpty {
                 addItemRow = 0
@@ -925,11 +951,11 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.titleLabel.text = "  Low Stock Alert"
             cell.textField.placeholder = "Enter count"
             cell.textField.keyboardType = .numberPad
-            cell.textField.text = entry.lowStockThreshold > 0 ? "\(entry.lowStockThreshold)" : ""
+            cell.textField.text = entry.lowStockThreshold > 0 ? entry.lowStockThreshold.cleanString : ""
             cell.textField.isUserInteractionEnabled = true
             cell.accessoryType = .none
             cell.onTextChanged = { [weak self] text in
-                self?.entries[entryIndex].lowStockThreshold = Int(text) ?? 0
+                self?.entries[entryIndex].lowStockThreshold = Double(text) ?? 0
             }
             return cell
             
@@ -1197,10 +1223,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     return
                 }
                 
-                return  // other detail rows handle their own interaction
+                return 
             }
             
-            // Summary row tapped — toggle expand/collapse
+
             if !resolved.isDetailRow && resolved.entryIndex < entries.count {
                 if expandedItemIndex == resolved.entryIndex {
                     expandedItemIndex = nil
@@ -1372,7 +1398,7 @@ extension AddPurchaseViewController: SupplierSelectionDelegate {
         supplierName = name
         supplierTextField.text = name
         
-        // Auto-fill GSTIN from stored supplier profile
+
         let all = CreditStore.shared.getAllSuppliers()
         if let supplier = all.first(where: { $0.name == name }), let gstin = supplier.gstin, !gstin.isEmpty {
             supplierGSTIN = gstin
@@ -1387,8 +1413,6 @@ extension AddPurchaseViewController: SupplierSelectionDelegate {
 extension AddPurchaseViewController {
     @objc func supplierGSTINChanged(_ sender: UITextField) {
         let text = sender.text?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
-        
-        // Write uppercased text back so it displays correctly
         if sender.text != text {
             let cursorPos = sender.selectedTextRange
             sender.text = text

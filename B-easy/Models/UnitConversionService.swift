@@ -80,7 +80,7 @@ final class UnitConversionService {
     }
     
     struct ConversionResult {
-        let quantity: Int
+        let quantity: Double
         let unit: String
         let proratedPrice: Double
     }
@@ -105,6 +105,25 @@ final class UnitConversionService {
         if ["sq ft", "square foot", "square feet", "sqft"].contains(u) { return "sq ft" }
         if ["sq m", "square meter", "square meters", "sqm"].contains(u) { return "sq m" }
         return u
+    }
+    
+    func extractQuantityAndUnit(from string: String) -> (Double, String)? {
+        let pattern = "^([0-9]*\\.?[0-9]+)\\s*([a-zA-Z\\s]+)$"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nsString = trimmed as NSString
+        let results = regex.matches(in: trimmed, options: [], range: NSRange(location: 0, length: nsString.length))
+        
+        guard let match = results.first else { return nil }
+        
+        let qtyString = nsString.substring(with: match.range(at: 1))
+        let unitString = nsString.substring(with: match.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if let qty = Double(qtyString) {
+            return (qty, unitString)
+        }
+        return nil
     }
     
     func convertPrice(from fromUnit: String, to toUnit: String, price: Double) -> Double? {
@@ -156,9 +175,28 @@ final class UnitConversionService {
         requestedQty: Double,
         requestedUnit: String,
         inventoryPrice: Double,
-        inventoryUnit: String
+        inventoryUnit: String,
+        alternateUnitName: String? = nil,
+        alternateUnitFactor: Double? = nil
     ) -> ConversionResult? {
         
+        // 1. Check for Custom Alternate Unit Conversion (e.g. Katta -> Kg)
+        if let altName = alternateUnitName, let altFactor = alternateUnitFactor {
+            let reqLower = requestedUnit.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let altLower = altName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if reqLower == altLower {
+                // If requested unit is the custom alternate unit, multiply by the factor
+                let multiplier = requestedQty * altFactor
+                return ConversionResult(
+                    quantity: multiplier,
+                    unit: inventoryUnit,
+                    proratedPrice: inventoryPrice
+                )
+            }
+        }
+        
+        // 2. Standard Conversions (g -> kg, ml -> l, etc.)
         let req = normalizeUnit(requestedUnit)
         let inv = normalizeUnit(inventoryUnit)
         
@@ -174,15 +212,10 @@ final class UnitConversionService {
         let requestedInBase = requestedQty * reqBase.factor
         let multiplier = requestedInBase / invBase.factor
         
-        let newPrice = inventoryPrice * multiplier
-        
-        let displayQty = requestedQty == requestedQty.rounded() ? "\(Int(requestedQty))" : String(format: "%.1f", requestedQty)
-        let displayUnit = "\(displayQty)\(req)"
-        
         return ConversionResult(
-            quantity: 1,
-            unit: displayUnit,
-            proratedPrice: newPrice
+            quantity: multiplier,
+            unit: inventoryUnit,
+            proratedPrice: inventoryPrice
         )
     }
 }

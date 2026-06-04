@@ -156,10 +156,10 @@ extension PurchaseItemInformationTableViewController {
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
             cell.titleLabel.text = "Low Stock Alert"
             cell.textField.placeholder = "Enter count"
-            cell.textField.text = entry.lowStockThreshold > 0 ? String(entry.lowStockThreshold) : ""
+            cell.textField.text = entry.lowStockThreshold > 0 ? entry.lowStockThreshold.cleanString : ""
             
             cell.onTextChanged = { [weak self] text in
-                self?.entry.lowStockThreshold = Int(text) ?? 0
+                self?.entry.lowStockThreshold = Double(text) ?? 0
             }
             return cell
 

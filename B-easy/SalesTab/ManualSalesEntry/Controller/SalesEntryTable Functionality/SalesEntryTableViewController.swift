@@ -82,10 +82,10 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
 
         setupSuggestionsTableView()
         
-        // Apply any data passed before viewDidLoad (e.g. from scan callback)
+
         if let result = pendingResult {
             pendingResult = nil
-            // entryMode is already set by the caller before pushing this VC
+
             appendItems(from: result)
         }
     }
@@ -101,14 +101,14 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         suggestionsTableView.delegate = self
         suggestionsTableView.register(UITableViewCell.self, forCellReuseIdentifier: "InventorySuggestionCell")
         
-        // Remove all extra spacing that causes the blank area above rows
+
         suggestionsTableView.sectionHeaderTopPadding = 0
         suggestionsTableView.sectionHeaderHeight = 0
         suggestionsTableView.sectionFooterHeight = 0
         suggestionsTableView.contentInset = .zero
         suggestionsTableView.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         
-        // Shadow for floating appearance
+
         suggestionsTableView.layer.shadowColor = UIColor.black.cgColor
         suggestionsTableView.layer.shadowOpacity = 0.15
         suggestionsTableView.layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -134,7 +134,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             return
         }
 
-        // Add to the application window so it floats above the table view
+
         guard let window = view.window else { return }
         
         // Convert the text field's frame to window coordinates
@@ -144,7 +144,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
         let desiredHeight = min(CGFloat(currentSuggestions.count) * suggestionsTableView.rowHeight, 220)
         
-        // Position below the text field, or above if not enough space below
+
         let spaceBelow = window.bounds.height - fieldRect.maxY - 20
         let yPosition: CGFloat
         if spaceBelow >= desiredHeight {
@@ -193,7 +193,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         transactionItems[index] = updated
     }
 
-    // MARK: - Add New Item (re-open voice/camera if entry started that way)
+
     
     private func addNewItemByEntryMode() {
         switch entryMode {
@@ -222,7 +222,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
 
     // MARK: - Append Items from Voice/Scan
     
-    // Temporary queue for fuzzy matches waiting for user confirmation
+
     private var pendingFuzzyMatches: [(product: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?, itemID: UUID?, matchConfidence: Double, originalName: String)].Element, transactionItem: TransactionItem)] = []
     
     func appendItems(from result: ParsedResult) {
@@ -241,12 +241,18 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             let voicePrice = Double(product.price ?? "")
             let matchedItem = product.itemID.flatMap { id in inventoryItems.first { $0.id == id } }
             
-            // Determine the working unit:
-            // If the parser extracted a unit, use it. Otherwise default to the inventory unit (NOT "pcs").
+
+
             var finalUnit = product.unit ?? matchedItem?.unit ?? "pcs"
             var finalSellingPrice: Double
             
-            // Auto-scale fractional units to avoid decimal loss (e.g. 0.5 kg -> 500 g)
+
+            if let extracted = UnitConversionService.shared.extractQuantityAndUnit(from: finalUnit) {
+                inputQty *= extracted.0
+                finalUnit = extracted.1
+            }
+            
+
             if floor(inputQty) != inputQty {
                 let nUnit = UnitConversionService.shared.normalizeUnit(finalUnit)
                 if nUnit == "kg" {
@@ -258,7 +264,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                 }
             }
             
-            var finalQtyInt = Int(round(inputQty)) == 0 ? 1 : Int(round(inputQty))
+            var finalQty = inputQty == 0 ? 1.0 : inputQty
 
             // Apply conversions if matched
             if let inv = matchedItem {
@@ -268,27 +274,29 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                 let normalizedInv = UnitConversionService.shared.normalizeUnit(inv.unit)
                 
                 if normalizedReq != normalizedInv {
-                    // Units differ — need prorated conversion (e.g. 540g at ₹40/kg)
+
                     if let conversion = UnitConversionService.shared.calculateProrated(
                         requestedQty: inputQty,
                         requestedUnit: finalUnit,
                         inventoryPrice: inv.defaultSellingPrice,
-                        inventoryUnit: inv.unit
+                        inventoryUnit: inv.unit,
+                        alternateUnitName: inv.alternateUnitName,
+                        alternateUnitFactor: inv.alternateUnitFactor
                     ) {
-                        finalQtyInt = conversion.quantity
+                        finalQty = conversion.quantity
                         finalUnit = conversion.unit
                         
-                        // If user explicitly stated a price, use it; otherwise pro-rate
+
                         finalSellingPrice = voicePrice ?? conversion.proratedPrice
-                        print("[VoiceSale] ✓ Converted: qty=\(finalQtyInt), unit=\(finalUnit), price=\(finalSellingPrice)")
+                        print("[VoiceSale] ✓ Converted: qty=\(finalQty), unit=\(finalUnit), price=\(finalSellingPrice)")
                     } else {
-                        // Incompatible families (e.g. pcs vs kg) — fall back to defaults
+
                         finalSellingPrice = voicePrice ?? inv.defaultSellingPrice
                         finalUnit = inv.unit
                         print("[VoiceSale] ✗ Incompatible units, using defaults: price=\(finalSellingPrice), unit=\(finalUnit)")
                     }
                 } else {
-                    // Same unit — no conversion needed, use inventory price as default
+
                     finalSellingPrice = voicePrice ?? inv.defaultSellingPrice
                     finalUnit = inv.unit
                     print("[VoiceSale] ✗ Same unit, using price=\(finalSellingPrice), unit=\(finalUnit)")
@@ -309,9 +317,9 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                     if product.quantity.hasSuffix(String(firstDigit)) {
                         let newQtyString = String(product.quantity.dropLast())
                         if newQtyString.isEmpty {
-                            finalQtyInt = 1
-                        } else if let newQty = Int(newQtyString) {
-                            finalQtyInt = newQty
+                            finalQty = 1
+                        } else if let newQty = Double(newQtyString) {
+                            finalQty = newQty
                         }
                     }
                 }
@@ -323,7 +331,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                 itemID: matchedItem?.id ?? UUID(),
                 itemName: product.name,
                 unit: finalUnit,
-                quantity: finalQtyInt,
+                quantity: finalQty,
                 sellingPricePerUnit: finalSellingPrice,
                 costPricePerUnit: nil, // filled later via FIFO
                 createdDate: Date()
@@ -603,11 +611,11 @@ extension SalesEntryTableViewController {
         )
     }
 
-    @objc private func itemQuantityStepped(_ sender: UIStepper) {
+    @objc private func itemQuantityChanged(_ sender: UITextField) {
         let index = sender.tag
         guard index >= 0 && index < transactionItems.count else { return }
 
-        let newQty = max(1, Int(sender.value))
+        let newQty = max(0.01, Double(sender.text ?? "") ?? 1.0)
         let old = transactionItems[index]
 
         let updated = TransactionItem(
@@ -625,7 +633,7 @@ extension SalesEntryTableViewController {
         transactionItems[index] = updated
 
         if let cell = tableView.cellForRow(at: IndexPath(row: index, section: SalesSection.items.rawValue)) as? EditSalesItemTableViewCell {
-            cell.quantityLabel.text = "\(newQty)"
+            cell.quantityLabel.text = newQty.cleanString
         }
 
         tableView.reloadSections(
@@ -741,7 +749,7 @@ extension SalesEntryTableViewController {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "SalesItemTableViewCell", for: indexPath) as! SalesItemTableViewCell
                 cell.selectionStyle = .none
                 cell.titleLabel.text = item.itemName
-                cell.detailLabel.text = String(format: "%d × ₹%.2f", item.quantity, item.sellingPricePerUnit ?? 0.0)
+                cell.detailLabel.text = String(format: "%@ × ₹%.2f", item.quantity.cleanString, item.sellingPricePerUnit ?? 0.0)
                 cell.priceLabel.text = String(format: "₹ %.2f", item.totalRevenue)
                 
                 return cell
@@ -753,13 +761,12 @@ extension SalesEntryTableViewController {
                 cell.unitLabel.text = "\(item.unit)"
                 cell.priceLabel.text = item.sellingPricePerUnit != nil ?
                         String(format: "%.2f", item.sellingPricePerUnit!) : nil
-                cell.stepper.value = Double(item.quantity)
-                cell.quantityLabel.text = "\(Int(cell.stepper.value))"
+                cell.quantityLabel.text = item.quantity.cleanString
 
                 cell.nameLabel.tag = indexPath.row
                 cell.unitLabel.tag = indexPath.row
                 cell.priceLabel.tag = indexPath.row
-                cell.stepper.tag = indexPath.row
+                cell.quantityLabel.tag = indexPath.row
                 cell.deleteButton.tag = indexPath.row
                 
                 cell.nameLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
@@ -773,12 +780,16 @@ extension SalesEntryTableViewController {
                 cell.priceLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
                 cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
                 cell.priceLabel.addTarget(self, action: #selector(itemEditingDidEnd(_:)), for: .editingDidEnd)
-                cell.stepper.addTarget(self, action: #selector(itemQuantityStepped(_:)), for: .valueChanged)
+                cell.quantityLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+                cell.quantityLabel.addTarget(self, action: #selector(itemQuantityChanged(_:)), for: .editingChanged)
+                cell.quantityLabel.addTarget(self, action: #selector(itemEditingDidEnd(_:)), for: .editingDidEnd)
                 
                 cell.priceLabel.keyboardType = .decimalPad
+                cell.quantityLabel.keyboardType = .decimalPad
                 cell.nameLabel.borderStyle = .roundedRect
                 cell.unitLabel.borderStyle = .roundedRect
                 cell.priceLabel.borderStyle = .roundedRect
+                cell.quantityLabel.borderStyle = .roundedRect
                 
                 return cell
             }
@@ -1151,7 +1162,7 @@ extension SalesEntryTableViewController: ItemInformationDelegate {
     func itemInformation(
         _ controller: ItemInformationTableViewController,
         item: Item,
-        quantity: Int,
+        quantity: Double,
         sellingPrice: Double
     ) {
 

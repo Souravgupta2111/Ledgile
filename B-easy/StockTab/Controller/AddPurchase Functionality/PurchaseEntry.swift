@@ -9,7 +9,7 @@ struct PurchaseEntry {
     var sellingPrice: Double = 0
     var costPrice: Double = 0
     
-    var lowStockThreshold: Int = 0
+    var lowStockThreshold: Double = 0
     var barcode: String? = nil
     
     // GST fields

@@ -619,8 +619,8 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Say customer, items, quantity or price to add sale" textAlignment="center" lineBreakMode="wordWrap" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ZWH-yO-eAY">
-                                <rect key="frame" x="20" y="272" width="353" height="40.666666666666686"/>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Say items, quantity or rate to make a sale" textAlignment="center" lineBreakMode="wordWrap" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ZWH-yO-eAY">
+                                <rect key="frame" x="20" y="272" width="353" height="20.333333333333314"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="17"/>
                                 <color key="textColor" systemColor="secondaryLabelColor"/>
                                 <nil key="highlightedColor"/>
@@ -1001,7 +1001,7 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Say quantity, unit, item, cost price to make a purchase" textAlignment="center" lineBreakMode="wordWrap" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="5Lq-aq-1Ep">
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Say quantity, unit, item, rate to make a purchase" textAlignment="center" lineBreakMode="wordWrap" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="5Lq-aq-1Ep">
                                 <rect key="frame" x="20" y="218" width="353" height="40.666666666666686"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="17"/>
                                 <color key="textColor" systemColor="secondaryLabelColor"/>
@@ -1770,21 +1770,8 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <segmentedControl opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="top" segmentControlStyle="plain" selectedSegmentIndex="0" translatesAutoresizingMaskIntoConstraints="NO" id="2s4-4Q-yfR">
-                                <rect key="frame" x="12" y="172" width="369" height="41"/>
-                                <constraints>
-                                    <constraint firstAttribute="height" constant="40" id="BAX-xr-gY3"/>
-                                </constraints>
-                                <segments>
-                                    <segment title="You Received"/>
-                                    <segment title="You Gave"/>
-                                </segments>
-                                <connections>
-                                    <action selector="segmentChanged:" destination="NuP-es-sfa" eventType="valueChanged" id="O8S-S1-8RX"/>
-                                </connections>
-                            </segmentedControl>
                             <textField opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="248" contentHorizontalAlignment="left" contentVerticalAlignment="center" textAlignment="center" clearsOnBeginEditing="YES" minimumFontSize="17" translatesAutoresizingMaskIntoConstraints="NO" id="Wd7-WW-haW">
-                                <rect key="frame" x="121.66666666666669" y="248" width="150" height="60"/>
+                                <rect key="frame" x="121.66666666666669" y="212" width="150" height="60"/>
                                 <constraints>
                                     <constraint firstAttribute="width" constant="150" id="MOz-vA-ggi"/>
                                     <constraint firstAttribute="height" constant="60" id="gJO-7l-fRi"/>
@@ -1793,13 +1780,13 @@
                                 <textInputTraits key="textInputTraits" keyboardType="decimalPad"/>
                             </textField>
                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="b8M-hd-M11">
-                                <rect key="frame" x="50" y="263.66666666666669" width="59.666666666666657" height="28.666666666666686"/>
+                                <rect key="frame" x="50" y="227.66666666666669" width="59.666666666666657" height="28.666666666666686"/>
                                 <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="24"/>
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
                             <textField opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="248" contentHorizontalAlignment="left" contentVerticalAlignment="center" textAlignment="center" clearsOnBeginEditing="YES" minimumFontSize="17" translatesAutoresizingMaskIntoConstraints="NO" id="RSB-YT-X0d">
-                                <rect key="frame" x="96.666666666666686" y="332" width="200" height="40"/>
+                                <rect key="frame" x="96.666666666666686" y="296" width="200" height="40"/>
                                 <constraints>
                                     <constraint firstAttribute="width" constant="200" id="cuI-Oo-mL9"/>
                                     <constraint firstAttribute="height" constant="40" id="oFN-dc-ZnQ"/>
@@ -1811,18 +1798,15 @@
                         <viewLayoutGuide key="safeArea" id="Fwc-TP-Q9x"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="Fwc-TP-Q9x" firstAttribute="trailing" secondItem="2s4-4Q-yfR" secondAttribute="trailing" constant="12" id="1qM-yZ-8Fs"/>
                             <constraint firstItem="Wd7-WW-haW" firstAttribute="centerX" secondItem="jXs-Az-0vi" secondAttribute="centerX" id="3sN-14-blu"/>
-                            <constraint firstItem="2s4-4Q-yfR" firstAttribute="leading" secondItem="Fwc-TP-Q9x" secondAttribute="leading" constant="12" id="ACF-yz-AOz"/>
-                            <constraint firstItem="Wd7-WW-haW" firstAttribute="top" secondItem="2s4-4Q-yfR" secondAttribute="bottom" constant="36" id="Kre-6M-iv4"/>
-                            <constraint firstItem="2s4-4Q-yfR" firstAttribute="top" secondItem="Fwc-TP-Q9x" secondAttribute="top" id="RRc-Y9-iuA"/>
+                            <constraint firstItem="Wd7-WW-haW" firstAttribute="top" secondItem="Fwc-TP-Q9x" secondAttribute="top" constant="40" id="Kre-6M-iv4"/>
                             <constraint firstItem="RSB-YT-X0d" firstAttribute="centerX" secondItem="Wd7-WW-haW" secondAttribute="centerX" id="kFI-qU-KQL"/>
                             <constraint firstItem="RSB-YT-X0d" firstAttribute="top" secondItem="Wd7-WW-haW" secondAttribute="bottom" constant="24" id="nJe-wv-Sb3"/>
                             <constraint firstItem="b8M-hd-M11" firstAttribute="centerY" secondItem="Wd7-WW-haW" secondAttribute="centerY" id="os8-I8-fDS"/>
                             <constraint firstItem="Wd7-WW-haW" firstAttribute="leading" secondItem="b8M-hd-M11" secondAttribute="trailing" constant="12" id="qkz-99-ywC"/>
                         </constraints>
                     </view>
-                    <navigationItem key="navigationItem" title="Add transaction" id="QKc-QO-spi">
+                    <navigationItem key="navigationItem" title="You Received" id="QKc-QO-spi">
                         <barButtonItem key="rightBarButtonItem" style="plain" systemItem="save" id="W08-lY-2wr">
                             <connections>
                                 <action selector="saveButtonTapped:" destination="NuP-es-sfa" id="sTm-Sr-vGa"/>
@@ -1832,7 +1816,6 @@
                     <connections>
                         <outlet property="label" destination="b8M-hd-M11" id="Hyc-nq-Jeg"/>
                         <outlet property="noteLabel" destination="RSB-YT-X0d" id="DWd-Pv-Lzo"/>
-                        <outlet property="segment" destination="2s4-4Q-yfR" id="zre-F3-UeC"/>
                         <outlet property="textField" destination="Wd7-WW-haW" id="4k0-a1-jB4"/>
                     </connections>
                 </viewController>
@@ -1890,23 +1873,8 @@
                                 <color key="textColor" systemColor="systemGrayColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
-                            <segmentedControl opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="top" segmentControlStyle="plain" selectedSegmentIndex="0" translatesAutoresizingMaskIntoConstraints="NO" id="6Rb-bf-jgP">
-                                <rect key="frame" x="12" y="134" width="369" height="33"/>
-                                <constraints>
-                                    <constraint firstAttribute="height" constant="32" id="W4O-TH-qOB"/>
-                                </constraints>
-                                <segments>
-                                    <segment title="Today"/>
-                                    <segment title="This Week"/>
-                                    <segment title="This Month"/>
-                                    <segment title="Custom"/>
-                                </segments>
-                                <connections>
-                                    <action selector="segmentChanged:" destination="u33-Tq-k8F" eventType="valueChanged" id="MPj-R2-lUH"/>
-                                </connections>
-                            </segmentedControl>
                             <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" distribution="equalSpacing" spacing="12" translatesAutoresizingMaskIntoConstraints="NO" id="NnX-Fv-Rwb">
-                                <rect key="frame" x="12" y="190" width="369" height="112"/>
+                                <rect key="frame" x="12" y="146" width="369" height="112"/>
                                 <subviews>
                                     <stackView opaque="NO" contentMode="scaleToFill" distribution="fillEqually" spacing="104" translatesAutoresizingMaskIntoConstraints="NO" id="s6p-n1-1lB">
                                         <rect key="frame" x="0.0" y="0.0" width="369" height="50"/>
@@ -1942,22 +1910,18 @@
                         <viewLayoutGuide key="safeArea" id="KhR-Qq-gj1"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="NnX-Fv-Rwb" firstAttribute="top" secondItem="6Rb-bf-jgP" secondAttribute="bottom" constant="24" id="2RT-oS-AP1"/>
+                            <constraint firstItem="NnX-Fv-Rwb" firstAttribute="top" secondItem="SCH-O3-ff0" secondAttribute="bottom" constant="24" id="2RT-oS-AP1"/>
                             <constraint firstItem="KhR-Qq-gj1" firstAttribute="trailing" secondItem="NnX-Fv-Rwb" secondAttribute="trailing" constant="12" id="8MW-oz-dG8"/>
                             <constraint firstItem="FPE-4v-Myp" firstAttribute="centerX" secondItem="6kk-2O-wgX" secondAttribute="centerX" id="J6Q-zc-k58"/>
                             <constraint firstItem="SCH-O3-ff0" firstAttribute="centerX" secondItem="6kk-2O-wgX" secondAttribute="centerX" id="Y5E-pM-GWm"/>
                             <constraint firstItem="FPE-4v-Myp" firstAttribute="top" secondItem="6kk-2O-wgX" secondAttribute="topMargin" constant="20" id="eDt-Ch-389"/>
-                            <constraint firstItem="6Rb-bf-jgP" firstAttribute="leading" secondItem="KhR-Qq-gj1" secondAttribute="leading" constant="12" id="hyN-Gp-z8K"/>
                             <constraint firstItem="NnX-Fv-Rwb" firstAttribute="leading" secondItem="KhR-Qq-gj1" secondAttribute="leading" constant="12" id="mCa-Eg-I2T"/>
-                            <constraint firstItem="KhR-Qq-gj1" firstAttribute="trailing" secondItem="6Rb-bf-jgP" secondAttribute="trailing" constant="12" id="pLf-en-ee2"/>
                             <constraint firstItem="SCH-O3-ff0" firstAttribute="top" secondItem="FPE-4v-Myp" secondAttribute="bottom" constant="2" id="wYl-xq-8U0"/>
-                            <constraint firstItem="6Rb-bf-jgP" firstAttribute="top" secondItem="SCH-O3-ff0" secondAttribute="bottom" constant="12" id="xBN-Rc-92e"/>
                         </constraints>
                     </view>
                     <connections>
                         <outlet property="customStack" destination="NnX-Fv-Rwb" id="NVH-zy-tBv"/>
                         <outlet property="fromPicker" destination="buz-Xk-Zoz" id="PDD-tL-BRJ"/>
-                        <outlet property="segmentedControl" destination="6Rb-bf-jgP" id="pKx-Ic-eyJ"/>
                         <outlet property="titleLabel" destination="FPE-4v-Myp" id="CeO-jd-ns0"/>
                         <outlet property="toPicker" destination="NDD-f6-4if" id="Zd3-18-Vxz"/>
                     </connections>
@@ -2165,21 +2129,8 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <segmentedControl opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="top" segmentControlStyle="plain" selectedSegmentIndex="0" translatesAutoresizingMaskIntoConstraints="NO" id="h1Z-Jv-Zcx">
-                                <rect key="frame" x="12" y="172" width="369" height="41"/>
-                                <constraints>
-                                    <constraint firstAttribute="height" constant="40" id="Qo3-rC-UlM"/>
-                                </constraints>
-                                <segments>
-                                    <segment title="You Received"/>
-                                    <segment title="You Paid"/>
-                                </segments>
-                                <connections>
-                                    <action selector="segmentChanged:" destination="6hf-Xl-nBQ" eventType="valueChanged" id="jdk-WQ-Dgy"/>
-                                </connections>
-                            </segmentedControl>
                             <textField opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="248" contentHorizontalAlignment="left" contentVerticalAlignment="center" textAlignment="center" clearsOnBeginEditing="YES" minimumFontSize="17" translatesAutoresizingMaskIntoConstraints="NO" id="d59-CT-xwC">
-                                <rect key="frame" x="121.66666666666669" y="248" width="150" height="60"/>
+                                <rect key="frame" x="121.66666666666669" y="212" width="150" height="60"/>
                                 <constraints>
                                     <constraint firstAttribute="width" constant="150" id="8t9-KZ-fug"/>
                                     <constraint firstAttribute="height" constant="60" id="p5P-k6-m1e"/>
@@ -2188,13 +2139,13 @@
                                 <textInputTraits key="textInputTraits" keyboardType="decimalPad"/>
                             </textField>
                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="8p9-ab-tpR">
-                                <rect key="frame" x="50" y="263.66666666666669" width="59.666666666666657" height="28.666666666666686"/>
+                                <rect key="frame" x="50" y="227.66666666666669" width="59.666666666666657" height="28.666666666666686"/>
                                 <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="24"/>
                                 <nil key="textColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
                             <textField opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="248" contentHorizontalAlignment="left" contentVerticalAlignment="center" textAlignment="center" clearsOnBeginEditing="YES" minimumFontSize="17" translatesAutoresizingMaskIntoConstraints="NO" id="vOf-2y-2lv">
-                                <rect key="frame" x="96.666666666666686" y="332" width="200" height="40"/>
+                                <rect key="frame" x="96.666666666666686" y="296" width="200" height="40"/>
                                 <constraints>
                                     <constraint firstAttribute="width" constant="200" id="oDa-qZ-baZ"/>
                                     <constraint firstAttribute="height" constant="40" id="vOd-Hn-Tc3"/>
@@ -2206,18 +2157,15 @@
                         <viewLayoutGuide key="safeArea" id="cxt-ks-grP"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="h1Z-Jv-Zcx" firstAttribute="leading" secondItem="cxt-ks-grP" secondAttribute="leading" constant="12" id="2QS-O1-J0Q"/>
                             <constraint firstItem="8p9-ab-tpR" firstAttribute="centerY" secondItem="d59-CT-xwC" secondAttribute="centerY" id="4Tw-xe-x7m"/>
-                            <constraint firstItem="cxt-ks-grP" firstAttribute="trailing" secondItem="h1Z-Jv-Zcx" secondAttribute="trailing" constant="12" id="7el-t5-5Dl"/>
                             <constraint firstItem="d59-CT-xwC" firstAttribute="leading" secondItem="8p9-ab-tpR" secondAttribute="trailing" constant="12" id="F2c-Mf-GGU"/>
-                            <constraint firstItem="h1Z-Jv-Zcx" firstAttribute="top" secondItem="cxt-ks-grP" secondAttribute="top" id="OWw-bV-e3z"/>
                             <constraint firstItem="vOf-2y-2lv" firstAttribute="top" secondItem="d59-CT-xwC" secondAttribute="bottom" constant="24" id="aB3-ch-miA"/>
-                            <constraint firstItem="d59-CT-xwC" firstAttribute="top" secondItem="h1Z-Jv-Zcx" secondAttribute="bottom" constant="36" id="mdM-gl-t03"/>
+                            <constraint firstItem="d59-CT-xwC" firstAttribute="top" secondItem="cxt-ks-grP" secondAttribute="top" constant="40" id="mdM-gl-t03"/>
                             <constraint firstItem="vOf-2y-2lv" firstAttribute="centerX" secondItem="d59-CT-xwC" secondAttribute="centerX" id="rvN-aR-mJm"/>
                             <constraint firstItem="d59-CT-xwC" firstAttribute="centerX" secondItem="Nvl-nJ-ANN" secondAttribute="centerX" id="t0I-0g-gkv"/>
                         </constraints>
                     </view>
-                    <navigationItem key="navigationItem" title="Add transaction" id="CxP-hs-gjX">
+                    <navigationItem key="navigationItem" title="You Paid" id="CxP-hs-gjX">
                         <barButtonItem key="rightBarButtonItem" style="plain" systemItem="save" id="clb-oC-Eww">
                             <connections>
                                 <action selector="saveButtonTapped:" destination="6hf-Xl-nBQ" id="WTx-TQ-XSY"/>
@@ -2227,13 +2175,12 @@
                     <connections>
                         <outlet property="label" destination="8p9-ab-tpR" id="1vm-9d-krW"/>
                         <outlet property="noteLabel" destination="vOf-2y-2lv" id="Tk3-hr-ZD3"/>
-                        <outlet property="segment" destination="h1Z-Jv-Zcx" id="hAO-JL-ATf"/>
                         <outlet property="textField" destination="d59-CT-xwC" id="KrQ-Em-79f"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="5BW-sh-epO" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-2098" y="-565"/>
+            <point key="canvasLocation" x="-2098" y="-565"/>2098" y="-565"/>
         </scene>
         <!--Profit and Loss-->
         <scene sceneID="t27-bH-qtw">
@@ -2740,7 +2687,7 @@
         </scene>
     </scenes>
     <inferredMetricsTieBreakers>
-        <segue reference="vWt-ia-1if"/>
+        <segue reference="98J-uH-g1d"/>
         <segue reference="Ppq-dF-hT0"/>
         <segue reference="sl8-dx-SuR"/>
         <segue reference="cv6-C5-xll"/>

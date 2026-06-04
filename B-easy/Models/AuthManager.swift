@@ -35,11 +35,11 @@ class AuthManager {
     private let defaults = UserDefaults.standard
 
     private init() {
-        // One-time migration: move tokens from UserDefaults to Keychain
+
         migrateTokensToKeychainIfNeeded()
     }
 
-    // MARK: - Public: Session State
+
     var isLoggedIn: Bool {
         defaults.bool(forKey: isLoggedInKey)
     }
@@ -54,7 +54,7 @@ class AuthManager {
         supabaseURL != "YOUR_SUPABASE_URL" && supabaseAnonKey != "YOUR_SUPABASE_ANON_KEY"
     }
 
-    // MARK: - Public: Send OTP
+
     func sendOTP(phone: String, completion: @escaping (Result<Void, AuthError>) -> Void) {
         guard isConfigured else {
             DispatchQueue.main.async {
@@ -109,7 +109,7 @@ class AuthManager {
         }.resume()
     }
 
-    // MARK: - Public: Verify OTP
+
 
     func verifyOTP(phone: String, code: String, completion: @escaping (Result<Void, AuthError>) -> Void) {
         guard isConfigured else {
@@ -154,7 +154,7 @@ class AuthManager {
             }
 
             if (200...299).contains(httpResponse.statusCode) {
-                // Parse the session response
+
                 if let data = data {
                     self.parseAndSaveSession(data: data)
                 }
@@ -168,7 +168,7 @@ class AuthManager {
         }.resume()
     }
 
-    // MARK: - Public: Log Out
+
 
     func logOut() {
         // Invalidate server session if possible
@@ -197,13 +197,13 @@ class AuthManager {
 
     func deleteAccount(completion: @escaping (Result<Void, AuthError>) -> Void) {
         guard isConfigured, let token = accessToken else {
-            // Not configured or no session — just clear local data
+
             logOut()
             DispatchQueue.main.async { completion(.success(())) }
             return
         }
 
-        // Call Supabase to delete the authenticated user via RPC
+
         let urlString = "\(supabaseURL)/rest/v1/rpc/delete_user"
         guard let url = URL(string: urlString) else {
             logOut()
@@ -218,7 +218,7 @@ class AuthManager {
         request.timeoutInterval = 10
 
         session.dataTask(with: request) { [weak self] _, response, error in
-            // Whether the server call succeeds or fails, always clear local data
+
             self?.logOut()
 
             if let error = error {
@@ -232,7 +232,7 @@ class AuthManager {
         }.resume()
     }
 
-    // MARK: - Public: Refresh Session
+
 
     func refreshSessionIfNeeded(completion: ((Bool) -> Void)? = nil) {
         guard isConfigured,
@@ -280,7 +280,7 @@ class AuthManager {
         }.resume()
     }
 
-    // MARK: - Private: Session Parsing
+
 
     private func parseAndSaveSession(data: Data) {
         do {
@@ -304,7 +304,7 @@ class AuthManager {
         }
     }
 
-    // MARK: - Public: Profile Sync
+
 
     func updateUserProfile(name: String?, shopName: String?, phone: String?) {
         guard isConfigured,
@@ -346,7 +346,7 @@ class AuthManager {
             return
         }
 
-        // Query Supabase for the specific user id
+
         let urlString = "\(supabaseURL)/rest/v1/user_profiles?id=eq.\(userId)&select=owner_name,shop_name,phone"
         guard let url = URL(string: urlString) else {
             completion(nil)
@@ -365,7 +365,7 @@ class AuthManager {
                 return
             }
 
-            // Supabase returns an array of matching rows
+
             if let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                let profile = jsonArray.first {
                 completion(profile)
@@ -383,7 +383,7 @@ class AuthManager {
         return json["error_description"] as? String ?? json["msg"] as? String ?? json["message"] as? String
     }
 
-    // MARK: - Error Type
+
 
     enum AuthError: Error, LocalizedError {
         case notConfigured
@@ -404,13 +404,13 @@ class AuthManager {
             }
         }
     }
-    // MARK: - Migration (UserDefaults → Keychain)
+
 
     private func migrateTokensToKeychainIfNeeded() {
         let migrationKey = "didMigrateTokensToKeychain"
         guard !defaults.bool(forKey: migrationKey) else { return }
 
-        // Move tokens from UserDefaults to Keychain if they exist
+
         if let token = defaults.string(forKey: accessTokenKey) {
             keychain.save(token, forKey: accessTokenKey)
             defaults.removeObject(forKey: accessTokenKey)

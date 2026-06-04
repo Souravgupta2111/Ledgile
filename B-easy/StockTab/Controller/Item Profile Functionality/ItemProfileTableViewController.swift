@@ -6,15 +6,15 @@ class ItemProfileTableViewController: UITableViewController {
     
     struct StockHistoryEntry {
         let date: Date
-        let stockIn: Int
-        let soldOut: Int
-        let balance: Int
+        let stockIn: Double
+        let soldOut: Double
+        let balance: Double
     }
     
     let dm = AppDataModel.shared.dataModel
     
     var item: Item?
-    var originalQuantity: Int?
+    var originalQuantity: Double?
     var originalCostPrice: Double?
     var itemID: UUID!
     var purchaseDates: [String] = []
@@ -26,11 +26,11 @@ class ItemProfileTableViewController: UITableViewController {
     var stockHistory: [StockHistoryEntry] = []
     
     enum RowType {
-        case name, quantity, unit, costPrice, sellingPrice, stockValue, barcode, hsn, gst
+        case name, quantity, unit, alternateUnitName, alternateUnitFactor, costPrice, sellingPrice, stockValue, lowStockAlert, barcode, hsn, gst
     }
     
     var visibleRows: [RowType] {
-        var rows: [RowType] = [.name, .quantity, .unit, .costPrice, .sellingPrice, .stockValue, .barcode]
+        var rows: [RowType] = [.name, .quantity, .unit, .alternateUnitName, .alternateUnitFactor, .costPrice, .sellingPrice, .stockValue, .lowStockAlert, .barcode]
         
         let isGST = (try? dm.db.getSettings().isGSTRegistered) ?? false
         if isGST {
@@ -226,7 +226,7 @@ class ItemProfileTableViewController: UITableViewController {
                 for txItem in items where txItem.itemID == itemID {
                     let sell = txItem.sellingPricePerUnit ?? 0
                     let cost = txItem.costPricePerUnit ?? itemDefaultCP
-                    totalProfit += Double(txItem.quantity) * (sell - cost)
+                    totalProfit += txItem.quantity * (sell - cost)
                 }
             }
             
@@ -237,10 +237,10 @@ class ItemProfileTableViewController: UITableViewController {
         }
     }
     
-    func getTotalQuantitySold(for itemID: UUID) -> Int {
+    func getTotalQuantitySold(for itemID: UUID) -> Double {
         do {
             let transactions = try dm.db.getTransactions()
-            var totalQty = 0
+            var totalQty = 0.0
             
             for tx in transactions where tx.type == .sale {
                 let items = try dm.db.getTransactionItems(for: tx.id)
@@ -265,7 +265,7 @@ class ItemProfileTableViewController: UITableViewController {
             
             let transactions = try dm.db.getTransactions()
             
-            var historyDict: [Date: (stockIn: Int, soldOut: Int)] = [:]
+            var historyDict: [Date: (stockIn: Double, soldOut: Double)] = [:]
             
             // Process batches
             for batch in batches {
@@ -283,7 +283,7 @@ class ItemProfileTableViewController: UITableViewController {
                 }
             }
             
-            var runningBalance = 0
+            var runningBalance = 0.0
             let sortedDates = historyDict.keys.sorted()
             
             stockHistory = sortedDates.map { date in
@@ -438,7 +438,7 @@ class ItemProfileTableViewController: UITableViewController {
                         cell.textField.text = item?.currentStock.description
                         cell.textField.keyboardType = .numberPad
                         cell.onTextChanged = { [weak self] text in
-                            self?.item?.currentStock = Int(text) ?? 0
+                            self?.item?.currentStock = Double(text) ?? 0
                         }
                         return cell
                     case .unit:
@@ -448,6 +448,33 @@ class ItemProfileTableViewController: UITableViewController {
                         cell.textField.text = item?.unit
                         cell.onTextChanged = { [weak self] text in
                             self?.item?.unit = text
+                        }
+                        return cell
+                    case .alternateUnitName:
+                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+                        cell.titleLabel.text = "Alternate Unit"
+                        cell.textField.placeholder = "e.g. Bag, Box"
+                        cell.textField.text = item?.alternateUnitName
+                        cell.onTextChanged = { [weak self] text in
+                            self?.item?.alternateUnitName = text.isEmpty ? nil : text
+                        }
+                        return cell
+                    case .alternateUnitFactor:
+                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+                        cell.titleLabel.text = "Items per Alt Unit"
+                        cell.textField.placeholder = "e.g. 50"
+                        if let factor = item?.alternateUnitFactor {
+                            cell.textField.text = factor.cleanString
+                        } else {
+                            cell.textField.text = ""
+                        }
+                        cell.textField.keyboardType = .decimalPad
+                        cell.onTextChanged = { [weak self] text in
+                            if text.isEmpty {
+                                self?.item?.alternateUnitFactor = nil
+                            } else if let val = Double(text) {
+                                self?.item?.alternateUnitFactor = val
+                            }
                         }
                         return cell
                     case .costPrice:
@@ -481,6 +508,28 @@ class ItemProfileTableViewController: UITableViewController {
                             cell.textField.text = "-"
                         }
                         cell.textField.isEnabled = false
+                        return cell
+                    case .lowStockAlert:
+                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+                        cell.titleLabel.text = "Low Stock Alert"
+                        cell.textField.placeholder = "Set threshold (0 = off)"
+                        cell.textField.keyboardType = .decimalPad
+                        let threshold = item?.lowStockThreshold ?? 0
+                        cell.textField.text = threshold > 0 ? threshold.cleanString : ""
+                        if threshold > 0 {
+                            cell.titleLabel.textColor = .systemOrange
+                        }
+                        // Add a reset button as right accessory
+                        let resetBtn = UIButton(type: .system)
+                        resetBtn.setImage(UIImage(systemName: threshold > 0 ? "bell.fill" : "bell.slash"), for: .normal)
+                        resetBtn.tintColor = threshold > 0 ? .systemOrange : .systemGray3
+                        resetBtn.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+                        resetBtn.addTarget(self, action: #selector(resetLowStockAlertTapped), for: .touchUpInside)
+                        cell.textField.rightView = resetBtn
+                        cell.textField.rightViewMode = .always
+                        cell.onTextChanged = { [weak self] text in
+                            self?.item?.lowStockThreshold = Double(text) ?? 0
+                        }
                         return cell
                     case .barcode:
                         let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
@@ -608,6 +657,15 @@ class ItemProfileTableViewController: UITableViewController {
             return UITableViewCell()
         }
     
+    }
+
+    // MARK: - Low Stock Alert
+
+    @objc func resetLowStockAlertTapped() {
+        item?.lowStockThreshold = 0
+        if let rowIdx = visibleRows.firstIndex(of: .lowStockAlert) {
+            tableView.reloadRows(at: [IndexPath(row: rowIdx, section: 0)], with: .none)
+        }
     }
 
     // MARK: - Barcode Scan

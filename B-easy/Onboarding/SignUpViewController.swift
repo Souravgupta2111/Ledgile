@@ -2,7 +2,7 @@ import UIKit
 
 class SignupViewController: UIViewController, UITextFieldDelegate {
 
-    // MARK: - IBOutlets (connect these in Storyboard)
+
 
     @IBOutlet weak var welcomeLabel: UILabel!
     @IBOutlet weak var detailLabel: UILabel!
@@ -12,7 +12,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
     @IBOutlet weak var phoneField: UITextField!
     @IBOutlet weak var sendCodeButton: UIButton!
 
-    // MARK: - State
+
 
     private var selectedCountryCode = "+91"
     private var selectedFlag = "🇮🇳"
@@ -30,7 +30,6 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         ("🇸🇬", "+65", "Singapore")
     ]
 
-    // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -41,10 +40,9 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         updateSendCodeState()
     }
 
-    // MARK: - Styling (only things that can't be done in Storyboard)
 
     private func styleUI() {
-        // Rounded corners for text fields
+
         for field in [personNameField, shopNameField, phoneField] {
             field?.layer.cornerRadius = 12
             field?.layer.borderWidth = 1
@@ -54,18 +52,18 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
             field?.leftViewMode = .always
         }
 
-        // Country code button styling
+
         countryCodeButton.layer.cornerRadius = 12
         countryCodeButton.layer.borderWidth = 1
         countryCodeButton.layer.borderColor = UIColor.systemGray4.cgColor
         countryCodeButton.clipsToBounds = true
 
-        // Send code button styling
+
         sendCodeButton.layer.cornerRadius = 14
         sendCodeButton.clipsToBounds = true
     }
 
-    // MARK: - Configuration
+
 
     private func configureFields() {
         personNameField.placeholder = "Your Full Name"
@@ -171,7 +169,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         let fullPhone = "\(selectedCountryCode)\(phone)"
         let displayPhone = "\(selectedCountryCode) \(phone)"
 
-        // Save user info to local settings
+
         if var settings = try? AppDataModel.shared.dataModel.db.getSettings() {
             settings.ownerName = trimmedName
             settings.profileName = trimmedName
@@ -182,7 +180,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
             try? AppDataModel.shared.dataModel.db.updateSettings(settings)
         }
 
-        // If Supabase is configured, send OTP via AuthManager
+
         if AuthManager.shared.isConfigured {
             setLoading(true)
             AuthManager.shared.sendOTP(phone: fullPhone) { [weak self] result in
@@ -202,7 +200,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
                 }
             }
         } else {
-            // Supabase not configured — go straight to OTP (demo/dev mode)
+
             performSegue(withIdentifier: "goToOTP", sender: self)
         }
     }

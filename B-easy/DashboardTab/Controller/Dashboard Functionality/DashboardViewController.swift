@@ -227,7 +227,7 @@ extension DashboardViewController: UITableViewDataSource, UITableViewDelegate {
                     cell.quantityLabel.text = "Unknown"
                 }
                 
-                cell.priceLabel.textColor = tx.type == .purchase ? .systemRed : UIColor(named: "Lime Moss")!
+                cell.priceLabel.textColor = tx.type == .purchase ? .black : UIColor(named: "Lime Moss")!
                 cell.priceLabel.text = "₹\(tx.totalAmount)"
                 cell.separatorView.backgroundColor = .separator
                 return cell

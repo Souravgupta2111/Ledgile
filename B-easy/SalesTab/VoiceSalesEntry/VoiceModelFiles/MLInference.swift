@@ -96,22 +96,36 @@ final class MLInference {
     
     func run(text: String) -> ParsedResult {
         let pipelineStart = CFAbsoluteTimeGetCurrent()
+        print("\n[MLInference] ═══════════════════════════════════════")
+        print("[MLInference] Starting inference pipeline for text: '\(text)'")
         
         let regexStart = CFAbsoluteTimeGetCurrent()
         let regexResult = RegexParser.shared.parse(text: text)
+        print("[MLInference] RegexParser found \(regexResult.products.count) products and customer: '\(regexResult.customerName ?? "nil")'")
+        for (i, p) in regexResult.products.enumerated() {
+            print("[MLInference]   Regex Product[\(i)]: \(p.name) | qty=\(p.quantity) | price=\(p.price ?? "nil") | costPrice=\(p.costPrice ?? "nil")")
+        }
         
         var mlResult: ParsedResult? = nil
         
         if let model = nlModel {
             let mlStart = CFAbsoluteTimeGetCurrent()
             mlResult = runNLModel(model: model, text: text)
+            print("[MLInference] NLModel found \(mlResult?.products.count ?? 0) products and customer: '\(mlResult?.customerName ?? "nil")'")
+            if let mlProducts = mlResult?.products {
+                for (i, p) in mlProducts.enumerated() {
+                    print("[MLInference]   NLModel Product[\(i)]: \(p.name) | qty=\(p.quantity) | price=\(p.price ?? "nil") | costPrice=\(p.costPrice ?? "nil")")
+                }
+            }
         } else {
+            print("[MLInference] ⚠️ NLModel is not available, falling back to Regex only.")
         }
         
         var finalProducts: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?)] = regexResult.products
         var finalCustomer = regexResult.customerName
         
         if let mlProducts = mlResult?.products {
+            print("[MLInference] Merging Regex and NLModel results...")
             for mlP in mlProducts {
                 var isDuplicate = false
                 
@@ -121,13 +135,24 @@ final class MLInference {
                     let mlLower = mlP.name.lowercased()
                     
                     if existingLower.contains(mlLower) || mlLower.contains(existingLower) {
+                        print("[MLInference]   Merging ML Product '\(mlP.name)' into Regex Product '\(existing.name)'")
                         // ML Model wins for price because Regex naively applies the first found price to all
-                        if let mlPrice = mlP.price { finalProducts[i].price = mlPrice }
-                        if let mlCostPrice = mlP.costPrice { finalProducts[i].costPrice = mlCostPrice }
-                        if existing.unit == nil { finalProducts[i].unit = mlP.unit }
+                        if let mlPrice = mlP.price { 
+                            print("[MLInference]     Updating price: '\(existing.price ?? "nil")' -> '\(mlPrice)'")
+                            finalProducts[i].price = mlPrice 
+                        }
+                        if let mlCostPrice = mlP.costPrice { 
+                            print("[MLInference]     Updating costPrice: '\(existing.costPrice ?? "nil")' -> '\(mlCostPrice)'")
+                            finalProducts[i].costPrice = mlCostPrice 
+                        }
+                        if existing.unit == nil { 
+                            finalProducts[i].unit = mlP.unit 
+                            print("[MLInference]     Updating unit: 'nil' -> '\(mlP.unit ?? "nil")'")
+                        }
                         
                         // If ML detected a longer (more specific) name, use it
                         if mlLower.count > existingLower.count {
+                            print("[MLInference]     Updating name: '\(existing.name)' -> '\(mlP.name)'")
                             finalProducts[i].name = mlP.name
                         }
                         
@@ -138,16 +163,27 @@ final class MLInference {
                 
                 let isValid = RegexParser.shared.isValidItem(mlP.name)
                 
-                if !isDuplicate && isValid {
-                    finalProducts.append(mlP)
+                if !isDuplicate {
+                    if isValid {
+                        print("[MLInference]   Adding completely new ML Product: \(mlP.name) | price=\(mlP.price ?? "nil") | costPrice=\(mlP.costPrice ?? "nil")")
+                        finalProducts.append(mlP)
+                    } else {
+                        print("[MLInference]   Skipping invalid ML Product: \(mlP.name)")
+                    }
                 }
             }
         }
         
         if finalCustomer == nil && mlResult?.customerName != nil {
+            print("[MLInference] Setting customer from ML: '\(mlResult!.customerName!)'")
             finalCustomer = mlResult!.customerName
         }
         
+        print("[MLInference] Final products after merge: \(finalProducts.count)")
+        for (i, p) in finalProducts.enumerated() {
+            print("[MLInference]   Final Product[\(i)]: \(p.name) | qty=\(p.quantity) | price=\(p.price ?? "nil") | costPrice=\(p.costPrice ?? "nil")")
+        }
+        print("[MLInference] ═══════════════════════════════════════\n")
         
         return ParsedResult(
             entities: mlResult?.entities ?? [],
@@ -204,11 +240,13 @@ final class MLInference {
                 switch labelInfo.type {
                 case .quantity: if !currentQty.isEmpty { shouldSave = true }
                 case .unit: if currentUnit != nil { shouldSave = true }
-                case .price: if currentPrice != nil { shouldSave = true }
+                case .price, .sellingPrice: if let cp = currentPrice, !cp.isEmpty { shouldSave = true }
+                case .costPrice: if let cp = currentCostPrice, !cp.isEmpty { shouldSave = true }
                 default: break
                 }
                 
                 if shouldSave && !currentItem.isEmpty {
+            print("[MLInference.NLModel] Saving item due to new entity block: \(currentItem) | qty=\(currentQty) | price=\(currentPrice ?? "nil") | costPrice=\(currentCostPrice ?? "nil")")
                     products.append((name: currentItem,
                                      quantity: currentQty.isEmpty ? "1" : currentQty,
                                      unit: currentUnit, price: currentPrice, costPrice: currentCostPrice))
@@ -221,6 +259,7 @@ final class MLInference {
             case .item:
                 if labelInfo.isBeginning {
                     if !currentItem.isEmpty {
+                        print("[MLInference.NLModel] Saving item due to new item B-tag: \(currentItem) | qty=\(currentQty) | price=\(currentPrice ?? "nil") | costPrice=\(currentCostPrice ?? "nil")")
                         products.append((name: currentItem,
                                          quantity: currentQty.isEmpty ? "1" : currentQty,
                                          unit: currentUnit, price: currentPrice, costPrice: currentCostPrice))
@@ -272,6 +311,7 @@ final class MLInference {
             
             if labelInfo.type != .other {
                 entities.append(ParsedEntity(text: cleanWord, type: labelInfo.type, isBeginning: labelInfo.isBeginning))
+                print("[MLInference.NLModel] Word: '\(cleanWord)' -> Tag: \(labelInfo.type) (B=\(labelInfo.isBeginning))")
             }
             
             return true
@@ -281,6 +321,7 @@ final class MLInference {
             products.append((name: currentItem,
                              quantity: currentQty.isEmpty ? "1" : currentQty,
                              unit: currentUnit, price: currentPrice, costPrice: currentCostPrice))
+            print("[MLInference.NLModel] Saving final item: \(currentItem) | qty=\(currentQty) | price=\(currentPrice ?? "nil") | costPrice=\(currentCostPrice ?? "nil")")
         }
         
         return ParsedResult(

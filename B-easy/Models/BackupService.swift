@@ -23,7 +23,7 @@ final class BackupService {
         let tempDir = fm.temporaryDirectory
         let backupURL = tempDir.appendingPathComponent(backupFileName)
 
-        // Remove any old backup with the same name
+
         try? fm.removeItem(at: backupURL)
 
         let success = sqliteDB.backupDatabase(to: backupURL.path)
@@ -68,13 +68,13 @@ final class BackupService {
         return formatter.string(fromByteCount: totalBytes)
     }
 
-    // MARK: - Public: Restore Backup
+
         func restoreBackup(from sqliteURL: URL) -> Bool {
         let fm = FileManager.default
         let dbPath = sqliteDB.dbPath
 
         do {
-            // Start accessing security scoped resource if needed
+
             let accessing = sqliteURL.startAccessingSecurityScopedResource()
             defer {
                 if accessing { sqliteURL.stopAccessingSecurityScopedResource() }
@@ -86,10 +86,10 @@ final class BackupService {
             try? fm.removeItem(atPath: dbPath + "-wal")
             try? fm.removeItem(atPath: dbPath + "-shm")
 
-            // Write the backup data as the new database
+
             try backupData.write(to: URL(fileURLWithPath: dbPath), options: .atomic)
 
-            // Reopen the database connection
+
             sqliteDB.reopenDatabase()
 
             print("[BackupService] SQLite restore completed successfully.")
@@ -97,15 +97,13 @@ final class BackupService {
 
         } catch {
             print("[BackupService] Restore failed: \(error)")
-            // Reopen whatever we have
+
             sqliteDB.reopenDatabase()
             return false
         }
     }
 
-    // MARK: - iCloud Backup
 
-    /// Upload the database backup to iCloud Documents container.
     func backupToiCloud(completion: @escaping (Bool, String) -> Void) {
         guard let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil)?
                 .appendingPathComponent("Documents", isDirectory: true) else {
@@ -128,13 +126,13 @@ final class BackupService {
             }
 
             do {
-                // Remove old iCloud backup if exists
+
                 if fm.fileExists(atPath: destURL.path) {
                     try fm.removeItem(at: destURL)
                 }
                 try fm.copyItem(at: localBackup, to: destURL)
 
-                // Clean up local temp
+
                 try? fm.removeItem(at: localBackup)
 
                 DispatchQueue.main.async {
@@ -151,7 +149,7 @@ final class BackupService {
         }
     }
 
-    /// Restore database from iCloud.
+
     func restoreFromiCloud(completion: @escaping (Bool, String) -> Void) {
         guard let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil)?
                 .appendingPathComponent("Documents")

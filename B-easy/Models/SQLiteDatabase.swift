@@ -76,7 +76,7 @@ final class SQLiteDatabase: Database {
             default_selling_price REAL NOT NULL,
             default_price_updated_at TEXT NOT NULL,
             low_stock_threshold INTEGER NOT NULL,
-            current_stock INTEGER NOT NULL,
+            current_stock REAL NOT NULL,
             created_date TEXT NOT NULL,
             last_restock_date TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -84,15 +84,17 @@ final class SQLiteDatabase: Database {
             sales_tier INTEGER,
             hsn_code TEXT,
             gst_rate REAL,
-            cess_rate REAL
+            cess_rate REAL,
+            alternate_unit_name TEXT,
+            alternate_unit_factor REAL
         );
 
         CREATE TABLE IF NOT EXISTS item_batches (
             id TEXT PRIMARY KEY,
             item_id TEXT NOT NULL,
             purchase_transaction_id TEXT NOT NULL,
-            quantity_purchased INTEGER NOT NULL,
-            quantity_remaining INTEGER NOT NULL,
+            quantity_purchased REAL NOT NULL,
+            quantity_remaining REAL NOT NULL,
             cost_price REAL NOT NULL,
             selling_price REAL NOT NULL,
             expiry_date TEXT,
@@ -134,7 +136,7 @@ final class SQLiteDatabase: Database {
             item_id TEXT NOT NULL,
             item_name TEXT NOT NULL,
             unit TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
+            quantity REAL NOT NULL,
             selling_price_per_unit REAL,
             cost_price_per_unit REAL,
             created_date TEXT NOT NULL,
@@ -151,7 +153,7 @@ final class SQLiteDatabase: Database {
             id TEXT PRIMARY KEY,
             transaction_item_id TEXT NOT NULL,
             batch_id TEXT NOT NULL,
-            quantity_consumed INTEGER NOT NULL,
+            quantity_consumed REAL NOT NULL,
             cost_price_used REAL NOT NULL,
             selling_price_used REAL NOT NULL,
             batch_received_date TEXT NOT NULL,
@@ -163,7 +165,7 @@ final class SQLiteDatabase: Database {
             transaction_id TEXT NOT NULL,
             transaction_item_id TEXT NOT NULL,
             item_name TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
+            quantity REAL NOT NULL,
             selling_price_per_unit REAL NOT NULL,
             is_completed INTEGER NOT NULL DEFAULT 0,
             completed_at TEXT,
@@ -180,7 +182,7 @@ final class SQLiteDatabase: Database {
             total_revenue REAL NOT NULL,
             total_profit REAL NOT NULL,
             sales_transaction_count INTEGER NOT NULL,
-            items_sold_count INTEGER NOT NULL,
+            items_sold_count REAL NOT NULL,
             total_purchase_amount REAL NOT NULL,
             purchase_transaction_count INTEGER NOT NULL
         );
@@ -284,6 +286,10 @@ final class SQLiteDatabase: Database {
         addColumnIfNeeded("items", "hsn_code", "TEXT")
         addColumnIfNeeded("items", "gst_rate", "REAL")
         addColumnIfNeeded("items", "cess_rate", "REAL")
+        
+        // Alternate Units
+        addColumnIfNeeded("items", "alternate_unit_name", "TEXT")
+        addColumnIfNeeded("items", "alternate_unit_factor", "REAL")
 
         // Transactions
         addColumnIfNeeded("transactions", "buyer_gstin", "TEXT")
@@ -518,13 +524,15 @@ final class SQLiteDatabase: Database {
             defaultCostPrice:       readDouble(s, 4),
             defaultSellingPrice:    readDouble(s, 5),
             defaultPriceUpdatedAt:  readDate(s, 6),
-            lowStockThreshold:      readInt(s, 7),
-            currentStock:           readInt(s, 8),
+            lowStockThreshold:      readDouble(s, 7),
+            currentStock:           readDouble(s, 8),
             createdDate:            readDate(s, 9),
             lastRestockDate:        readOptDate(s, 10),
             isActive:               readBool(s, 11),
             salesCount:             readOptInt(s, 12),
             salesTier:              readOptInt(s, 13),
+            alternateUnitName:      readOptString(s, 17),
+            alternateUnitFactor:    readOptDouble(s, 18),
             hsnCode:                readOptString(s, 14),
             gstRate:                readOptDouble(s, 15),
             cessRate:               readOptDouble(s, 16)
@@ -536,8 +544,8 @@ final class SQLiteDatabase: Database {
             id:                     readUUID(s, 0),
             itemID:                 readUUID(s, 1),
             purchaseTransactionID:  readUUID(s, 2),
-            quantityPurchased:      readInt(s, 3),
-            quantityRemaining:      readInt(s, 4),
+            quantityPurchased:      readDouble(s, 3),
+            quantityRemaining:      readDouble(s, 4),
             costPrice:              readDouble(s, 5),
             sellingPrice:           readDouble(s, 6),
             expiryDate:             readOptDate(s, 7),
@@ -576,7 +584,7 @@ final class SQLiteDatabase: Database {
             itemID:              readUUID(s, 2),
             itemName:            readString(s, 3),
             unit:                readString(s, 4),
-            quantity:            readInt(s, 5),
+            quantity:            readDouble(s, 5),
             sellingPricePerUnit: readOptDouble(s, 6),
             costPricePerUnit:    readOptDouble(s, 7),
             createdDate:         readDate(s, 8),
@@ -595,7 +603,7 @@ final class SQLiteDatabase: Database {
             id:                  readUUID(s, 0),
             transactionItemID:   readUUID(s, 1),
             batchID:             readUUID(s, 2),
-            quantityConsumed:    readInt(s, 3),
+            quantityConsumed:    readDouble(s, 3),
             costPriceUsed:       readDouble(s, 4),
             sellingPriceUsed:    readDouble(s, 5),
             batchReceivedDate:   readDate(s, 6),
@@ -609,7 +617,7 @@ final class SQLiteDatabase: Database {
             transactionID:       readUUID(s, 1),
             transactionItemID:   readUUID(s, 2),
             itemName:            readString(s, 3),
-            quantity:            readInt(s, 4),
+            quantity:            readDouble(s, 4),
             sellingPricePerUnit: readDouble(s, 5),
             isCompleted:         readBool(s, 6),
             completedAt:         readOptDate(s, 7),
@@ -628,7 +636,7 @@ final class SQLiteDatabase: Database {
             totalRevenue:            readDouble(s, 2),
             totalProfit:             readDouble(s, 3),
             salesTransactionCount:   readInt(s, 4),
-            itemsSoldCount:          readInt(s, 5),
+            itemsSoldCount:          readDouble(s, 5),
             totalPurchaseAmount:     readDouble(s, 6),
             purchaseTransactionCount:readInt(s, 7)
         )
@@ -713,7 +721,7 @@ final class SQLiteDatabase: Database {
 
 
     func getItem(id: UUID) throws -> Item? {
-        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate FROM items WHERE id=?"
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor FROM items WHERE id=?"
         guard let stmt = prepare(sql) else { return nil }
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, id)
@@ -721,7 +729,7 @@ final class SQLiteDatabase: Database {
     }
 
     func getAllItems() throws -> [Item] {
-        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate FROM items"
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor FROM items"
         guard let stmt = prepare(sql) else { return [] }
         defer { sqlite3_finalize(stmt) }
         var result: [Item] = []
@@ -730,7 +738,7 @@ final class SQLiteDatabase: Database {
     }
 
     func insertItem(_ item: Item) throws {
-        let sql = "INSERT INTO items (id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        let sql = "INSERT INTO items (id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         guard let stmt = prepare(sql) else {
             throw NSError(domain: "SQLiteDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare INSERT for items table. Column migration may have failed."])
         }
@@ -742,8 +750,8 @@ final class SQLiteDatabase: Database {
         bindDouble(stmt, 5, item.defaultCostPrice)
         bindDouble(stmt, 6, item.defaultSellingPrice)
         bindDate(stmt, 7, item.defaultPriceUpdatedAt)
-        bindInt(stmt, 8, item.lowStockThreshold)
-        bindInt(stmt, 9, item.currentStock)
+        bindDouble(stmt, 8, item.lowStockThreshold)
+        bindDouble(stmt, 9, item.currentStock)
         bindDate(stmt, 10, item.createdDate)
         bindOptDate(stmt, 11, item.lastRestockDate)
         bindBool(stmt, 12, item.isActive)
@@ -752,11 +760,13 @@ final class SQLiteDatabase: Database {
         bindOptText(stmt, 15, item.hsnCode)
         bindOptDouble(stmt, 16, item.gstRate)
         bindOptDouble(stmt, 17, item.cessRate)
+        bindOptText(stmt, 18, item.alternateUnitName)
+        bindOptDouble(stmt, 19, item.alternateUnitFactor)
         sqlite3_step(stmt)
     }
 
     func updateItem(_ item: Item) throws {
-        let sql = "UPDATE items SET name=?,unit=?,barcode=?,default_cost_price=?,default_selling_price=?,default_price_updated_at=?,low_stock_threshold=?,current_stock=?,last_restock_date=?,is_active=?,sales_count=?,sales_tier=?,hsn_code=?,gst_rate=?,cess_rate=? WHERE id=?"
+        let sql = "UPDATE items SET name=?,unit=?,barcode=?,default_cost_price=?,default_selling_price=?,default_price_updated_at=?,low_stock_threshold=?,current_stock=?,last_restock_date=?,is_active=?,sales_count=?,sales_tier=?,hsn_code=?,gst_rate=?,cess_rate=?,alternate_unit_name=?,alternate_unit_factor=? WHERE id=?"
         guard let stmt = prepare(sql) else {
             throw NSError(domain: "SQLiteDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare UPDATE for items table. Column migration may have failed."])
         }
@@ -767,8 +777,8 @@ final class SQLiteDatabase: Database {
         bindDouble(stmt, 4, item.defaultCostPrice)
         bindDouble(stmt, 5, item.defaultSellingPrice)
         bindDate(stmt, 6, item.defaultPriceUpdatedAt)
-        bindInt(stmt, 7, item.lowStockThreshold)
-        bindInt(stmt, 8, item.currentStock)
+        bindDouble(stmt, 7, item.lowStockThreshold)
+        bindDouble(stmt, 8, item.currentStock)
         bindOptDate(stmt, 9, item.lastRestockDate)
         bindBool(stmt, 10, item.isActive)
         bindOptInt(stmt, 11, item.salesCount)
@@ -776,7 +786,9 @@ final class SQLiteDatabase: Database {
         bindOptText(stmt, 13, item.hsnCode)
         bindOptDouble(stmt, 14, item.gstRate)
         bindOptDouble(stmt, 15, item.cessRate)
-        bindUUID(stmt, 16, item.id)
+        bindOptText(stmt, 16, item.alternateUnitName)
+        bindOptDouble(stmt, 17, item.alternateUnitFactor)
+        bindUUID(stmt, 18, item.id)
         sqlite3_step(stmt)
     }
 
@@ -806,8 +818,8 @@ final class SQLiteDatabase: Database {
         bindUUID(stmt, 1, batch.id)
         bindUUID(stmt, 2, batch.itemID)
         bindUUID(stmt, 3, batch.purchaseTransactionID)
-        bindInt(stmt, 4, batch.quantityPurchased)
-        bindInt(stmt, 5, batch.quantityRemaining)
+        bindDouble(stmt, 4, batch.quantityPurchased)
+        bindDouble(stmt, 5, batch.quantityRemaining)
         bindDouble(stmt, 6, batch.costPrice)
         bindDouble(stmt, 7, batch.sellingPrice)
         bindOptDate(stmt, 8, batch.expiryDate)
@@ -819,7 +831,7 @@ final class SQLiteDatabase: Database {
         let sql = "UPDATE item_batches SET quantity_remaining=? WHERE id=?"
         guard let stmt = prepare(sql) else { return }
         defer { sqlite3_finalize(stmt) }
-        bindInt(stmt, 1, batch.quantityRemaining)
+        bindDouble(stmt, 1, batch.quantityRemaining)
         bindUUID(stmt, 2, batch.id)
         sqlite3_step(stmt)
     }
@@ -872,7 +884,7 @@ final class SQLiteDatabase: Database {
             bindUUID(stmt, 3, item.itemID)
             bindText(stmt, 4, item.itemName.capitalized)
             bindText(stmt, 5, item.unit)
-            bindInt(stmt, 6, item.quantity)
+            bindDouble(stmt, 6, item.quantity)
             bindOptDouble(stmt, 7, item.sellingPricePerUnit)
             bindOptDouble(stmt, 8, item.costPricePerUnit)
             bindDate(stmt, 9, item.createdDate)
@@ -970,7 +982,7 @@ final class SQLiteDatabase: Database {
         bindUUID(stmt, 1, item.itemID)
         bindText(stmt, 2, item.itemName.capitalized)
         bindText(stmt, 3, item.unit)
-        bindInt(stmt, 4, item.quantity)
+        bindDouble(stmt, 4, item.quantity)
         bindOptDouble(stmt, 5, item.sellingPricePerUnit)
         bindOptDouble(stmt, 6, item.costPricePerUnit)
         bindOptText(stmt, 7, item.hsnCode)
@@ -994,7 +1006,7 @@ final class SQLiteDatabase: Database {
             bindUUID(stmt, 1, b.id)
             bindUUID(stmt, 2, b.transactionItemID)
             bindUUID(stmt, 3, b.batchID)
-            bindInt(stmt, 4, b.quantityConsumed)
+            bindDouble(stmt, 4, b.quantityConsumed)
             bindDouble(stmt, 5, b.costPriceUsed)
             bindDouble(stmt, 6, b.sellingPriceUsed)
             bindDate(stmt, 7, b.batchReceivedDate)
@@ -1022,7 +1034,7 @@ final class SQLiteDatabase: Database {
         bindUUID(stmt, 2, item.transactionID)
         bindUUID(stmt, 3, item.transactionItemID)
         bindText(stmt, 4, item.itemName.capitalized)
-        bindInt(stmt, 5, item.quantity)
+        bindDouble(stmt, 5, item.quantity)
         bindDouble(stmt, 6, item.sellingPricePerUnit)
         bindBool(stmt, 7, item.isCompleted)
         bindOptDate(stmt, 8, item.completedAt)
@@ -1106,7 +1118,7 @@ final class SQLiteDatabase: Database {
         bindDouble(stmt, 3, summary.totalRevenue)
         bindDouble(stmt, 4, summary.totalProfit)
         bindInt(stmt, 5, summary.salesTransactionCount)
-        bindInt(stmt, 6, summary.itemsSoldCount)
+        bindDouble(stmt, 6, summary.itemsSoldCount)
         bindDouble(stmt, 7, summary.totalPurchaseAmount)
         bindInt(stmt, 8, summary.purchaseTransactionCount)
         sqlite3_step(stmt)

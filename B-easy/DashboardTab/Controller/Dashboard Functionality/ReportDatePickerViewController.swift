@@ -3,19 +3,11 @@ import UIKit
 final class ReportDatePickerViewController: UIViewController {
     var reportType: ReportType = .profitAndLoss
     var onGenerate: ((Date, Date) -> Void)?
-    var selectedIndex: Int = 0
     @IBOutlet weak var titleLabel: UILabel!
     @IBOutlet weak var customStack: UIStackView!
     @IBOutlet weak var fromPicker: UIDatePicker!
     @IBOutlet weak var toPicker: UIDatePicker!
-    
-    @IBOutlet weak var segmentedControl: UISegmentedControl!
-    
-    @IBAction func segmentChanged(_ sender: UISegmentedControl) {
-        selectedIndex = sender.selectedSegmentIndex
-        handleSegmentChange()
-    }
-    
+
     let generateButton = UIButton(type: .system)
 
     override func viewDidLoad() {
@@ -27,9 +19,7 @@ final class ReportDatePickerViewController: UIViewController {
             sheet.prefersGrabberVisible = true
             sheet.preferredCornerRadius = 24
         }
-        segmentedControl.selectedSegmentIndex = selectedIndex
         configureFromStoryboard()
-        handleSegmentChange()
     }
 
 
@@ -40,8 +30,9 @@ final class ReportDatePickerViewController: UIViewController {
         toPicker.date = Date()
         toPicker.maximumDate = Date()
 
-        customStack.isHidden = true
-        customStack.alpha = 0
+        // Always show the date pickers (no segment to toggle)
+        customStack.isHidden = false
+        customStack.alpha = 1
 
         generateButton.setTitle("Generate Report", for: .normal)
         generateButton.setImage(UIImage(systemName: "doc.text.fill"), for: .normal)
@@ -72,40 +63,10 @@ final class ReportDatePickerViewController: UIViewController {
         ])
     }
 
-
-    private func handleSegmentChange() {
-        let isCustom = selectedIndex == 3
-        UIView.animate(withDuration: 0.25) {
-            self.customStack.isHidden = !isCustom
-            self.customStack.alpha = isCustom ? 1 : 0
-        }
-    }
-
     @objc private func generateTapped() {
         let calendar = Calendar.current
-        let now = Date()
-        let startOfToday = calendar.startOfDay(for: now)
-
-        let from: Date
-        let to: Date
-
-        switch selectedIndex {
-        case 0: // Daily — today only
-            from = startOfToday
-            to = now
-        case 1: // Monthly — last 30 days
-            from = calendar.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday
-            to = now
-        case 2: // Quarterly — last 90 days
-            from = calendar.date(byAdding: .day, value: -89, to: startOfToday) ?? startOfToday
-            to = now
-        case 3: // Custom
-            from = calendar.startOfDay(for: fromPicker.date)
-            to = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: toPicker.date))?.addingTimeInterval(-1) ?? toPicker.date
-        default:
-            from = startOfToday
-            to = now
-        }
+        let from = calendar.startOfDay(for: fromPicker.date)
+        let to = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: toPicker.date))?.addingTimeInterval(-1) ?? toPicker.date
 
         dismiss(animated: true) { [weak self] in
             self?.onGenerate?(from, to)

@@ -49,7 +49,7 @@ extension RecentTransactionViewController: UITableViewDataSource, UITableViewDel
             cell.quantityLabel.text = "Unknown"
         }
         
-        cell.priceLabel.textColor = tx.type == .purchase ? .systemRed : UIColor(named: "Lime Moss")!
+        cell.priceLabel.textColor = tx.type == .purchase ? .label : UIColor(named: "Lime Moss")!
         cell.priceLabel.text = "₹\(tx.totalAmount)"
         
         cell.separatorView.backgroundColor = .separator

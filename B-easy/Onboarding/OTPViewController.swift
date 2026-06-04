@@ -2,8 +2,6 @@ import UIKit
 
 class OTPViewController: UIViewController, UITextFieldDelegate {
 
-    // MARK: - IBOutlets (connect these in Storyboard)
-
     @IBOutlet weak var subtitleLabel: UILabel!
 
     @IBOutlet weak var otpField1: UITextField!
@@ -16,13 +14,11 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
     @IBOutlet weak var verifyButton: UIButton!
     @IBOutlet weak var resendButton: UIButton!
 
-    // MARK: - Properties
 
     var phoneNumber: String = ""
     private var resendSeconds = 30
     private var resendTimer: Timer?
 
-    // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -43,7 +39,6 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
         resendTimer?.invalidate()
     }
 
-    // MARK: - Styling
 
     private func styleUI() {
         verifyButton.layer.cornerRadius = 20
@@ -88,7 +83,7 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
         }
     }
 
-    // Resend Timer
+
 
     private func startResendTimer() {
         resendSeconds = 30
@@ -157,7 +152,7 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
         fields[idx - 1].becomeFirstResponder()
     }
 
-    // MARK: - Actions
+
 
     @objc private func dismissKeyboard() {
         view.endEditing(true)
@@ -169,7 +164,7 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
 
         let cleanPhone = phoneNumber.replacingOccurrences(of: " ", with: "")
 
-        // If Supabase is configured, verify the OTP via AuthManager
+
         if AuthManager.shared.isConfigured {
             setLoading(true)
             AuthManager.shared.verifyOTP(phone: cleanPhone, code: otp) { [weak self] result in
@@ -189,13 +184,13 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
                 }
             }
         } else {
-            // Supabase not configured — demo mode, accept any OTP
+
             navigateToMainApp()
         }
     }
 
     private func navigateToMainApp() {
-        // Mark user as logged in locally (for session persistence)
+
         UserDefaults.standard.set(true, forKey: "userDidCompleteOnboarding")
 
         setLoading(true)
@@ -228,7 +223,7 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
                 guard let self = self else { return }
                 
                 if let profile = profile, let ownerName = profile["owner_name"] as? String, !ownerName.isEmpty {
-                    // Sign In: We have a cloud profile. Save it to the local database.
+
                     if var settings = try? AppDataModel.shared.dataModel.db.getSettings() {
                         settings.ownerName = ownerName
                         settings.profileName = ownerName
@@ -239,7 +234,7 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
                         try? AppDataModel.shared.dataModel.db.updateSettings(settings)
                     }
                 } else {
-                    // Sign Up: No cloud profile. Push our local SQLite profile (set in SignUpVC) to the cloud.
+
                     let settings = try? AppDataModel.shared.dataModel.db.getSettings()
                     let ownerName = settings?.ownerName ?? settings?.profileName
                     let shopName = settings?.businessName

@@ -1,4 +1,4 @@
-#B-easy
+# B-easy 📱
 
 <div align="center">
   <img src="https://img.shields.io/badge/Platform-iOS-blue.svg?style=flat-square" alt="Platform: iOS" />
@@ -13,32 +13,32 @@
 
 ---
 
-## Key Features
+## 🚀 Key Features
 
-### Voice-Powered Commerce (AI)
+### 🎙️ Voice-Powered Commerce (AI)
 - **Voice Sales & Purchase Entry**: Simply speak to record transactions. Powered by highly optimized, on-device ML models (Whisper, MiniLM) to transcribe and extract intent instantly.
 - **Natural Language Parsing**: Automatically matches spoken items to inventory.
 
-### Intelligent Vision & OCR
+### 📸 Intelligent Vision & OCR
 - **Bill & Invoice Scanning**: Instantly digitize physical bills. Powered by on-device YOLOv8 segmentation and CoreML text recognition to extract items, prices, and tax data.
 - **Visual Inventory Search**: Find products using image embeddings (MobileCLIP).
 
-### Smart Stock Management
+### 📦 Smart Stock Management
 - **Real-Time Inventory Tracking**: Monitor stock levels, low-stock alerts, and expiration dates.
 - **Categorization & Profiling**: Comprehensive item profiles with detailed metadata and purchase history.
 
-### Comprehensive GST Compliance
+### 🧾 Comprehensive GST Compliance
 - **Automated Tax Calculations**: Built-in logic for CGST, SGST, and IGST.
 - **HSN Code Autocomplete**: Smart prediction of harmonized system nomenclature for seamless compliance.
 - **GST Returns**: Automated report generation and formatting.
 
-### Advanced Dashboard & Analytics
+### 📊 Advanced Dashboard & Analytics
 - **Financial Insights**: Real-time sales charts, credit reports, and recent transaction monitoring.
 - **Local-First Architecture**: Fast, offline-capable interactions utilizing efficient SQLite databases and intelligent caching architectures.
 
 ---
 
-## Technology Stack
+## 🛠️ Technology Stack
 
 - **Platform**: iOS 15.0+
 - **Language**: Swift 5
@@ -49,7 +49,7 @@
 
 ---
 
-## Project Structure
+## 📂 Project Structure
 
 ```text
 Ledgile/
@@ -67,7 +67,7 @@ Ledgile/
 
 ---
 
-## Setup & Installation
+## ⚙️ Setup & Installation
 
 1. **Clone the Repository**
    ```bash
@@ -90,16 +90,7 @@ Ledgile/
 
 ---
 
-## Contributors
-
-- [Sourav Gupta](https://github.com/Souravgupta2111)
-- [Shivraj Pun](https://github.com/Shivraj-Pun)
-- [Devansh Thapliyal](https://github.com/dev-31-dev)
-- [Bhoomika Bhatt](https://github.com/bhoomikabhatt05)
-
----
-
-## License
+## 🔒 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 

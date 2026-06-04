@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS user_profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     phone TEXT NOT NULL,

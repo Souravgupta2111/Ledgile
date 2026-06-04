@@ -6,6 +6,9 @@ final class GeminiService {
     
     static let shared = GeminiService()
     
+    // Gemini requests are now proxied through a Supabase Edge Function.
+    // The Gemini API key lives ONLY on the server as a Supabase Secret.
+    // The iOS app authenticates to the Edge Function with the user's JWT.
     
     private static func resolveConfigValue(key: String, plistValue: String?) -> String {
         if let val = plistValue, !val.isEmpty, !val.hasPrefix("$(") {
@@ -15,24 +18,23 @@ final class GeminiService {
         return ""
     }
 
-    private let apiKey: String = {
-        resolveConfigValue(key: "GEMINI_API_KEY", plistValue: Bundle.main.infoDictionary?["GEMINI_API_KEY"] as? String)
+    private let supabaseURL: String = {
+        resolveConfigValue(key: "SUPABASE_URL", plistValue: Bundle.main.infoDictionary?["SUPABASE_URL"] as? String)
     }()
-    private let model = "gemini-2.5-flash-lite"
-    private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
+    
+    private let supabaseAnonKey: String = {
+        resolveConfigValue(key: "SUPABASE_ANON_KEY", plistValue: Bundle.main.infoDictionary?["SUPABASE_ANON_KEY"] as? String)
+    }()
+    
     private let session = URLSession.shared
     
     private let maxImageDimension: CGFloat = 768
-    private let timeoutInterval: TimeInterval = 15
+    private let timeoutInterval: TimeInterval = 20  // slightly longer since we go through a proxy
     
     private init() {
-        // Diagnostic: log whether API key resolved from xcconfig
-        let maskedKey = apiKey.isEmpty ? "(EMPTY)" : "\(apiKey.prefix(8))...\(apiKey.suffix(4)) (\(apiKey.count) chars)"
-        print("[GeminiService] 🔑 API Key: \(maskedKey)")
-        print("[GeminiService] 🔑 hasAPIKey=\(hasAPIKey), isConfigured=\(isConfigured), isLimitReached=\(isLimitReached)")
-        if apiKey.hasPrefix("$(") {
-            print("[GeminiService] ⚠️ WARNING: API key looks like an unresolved xcconfig variable! Secrets.xcconfig may not be linked as a build configuration.")
-        }
+        let hasAuth = AuthManager.shared.accessToken != nil
+        print("[GeminiService] 🔑 Secured via Edge Function proxy")
+        print("[GeminiService] 🔑 supabaseURL=\(!supabaseURL.isEmpty), hasJWT=\(hasAuth), isConfigured=\(isConfigured), isLimitReached=\(isLimitReached)")
     }
     
     
@@ -253,10 +255,17 @@ final class GeminiService {
     }
     
     private func performRequest(body: [String: Any], completion: @escaping (String?) -> Void) {
-        let urlString = "\(baseURL)/\(model):generateContent?key=\(apiKey)"
+        // Route through the Supabase Edge Function proxy
+        let urlString = "\(supabaseURL)/functions/v1/gemini-proxy"
         
         guard let url = URL(string: urlString) else {
-            print("[GeminiService] Invalid URL")
+            print("[GeminiService] Invalid Edge Function URL")
+            completion(nil)
+            return
+        }
+        
+        guard let jwt = AuthManager.shared.accessToken else {
+            print("[GeminiService] No auth token — user must be logged in to use AI features")
             completion(nil)
             return
         }
@@ -264,6 +273,8 @@ final class GeminiService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.timeoutInterval = timeoutInterval
         
         do {
@@ -287,6 +298,15 @@ final class GeminiService {
             
             guard let data = data else {
                 print("[GeminiService] No data received")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            
+            // Check for HTTP-level errors from the Edge Function
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200...299).contains(httpResponse.statusCode) {
+                let raw = String(data: data, encoding: .utf8) ?? "(no body)"
+                print("[GeminiService] Edge Function HTTP \(httpResponse.statusCode): \(raw.prefix(300))")
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
@@ -737,11 +757,14 @@ final class GeminiService {
     
     
     var isConfigured: Bool {
-        let result = !apiKey.isEmpty && apiKey != "YOUR_KEY_HERE" && !isLimitReached
-        return result
+        // Configured = Supabase is set up + user is logged in + usage limit not reached
+        let hasSupabase = !supabaseURL.isEmpty && !supabaseAnonKey.isEmpty
+        let hasAuth = AuthManager.shared.accessToken != nil
+        return hasSupabase && hasAuth && !isLimitReached
     }
     
     var hasAPIKey: Bool {
-        return !apiKey.isEmpty && apiKey != "YOUR_KEY_HERE"
+        // API key is now on the server; we just need Supabase + auth
+        return !supabaseURL.isEmpty && AuthManager.shared.accessToken != nil
     }
 }

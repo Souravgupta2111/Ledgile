@@ -41,7 +41,7 @@ class SalesScanCameraViewController: UIViewController {
      var isBarcodeScanning = false
      var barcodeItemLookup: [String: Item] = [:]
      var barcodeAllItems: [Item] = []
-     var barcodeScannedItems: [(item: Item, quantity: Int)] = []
+     var barcodeScannedItems: [(item: Item, quantity: Double)] = []
      var barcodeSeenCodes: Set<String> = []
      var barcodeLastScanTime: CFTimeInterval = 0
      let barcodeScanCooldown: CFTimeInterval = 1.5
@@ -63,7 +63,7 @@ class SalesScanCameraViewController: UIViewController {
     // MARK: - Live Product Scanning State (offline mode)
      var isProductScanning = false
      var productCandidates: [UUID: (item: Item, score: Float, frameCount: Int)] = [:]
-     var productConfirmedItems: [(item: Item, quantity: Int)] = []
+     var productConfirmedItems: [(item: Item, quantity: Double)] = []
      var productConfirmedIDs: Set<UUID> = []
      var productLastProcessTime: CFTimeInterval = 0
      let productScanInterval: CFTimeInterval = 0.33  // ~3 FPS
@@ -505,24 +505,21 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
                 return
             }
 
-            // Run all three detection strategies in parallel on this frame:
-            //   1. CLIP matching (product recognition via trained embeddings)
-            //   2. Barcode scanning (instant match if barcode found in inventory)
-            //   3. OCR label reading (extract weight, variant from packaging text)
+            
             let group = DispatchGroup()
 
             var clipMatches: [(Item, Float, Int)] = []
             var barcodeMatches: [(Item, String)] = []  // (item, barcode)
             var ocrLabels: [String] = []
 
-            // ── Strategy 1: CLIP matching ──
+
             group.enter()
             ProductFingerprintManager.shared.matchObjectsWithScores(in: cgImage) { matches in
                 clipMatches = matches
                 group.leave()
             }
 
-            // ── Strategy 2: Barcode scanning (parallel) ──
+
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 defer { group.leave() }
@@ -540,7 +537,7 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
                 }
             }
 
-            // ── Strategy 3: OCR label read (parallel) ──
+
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 defer { group.leave() }
@@ -558,7 +555,7 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
                 }
             }
 
-            // ── Combine results ──
+
             group.notify(queue: .main) { [weak self] in
                 guard let self = self else { return }
                 self.productIsProcessingFrame = false
@@ -711,22 +708,20 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
         assert(Thread.isMainThread, "handleProductDetected must be called on main thread")
 
         guard score >= 0.68 else { return }
-
-        // Already confirmed — ignore (user changes quantity manually)
         guard !productConfirmedIDs.contains(item.id) else { return }
 
-        // Multi-frame consensus: track how many frames this item appears in
+
         if var candidate = productCandidates[item.id] {
             candidate.frameCount += 1
             candidate.score = max(candidate.score, score)
             productCandidates[item.id] = candidate
 
-            // Confirmed: seen in ≥3 frames (1 solid second at 3 FPS) with high score
+
             if candidate.frameCount >= 3 {
                 productConfirmedIDs.insert(item.id)
                 productCandidates.removeValue(forKey: item.id)
 
-                // Always qty=1 — user adjusts manually
+
                 productConfirmedItems.append((item: item, quantity: 1))
 
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -735,7 +730,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                 print("[ProductScanner] Confirmed: \(item.name) (score: \(String(format: "%.2f", score)), frames: \(candidate.frameCount))")
             }
         } else {
-            // First time seeing this item
+
             productCandidates[item.id] = (item: item, score: score, frameCount: 1)
         }
     }
@@ -743,7 +738,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
         let allText = labels.joined(separator: " ").lowercased()
         guard !allText.isEmpty else { return }
 
-        // ── Step 1: Extract all weight/volume mentions from the label ──
+
         var detectedWeights: [(value: Double, unit: String, normalized: String)] = []
         let weightPattern = #"(\d+\.?\d*)\s*(g|gm|gms|gram|grams|kg|kgs|ml|l|ltr|litre|litres|liter|liters)\b"#
         if let regex = try? NSRegularExpression(pattern: weightPattern, options: .caseInsensitive) {
@@ -753,7 +748,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                    let unitRange = Range(match.range(at: 2), in: allText),
                    let value = Double(allText[valueRange]) {
                     let unit = String(allText[unitRange]).lowercased()
-                    // Normalize to base unit for comparison
+
                     let normalized = normalizeWeight(value: value, unit: unit)
                     detectedWeights.append((value: value, unit: unit, normalized: normalized))
                     print("[OCR] Detected weight: \(value) \(unit) → \(normalized)")
@@ -761,7 +756,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             }
         }
 
-        // ── Step 2: Extract MRP/price mentions ──
+
         var detectedPrices: [Double] = []
         let pricePattern = #"(?:mrp|rs\.?|₹|price|m\.r\.p)[\s.:]*(\d+\.?\d*)"#
         if let regex = try? NSRegularExpression(pattern: pricePattern, options: .caseInsensitive) {
@@ -774,7 +769,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                 }
             }
         }
-        // Also catch standalone ₹ followed by number (e.g., "₹20" without MRP prefix)
+
         let standalonePrice = #"₹\s*(\d+\.?\d*)"#
         if let regex = try? NSRegularExpression(pattern: standalonePrice, options: []) {
             let matches = regex.matches(in: allText, range: NSRange(allText.startIndex..., in: allText))
@@ -788,12 +783,12 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             }
         }
 
-        // ── Step 3: Match OCR text against inventory with variant awareness ──
+
         let allItems = barcodeAllItems.isEmpty
             ? ((try? AppDataModel.shared.dataModel.db.getAllItems()) ?? [])
             : barcodeAllItems
 
-        // Group items by base name (e.g., "Lays Classic" groups "Lays Classic 20g" and "Lays Classic 52g")
+
         var candidateMatches: [(item: Item, nameScore: Float, weightMatch: Bool, priceMatch: Bool)] = []
 
         for item in allItems {
@@ -802,7 +797,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             let itemName = item.name.lowercased()
             let words = itemName.split(separator: " ").map(String.init)
 
-            // Check how many product name words appear in OCR text
+
             let matchingWords = words.filter { word in
                 word.count >= 3 && allText.contains(word)
             }
@@ -810,10 +805,10 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
 
             guard nameScore >= 0.4 && matchingWords.count >= 1 else { continue }
 
-            // Check if item name contains a weight that matches OCR weight
+
             var weightMatch = false
             if !detectedWeights.isEmpty {
-                // Extract weight from item name (e.g., "Lays Classic 52g" → "52g")
+
                 if let weightRegex = try? NSRegularExpression(pattern: weightPattern, options: .caseInsensitive) {
                     let nameMatches = weightRegex.matches(in: itemName, range: NSRange(itemName.startIndex..., in: itemName))
                     for nm in nameMatches {
@@ -823,7 +818,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                             let itemUnit = String(itemName[ur]).lowercased()
                             let itemNorm = normalizeWeight(value: itemValue, unit: itemUnit)
 
-                            // Check if any detected weight matches this item's weight
+
                             for dw in detectedWeights {
                                 if dw.normalized == itemNorm {
                                     weightMatch = true
@@ -836,7 +831,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                 }
             }
 
-            // Check if OCR price matches item's selling price (±2 tolerance for rounding)
+
             var priceMatch = false
             if !detectedPrices.isEmpty {
                 let itemPrice = item.defaultSellingPrice
@@ -852,8 +847,6 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             candidateMatches.append((item: item, nameScore: nameScore, weightMatch: weightMatch, priceMatch: priceMatch))
         }
 
-        // ── Step 4: Resolve variants ──
-        // Priority: weight+price match > weight only > price only > name score
         let sorted = candidateMatches.sorted { a, b in
             // Both weight and price match is strongest
             let aStrength = (a.weightMatch ? 2 : 0) + (a.priceMatch ? 1 : 0)

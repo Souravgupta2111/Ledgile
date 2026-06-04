@@ -89,7 +89,7 @@ extension StockAnalysisViewController: UITableViewDataSource, UITableViewDelegat
 
             cell.itemNameLabel.text = item.name
             cell.priceLabel.text = "Purchased: \(item.quantity)"
-            cell.quantityLabel.text = "\(item.quantity) x ₹\(item.costPrice) = ₹\(Double(item.quantity) * item.costPrice)"
+            cell.quantityLabel.text = "\(item.quantity) x ₹\(item.costPrice) = ₹\(item.quantity * item.costPrice)"
             let isFirst = indexPath.row == 0
             let isLast = indexPath.row == salesItems.count - 1
             

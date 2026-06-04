@@ -17,10 +17,6 @@ final class CreditStore {
         return trimmed.isEmpty ? nil : trimmed
     }
     
-    // ─────────────────────────────────────────────
-    // MARK: - Customer CRUD
-    // ─────────────────────────────────────────────
-    
     func addCustomer(_ customer: Customer) {
         var c = customer
         c.netBalance = 0
@@ -68,9 +64,7 @@ final class CreditStore {
         return customer
     }
     
-    // ─────────────────────────────────────────────
-    // MARK: - Supplier CRUD
-    // ─────────────────────────────────────────────
+
     
     func addSupplier(_ supplier: Supplier) {
         var s = supplier
@@ -119,9 +113,7 @@ final class CreditStore {
         return supplier
     }
     
-    // ─────────────────────────────────────────────
-    // MARK: - Customer Payment CRUD
-    // ─────────────────────────────────────────────
+
     
     func addPayment(_ payment: Payment) {
         db.insertCustomerPayment(payment)
@@ -131,13 +123,7 @@ final class CreditStore {
         return db.getCustomerPayments(forCustomer: customerID)
     }
     
-    /// Net balance for a customer:
-    /// Positive = customer owes you (you'll receive)
-    /// Negative = you owe the customer
-    ///
-    /// Customer ledger meaning:
-    /// - .paid: you gave value to customer (e.g. credit sale) => receivable increases
-    /// - .received: customer paid you back => receivable decreases
+
     func getNetBalance(forCustomer customerID: UUID) -> Double {
         let payments = db.getCustomerPayments(forCustomer: customerID)
         var balance: Double = 0
@@ -152,9 +138,7 @@ final class CreditStore {
         return balance
     }
     
-    // ─────────────────────────────────────────────
-    // MARK: - Supplier Payment CRUD
-    // ─────────────────────────────────────────────
+
     
     func addSupplierPayment(_ payment: SupplierPayment) {
         db.insertSupplierPaymentRecord(payment)
@@ -191,10 +175,7 @@ final class CreditStore {
     func getPayments(forSupplier supplierID: UUID) -> [SupplierPayment] {
         return db.getSupplierPayments(forSupplier: supplierID)
     }
-    
-    /// Net balance for a supplier:
-    /// Positive = supplier gave you more than you paid → you owe them
-    /// Negative = you paid more than they gave
+
     func getNetBalance(forSupplier supplierID: UUID) -> Double {
         let payments = db.getSupplierPayments(forSupplier: supplierID)
         var balance: Double = 0
@@ -208,11 +189,7 @@ final class CreditStore {
         }
         return balance
     }
-    
-    // ─────────────────────────────────────────────
-    // MARK: - Aggregate Helpers
-    // ─────────────────────────────────────────────
-    
+
     /// Total amount all customers owe you
     func getTotalReceivable() -> Double {
         let customers = db.getAllCustomers()
