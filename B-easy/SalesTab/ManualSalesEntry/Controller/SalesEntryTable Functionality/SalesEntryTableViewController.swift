@@ -10,6 +10,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     var billSaved: Bool = false
     var transactionID = UUID()
     var customerName: String?
+    var customerPhone: String?
     var notes: String?
     var transactionItems: [TransactionItem] = []
     var discountAmount: Double = 0
@@ -37,10 +38,10 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     }()
     
     var subTotal: Double {
-        transactionItems.reduce(0) { $0 + $1.totalRevenue }
+        Money.round2(transactionItems.reduce(0) { $0 + $1.totalRevenue })
     }
     var grandTotal: Double {
-        subTotal - discountAmount + adjustmentAmount
+        Money.round2(subTotal - discountAmount + adjustmentAmount)
     }
     private var isEditingEnabled = false {
         didSet {
@@ -82,10 +83,10 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
 
         setupSuggestionsTableView()
         
-
+        // Apply any data passed before viewDidLoad (e.g. from scan callback)
         if let result = pendingResult {
             pendingResult = nil
-
+            // entryMode is already set by the caller before pushing this VC
             appendItems(from: result)
         }
     }
@@ -101,14 +102,14 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         suggestionsTableView.delegate = self
         suggestionsTableView.register(UITableViewCell.self, forCellReuseIdentifier: "InventorySuggestionCell")
         
-
+        // Remove all extra spacing that causes the blank area above rows
         suggestionsTableView.sectionHeaderTopPadding = 0
         suggestionsTableView.sectionHeaderHeight = 0
         suggestionsTableView.sectionFooterHeight = 0
         suggestionsTableView.contentInset = .zero
         suggestionsTableView.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         
-
+        // Shadow for floating appearance
         suggestionsTableView.layer.shadowColor = UIColor.black.cgColor
         suggestionsTableView.layer.shadowOpacity = 0.15
         suggestionsTableView.layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -134,7 +135,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             return
         }
 
-
+        // Add to the application window so it floats above the table view
         guard let window = view.window else { return }
         
         // Convert the text field's frame to window coordinates
@@ -144,7 +145,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
         let desiredHeight = min(CGFloat(currentSuggestions.count) * suggestionsTableView.rowHeight, 220)
         
-
+        // Position below the text field, or above if not enough space below
         let spaceBelow = window.bounds.height - fieldRect.maxY - 20
         let yPosition: CGFloat
         if spaceBelow >= desiredHeight {
@@ -193,7 +194,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         transactionItems[index] = updated
     }
 
-
+    // MARK: - Add New Item (re-open voice/camera if entry started that way)
     
     private func addNewItemByEntryMode() {
         switch entryMode {
@@ -222,7 +223,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
 
     // MARK: - Append Items from Voice/Scan
     
-
+    // Temporary queue for fuzzy matches waiting for user confirmation
     private var pendingFuzzyMatches: [(product: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?, itemID: UUID?, matchConfidence: Double, originalName: String)].Element, transactionItem: TransactionItem)] = []
     
     func appendItems(from result: ParsedResult) {
@@ -241,18 +242,18 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             let voicePrice = Double(product.price ?? "")
             let matchedItem = product.itemID.flatMap { id in inventoryItems.first { $0.id == id } }
             
-
-
+            // Determine the working unit:
+            // If the parser extracted a unit, use it. Otherwise default to the inventory unit (NOT "pcs").
             var finalUnit = product.unit ?? matchedItem?.unit ?? "pcs"
             var finalSellingPrice: Double
             
-
+            // Extract numeric quantity from unit if fused (e.g. "500g" -> 500.0, "g")
             if let extracted = UnitConversionService.shared.extractQuantityAndUnit(from: finalUnit) {
                 inputQty *= extracted.0
                 finalUnit = extracted.1
             }
             
-
+            // Auto-scale fractional units to avoid decimal loss (e.g. 0.5 kg -> 500 g)
             if floor(inputQty) != inputQty {
                 let nUnit = UnitConversionService.shared.normalizeUnit(finalUnit)
                 if nUnit == "kg" {
@@ -274,7 +275,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                 let normalizedInv = UnitConversionService.shared.normalizeUnit(inv.unit)
                 
                 if normalizedReq != normalizedInv {
-
+                    // Units differ — need prorated conversion (e.g. 540g at ₹40/kg)
                     if let conversion = UnitConversionService.shared.calculateProrated(
                         requestedQty: inputQty,
                         requestedUnit: finalUnit,
@@ -286,17 +287,17 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                         finalQty = conversion.quantity
                         finalUnit = conversion.unit
                         
-
+                        // If user explicitly stated a price, use it; otherwise pro-rate
                         finalSellingPrice = voicePrice ?? conversion.proratedPrice
                         print("[VoiceSale] ✓ Converted: qty=\(finalQty), unit=\(finalUnit), price=\(finalSellingPrice)")
                     } else {
-
+                        // Incompatible families (e.g. pcs vs kg) — fall back to defaults
                         finalSellingPrice = voicePrice ?? inv.defaultSellingPrice
                         finalUnit = inv.unit
                         print("[VoiceSale] ✗ Incompatible units, using defaults: price=\(finalSellingPrice), unit=\(finalUnit)")
                     }
                 } else {
-
+                    // Same unit — no conversion needed, use inventory price as default
                     finalSellingPrice = voicePrice ?? inv.defaultSellingPrice
                     finalUnit = inv.unit
                     print("[VoiceSale] ✗ Same unit, using price=\(finalSellingPrice), unit=\(finalUnit)")
@@ -415,6 +416,57 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                 present(alert, animated: true)
                 return
             }
+            if UPIWhatsAppShare.indianMobileDigits(customerPhone) == nil {
+                let match = CreditStore.shared.getAllCustomers().first {
+                    $0.name.caseInsensitiveCompare(name) == .orderedSame
+                }
+                customerPhone = match?.phone
+            }
+            if UPIWhatsAppShare.indianMobileDigits(customerPhone) == nil {
+                let alert = UIAlertController(
+                    title: "Mobile required",
+                    message: "Credit needs a 10-digit number so you can send the UPI QR on WhatsApp.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "Add number", style: .default) { _ in
+                    self.performSegue(withIdentifier: "selectCustomer", sender: nil)
+                })
+                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                present(alert, animated: true)
+                return
+            }
+            let settings = try? AppDataModel.shared.dataModel.db.getSettings()
+            if !UPIWhatsAppShare.canCollect(with: settings) {
+                let alert = UIAlertController(
+                    title: "Add your UPI QR",
+                    message: "Save your PhonePe, Paytm, or GPay UPI ID or QR in Account → UPI collection. There is no payment gateway fee.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                present(alert, animated: true)
+                return
+            }
+        }
+        if let settings = try? AppDataModel.shared.dataModel.db.getSettings(),
+           settings.isGSTRegistered, settings.gstScheme != "composition" {
+            let buyerCode = GSTEngine.buyerStateCode(
+                explicit: buyerStateCode,
+                gstin: buyerGSTIN,
+                shopStateCode: nil
+            )
+            if GSTEngine.isInterStateSupply(
+                sellerStateCode: settings.businessStateCode,
+                buyerStateCode: buyerCode
+            ) == nil {
+                let alert = UIAlertController(
+                    title: "Place of supply required",
+                    message: "GST invoices need a place of supply. Unknown place is not treated as the shop state.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                present(alert, animated: true)
+                return
+            }
         }
         performSegue(withIdentifier: "show_bill", sender: nil)
     }
@@ -470,11 +522,16 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             sellerGSTIN = settings.gstNumber
             sellerState = settings.businessState
             
-            let buyerCode = buyerStateCode ?? (buyerGSTIN != nil ? String(buyerGSTIN!.prefix(2)) : settings.businessStateCode)
-            isInterState = GSTEngine.isInterStateSupply(
+            let buyerCode = GSTEngine.buyerStateCode(
+                explicit: buyerStateCode,
+                gstin: buyerGSTIN,
+                shopStateCode: nil
+            )
+            if let supplyFlag = GSTEngine.isInterStateSupply(
                 sellerStateCode: settings.businessStateCode,
                 buyerStateCode: buyerCode
-            )
+            ) {
+            isInterState = supplyFlag
             placeOfSupply = IndianStates.stateByCode(buyerCode ?? "")?.name
             
             var itemResults: [(gstRate: Double, result: ItemTaxResult)] = []
@@ -508,6 +565,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             if !itemResults.isEmpty {
                 taxBreakup = GSTEngine.generateBreakup(itemResults: itemResults)
             }
+            }
         } else if let settings = try? AppDataModel.shared.dataModel.db.getSettings(),
                   settings.isGSTRegistered, settings.gstScheme == "composition" {
             isCompositionScheme = true
@@ -517,6 +575,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         
         return BillingDetails(
             customerName: name,
+            customerPhone: customerPhone,
             items: finalTxItems,
             discount: discountAmount,
             adjustment: adjustmentAmount,
@@ -1004,6 +1063,7 @@ extension SalesEntryTableViewController {
 
         let button = UIButton(type: .system)
         button.setTitle(isEditingEnabled ? "Done" : "Edit", for: .normal)
+        button.setTitleColor(UIColor(named: "Lime Moss") ?? .systemGreen, for: .normal)
         button.addTarget(self, action: #selector(toggleEditing), for: .touchUpInside)
 
         let stack = UIStackView(arrangedSubviews: [titleLabel, UIView(), button])
@@ -1063,11 +1123,6 @@ extension SalesEntryTableViewController {
             createdDate: old.createdDate
         )
         transactionItems[index] = updated
-        
-        tableView.reloadSections(
-            IndexSet([SalesSection.items.rawValue, SalesSection.summary.rawValue]),
-            with: .none
-        )
     }
 
     @objc private func clearTextField(_ sender: UITextField) {
@@ -1141,8 +1196,9 @@ extension SalesEntryTableViewController {
     }
 }
 extension SalesEntryTableViewController: CustomerSelectionDelegate {
-    func didSelectCustomer(name: String) {
+    func didSelectCustomer(name: String, phone: String?) {
         customerName = name
+        customerPhone = phone
         customerNameField.text = name
         
         let all = CreditStore.shared.getAllCustomers()
@@ -1200,7 +1256,8 @@ extension SalesEntryTableViewController: ItemInformationDelegate {
             quantity: item.quantity,
             sellingPricePerUnit: item.sellingPricePerUnit,
             costPricePerUnit: nil,
-            createdDate: item.createdAt
+            createdDate: item.createdAt,
+            itemType: item.itemType
         )
         transactionItems.append(placeholderTransactionItem)
 

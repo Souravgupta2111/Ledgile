@@ -9,9 +9,14 @@ enum GeminiPromptTemplates {
     
     static let voiceSaleSystem = """
     You are a retail store assistant that parses spoken Hindi/English/Hinglish text into structured sale data.
-    Extract: customer name, items with quantity/unit/price, and payment mode.
+    Extract: customer name (only if a person was named), items with quantity/unit/price, and payment mode.
     
     Rules:
+    - customer MUST be null unless a PERSON was clearly named as the buyer.
+    - A customer exists only with cues like "X ko", "X to", "X ke liye", "customer X", "udhaar X", or a known person name said as the buyer.
+    - If no person is named, customer MUST be null. Do not guess.
+    - NEVER copy the full spoken sentence into customer.
+    - NEVER put item names, quantities, units, or prices in customer.
     - "ko" or "to" before items means the person is the CUSTOMER
     - Default unit is "pcs" unless specified (kg, litre, gram, dozen, packet, etc.)
     - Default quantity is 1 if not mentioned.
@@ -50,6 +55,9 @@ enum GeminiPromptTemplates {
     
     Rules:
     - "se" or "from" before items means the person is the SUPPLIER
+    - supplier MUST be null unless a PERSON or firm was clearly named as the seller.
+    - NEVER copy the full spoken sentence into supplier. NEVER put item names or quantities in supplier.
+    - If no supplier is named, supplier MUST be null. Do not guess.
     - "cost price" / "khareed" / "CP" = cost price; "selling price" / "SP" / "bechne ka" = selling price
     - If only one price is mentioned, treat it as cost_price
     - Default unit is "pcs" unless specified
@@ -203,38 +211,6 @@ enum GeminiPromptTemplates {
       "total_sgst": "string or null",
       "total_igst": "string or null",
       "total_taxable_value": "string or null"
-    }
-    """
-    
-    // MARK: - Object/Product Identification
-    
-    static let objectDetectionSystem = """
-    You are a product identification assistant for an Indian retail/kirana store.
-    Look at the image and identify EVERY SINGLE VISIBLE RETAIL PRODUCT.
-    Do NOT group different products together. You MUST list each visually distinct product as a separate item in the array.
-    For each product, estimate the count of visible units.
-    
-    Rules:
-    - Identify ALL products you can see, no matter how small or in the background.
-    - Return common product names (e.g., "Parle-G", "Maggi Noodles", "Surf Excel")
-    - If brand is not visible, describe the product generically (e.g., "Rice packet", "Dal bag")
-    - The `name` should be ONLY the product name (with brand if visible). Do NOT add generic category words here.
-    - Count visible units of each product
-    - If price label is visible on the product, include it
-    - Provide a `category_alias` containing BOTH the original term and its English equivalent/generic term, comma-separated (e.g. "parle-g, biscuit", "aloo, potato", "surf, detergent").
-    - Return ONLY valid JSON, no explanation
-    """
-    
-    static let objectDetectionSchema = """
-    {
-      "products": [
-        {
-          "name": "string",
-          "category_alias": "string or null",
-          "quantity": "string",
-          "price": "string or null"
-        }
-      ]
     }
     """
 }

@@ -1,4 +1,5 @@
 import UIKit
+import AuthenticationServices
 
 class SignInViewController: UIViewController, UITextFieldDelegate {
 
@@ -32,6 +33,7 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
         configureFields()
         configureCountryCodeButton()
         updateSendCodeState()
+        configureAppleSignIn()
     }
 
     private func styleUI() {
@@ -50,6 +52,9 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
 
         sendCodeButton.layer.cornerRadius = 14
         sendCodeButton.clipsToBounds = true
+        sendCodeButton.backgroundColor = .black
+        sendCodeButton.setTitleColor(.white, for: .normal)
+        sendCodeButton.setTitleColor(.lightGray, for: .disabled)
     }
 
     // MARK: - Configuration
@@ -164,6 +169,58 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
         }
     }
 
+    // MARK: - Apple Sign In
+    
+    private let appleSignInButton = ASAuthorizationAppleIDButton(authorizationButtonType: .signIn, authorizationButtonStyle: .black)
+    
+    private func configureAppleSignIn() {
+        appleSignInButton.translatesAutoresizingMaskIntoConstraints = false
+        appleSignInButton.addTarget(self, action: #selector(handleAppleSignIn), for: .touchUpInside)
+        appleSignInButton.cornerRadius = 14
+        view.addSubview(appleSignInButton)
+        
+        NSLayoutConstraint.activate([
+            appleSignInButton.topAnchor.constraint(equalTo: sendCodeButton.bottomAnchor, constant: 20),
+            appleSignInButton.leadingAnchor.constraint(equalTo: sendCodeButton.leadingAnchor),
+            appleSignInButton.trailingAnchor.constraint(equalTo: sendCodeButton.trailingAnchor),
+            appleSignInButton.heightAnchor.constraint(equalToConstant: 50)
+        ])
+    }
+    
+    @objc private func handleAppleSignIn() {
+        AppleSignInHelper.shared.startSignIn(presentationAnchor: view.window) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let data):
+                    self?.setLoading(true)
+                    AuthManager.shared.signInWithApple(idToken: data.idToken, nonce: data.nonce) { authResult in
+                        switch authResult {
+                        case .success:
+                            guard let self = self else { return }
+                            AuthNavigationHelper.continueAfterAppleAuth(
+                                from: self,
+                                appleName: data.fullName,
+                                appleEmail: data.email
+                            )
+                        case .failure(let error):
+                            self?.setLoading(false)
+                            self?.showErrorAlert(error.localizedDescription)
+                        }
+                    }
+                case .failure(let error):
+                    if (error as NSError).code != ASAuthorizationError.canceled.rawValue {
+                        self?.showErrorAlert(error.localizedDescription)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func showErrorAlert(_ message: String) {
+        let alert = UIAlertController(title: "Error", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
 
 
     func textField(_ textField: UITextField,

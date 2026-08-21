@@ -1,12 +1,16 @@
 
 CREATE TABLE IF NOT EXISTS user_profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    phone TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
     owner_name TEXT,
     shop_name TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- If the table already exists, add the email column
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS email TEXT;
 
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 

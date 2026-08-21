@@ -29,6 +29,7 @@ class DashboardViewController: UIViewController {
         tableView.delegate = self
         tableView.backgroundColor = .systemGray6
         tableView.sectionHeaderTopPadding = 0
+        HomeTabSpacing.apply(to: tableView)
         tableView.register(UINib(nibName: "ItemTableViewCell", bundle: nil),
                            forCellReuseIdentifier: "ItemTableViewCell")
         
@@ -39,6 +40,7 @@ class DashboardViewController: UIViewController {
                            forCellReuseIdentifier: "LabelTableViewCell")
         tableView.register(UINib(nibName: "EmptyTableViewCell", bundle: nil),
                            forCellReuseIdentifier: "EmptyTableViewCell")
+        setupAssistantButton()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -89,6 +91,34 @@ class DashboardViewController: UIViewController {
     
     @objc func didTapViewAllTransactions() {
         performSegue(withIdentifier: "recent_transactions", sender: nil)
+    }
+
+    private func setupAssistantButton() {
+        guard #available(iOS 26.0, *) else { return }
+        var config = UIButton.Configuration.filled()
+        config.image = UIImage(systemName: "bubble.left.and.bubble.right.fill")
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .large)
+        config.cornerStyle = .capsule
+        config.baseForegroundColor = .white
+        config.baseBackgroundColor = UIColor(named: "Lime Moss") ?? .systemGreen
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityLabel = "Assistant"
+        button.addTarget(self, action: #selector(openAssistant), for: .touchUpInside)
+        view.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 50),
+            button.heightAnchor.constraint(equalToConstant: 50),
+            button.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -26),
+            button.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -120)
+        ])
+        HomeTabSpacing.apply(to: tableView)
+    }
+
+    @objc private func openAssistant() {
+        if #available(iOS 26.0, *) {
+            navigationController?.pushViewController(ShopAssistantViewController(), animated: true)
+        }
     }
 }
 
@@ -227,8 +257,10 @@ extension DashboardViewController: UITableViewDataSource, UITableViewDelegate {
                     cell.quantityLabel.text = "Unknown"
                 }
                 
-                cell.priceLabel.textColor = tx.type == .purchase ? .black : UIColor(named: "Lime Moss")!
-                cell.priceLabel.text = "₹\(tx.totalAmount)"
+                cell.itemNameLabel.textColor = .label
+                cell.quantityLabel.textColor = .secondaryLabel
+                cell.priceLabel.textColor = tx.type == .purchase ? .systemRed : (UIColor(named: "Lime Moss") ?? .systemGreen)
+                cell.priceLabel.text = String(format: "₹%.2f", Money.round2(tx.totalAmount))
                 cell.separatorView.backgroundColor = .separator
                 return cell
             }

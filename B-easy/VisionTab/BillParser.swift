@@ -75,6 +75,54 @@ final class BillParser {
 
      init() {}
 
+    func unitPrice(rate: String?, amount: String?, quantity: String) -> String? {
+        let qty = Double(quantity.replacingOccurrences(of: ",", with: "")) ?? 1
+        if let rateText = cleanPrice(rate), let rateValue = Double(rateText), rateValue > 0 {
+            if let amountText = cleanPrice(amount), let amountValue = Double(amountText), qty > 0 {
+                let expected = rateValue * qty
+                if abs(expected - amountValue) > max(1.0, amountValue * 0.05) {
+                    print("[BillParser] qty×rate mismatch: \(qty)×\(rateValue)=\(expected) vs amount \(amountValue)")
+                }
+            }
+            return rateText
+        }
+        if let amountText = cleanPrice(amount), let amountValue = Double(amountText), qty > 0 {
+            return String(format: "%.2f", amountValue / qty)
+        }
+        return cleanPrice(rate ?? amount)
+    }
+
+    func extractPurchaseHeader(from text: String) -> (supplier: String?, gstin: String?, invoice: String?, date: String?) {
+        let gstinPattern = #"\b([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z])\b"#
+        var gstin: String?
+        if let regex = try? NSRegularExpression(pattern: gstinPattern, options: []),
+           let match = regex.firstMatch(in: text.uppercased(), range: NSRange(text.startIndex..., in: text.uppercased())),
+           let range = Range(match.range(at: 1), in: text.uppercased()) {
+            let value = String(text.uppercased()[range])
+            if GSTEngine.isValidGSTIN(value) || value.count == 15 {
+                gstin = value
+            }
+        }
+
+        var invoice: String?
+        let invoicePattern = #"(?:invoice|inv|bill)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-\/]{2,})"#
+        if let regex = try? NSRegularExpression(pattern: invoicePattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let range = Range(match.range(at: 1), in: text) {
+            invoice = String(text[range])
+        }
+
+        var date: String?
+        let datePattern = #"\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b"#
+        if let regex = try? NSRegularExpression(pattern: datePattern),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let range = Range(match.range(at: 1), in: text) {
+            date = String(text[range])
+        }
+
+        return (nil, gstin, invoice, date)
+    }
+
 
     func parseForSale(boxes: [OCRTextBox]) -> ParsedResult {
         let bill = parseBillSpatial(boxes: boxes)
@@ -83,7 +131,7 @@ final class BillParser {
 
         let rawProducts: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?)] = bill.items.map {
             let (q, u) = extractQtyAndUnit($0.qty)
-            return (name: $0.particulars, quantity: q, unit: u ?? "pcs", price: cleanPrice($0.rate ?? $0.amount), costPrice: nil)
+            return (name: $0.particulars, quantity: q, unit: u ?? "pcs", price: unitPrice(rate: $0.rate, amount: $0.amount, quantity: q), costPrice: nil)
         }
 
         guard !rawProducts.isEmpty else {
@@ -95,8 +143,9 @@ final class BillParser {
             items: inventory
         )
 
-        let productsForResult: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?)] = matched.map {
-            return (name: $0.name, quantity: $0.quantity, unit: $0.unit, price: $0.price, costPrice: nil)
+        let productsForResult: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?)] = matched.enumerated().map { i, m in
+            let spoken = i < bill.items.count ? bill.items[i].particulars : m.name
+            return (name: spoken, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: nil)
         }
 
         print("\n[BillParser] --- OFFLINE SALE OCR RESULT ---")
@@ -105,6 +154,15 @@ final class BillParser {
         }
         print("[BillParser] ----------------------------------\n")
 
+        var lineSum: Double = 0
+        for p in productsForResult {
+            let qty = Double(p.quantity.replacingOccurrences(of: ",", with: "")) ?? 1
+            let price = Double(p.price ?? "") ?? 0
+            lineSum += qty * price
+        }
+        let printed = bill.grandTotal.flatMap { Double($0.replacingOccurrences(of: ",", with: "")) }
+        let mismatch = printed.map { abs($0 - lineSum) > max(2.0, $0 * 0.03) } ?? false
+
         return ParsedResult(
             entities: [],
             products: productsForResult,
@@ -112,7 +170,9 @@ final class BillParser {
             isNegation: false,
             isReference: false,
             productItemIDs: nil,
-            productConfidences: nil
+            productConfidences: nil,
+            printedGrandTotal: bill.grandTotal,
+            printedTotalMismatch: mismatch
         )
     }
 
@@ -130,11 +190,11 @@ final class BillParser {
         for lineItem in bill.items {
             let name = lineItem.particulars
             let (qty, unit) = extractQtyAndUnit(lineItem.qty)
-            let price = cleanPrice(lineItem.rate ?? lineItem.amount)
+            let price = unitPrice(rate: lineItem.rate, amount: lineItem.amount, quantity: qty)
 
             if let match = InventoryMatcher.shared.match(name: name, against: inventory) {
                 items.append(ParsedPurchaseItem(
-                    name: match.item.name,
+                    name: name,
                     quantity: qty,
                     unit: unit ?? match.item.unit,
                     costPrice: price,
@@ -156,11 +216,12 @@ final class BillParser {
             }
         }
 
+        let header = extractPurchaseHeader(from: bill.rawText)
         return ParsedPurchaseResult(
-            supplierName: nil,
-            supplierGSTIN: nil,
-            invoiceNumber: nil,
-            invoiceDate: nil,
+            supplierName: header.supplier,
+            supplierGSTIN: header.gstin,
+            invoiceNumber: header.invoice,
+            invoiceDate: header.date,
             items: items,
             totalCGST: nil,
             totalSGST: nil,
@@ -869,11 +930,12 @@ final class BillParser {
             }
         }
 
+        let header = extractPurchaseHeader(from: fullText)
         return ParsedPurchaseResult(
-            supplierName: nil,
-            supplierGSTIN: nil,
-            invoiceNumber: nil,
-            invoiceDate: nil,
+            supplierName: header.supplier,
+            supplierGSTIN: header.gstin,
+            invoiceNumber: header.invoice,
+            invoiceDate: header.date,
             items: items,
             totalCGST: nil,
             totalSGST: nil,

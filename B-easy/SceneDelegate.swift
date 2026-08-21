@@ -1,39 +1,17 @@
 
 import UIKit
 
-class SceneDelegate: UIResponder, UIWindowSceneDelegate {
-
-    var window: UIWindow?
-
-    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        guard let windowScene = (scene as? UIWindowScene) else { return }
-        
-        // Check if user has already completed onboarding
-        let didCompleteOnboarding = UserDefaults.standard.bool(forKey: "userDidCompleteOnboarding")
-        let isLoggedInWithSupabase = AuthManager.shared.isLoggedIn
-        
-        if didCompleteOnboarding || isLoggedInWithSupabase {
-            // Skip onboarding — go straight to main app
-            let window = UIWindow(windowScene: windowScene)
-            let storyboard = UIStoryboard(name: "Main", bundle: nil)
-            let mainTabBarController = storyboard.instantiateViewController(withIdentifier: "MainTabBarController")
-            window.rootViewController = mainTabBarController
-            self.window = window
-            window.makeKeyAndVisible()
-            
-            // Silently refresh Supabase token if needed
-            AuthManager.shared.refreshSessionIfNeeded()
+enum MainTabInstaller {
+    static func makeRootTabBar() -> UIViewController {
+        let storyboard = UIStoryboard(name: "Main", bundle: nil)
+        let root = storyboard.instantiateViewController(withIdentifier: "MainTabBarController")
+        if let tab = root as? UITabBarController {
+            addSearchTabIfNeeded(on: tab)
         }
-        // Otherwise, the storyboard's initial view controller (onboarding) loads automatically
-        
-        guard scene is UIWindowScene else { return }
-
-        if let tabBarController = window?.rootViewController as? UITabBarController {
-            addSearchTabIfNeeded(on: tabBarController)
-        }
+        return root
     }
 
-    private func addSearchTabIfNeeded(on tabBarController: UITabBarController) {
+    static func addSearchTabIfNeeded(on tabBarController: UITabBarController) {
         var currentControllers = tabBarController.viewControllers ?? []
 
         let hasSearchTab = currentControllers.contains { controller in
@@ -52,10 +30,52 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         let searchNav = UINavigationController(rootViewController: searchVC)
         searchNav.tabBarItem = UITabBarItem(tabBarSystemItem: .search, tag: 999)
-
-        let insertIndex = min(1, currentControllers.count)
-        currentControllers.insert(searchNav, at: insertIndex)
+        currentControllers.append(searchNav)
         tabBarController.setViewControllers(currentControllers, animated: false)
+    }
+}
+
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = (scene as? UIWindowScene) else { return }
+        
+        // Check if user has already completed onboarding
+        let didCompleteOnboarding = UserDefaults.standard.bool(forKey: "userDidCompleteOnboarding")
+        let isLoggedInWithSupabase = AuthManager.shared.isLoggedIn
+        
+        if isLoggedInWithSupabase && !AuthNavigationHelper.hasCompletedProfile {
+            let window = UIWindow(windowScene: windowScene)
+            let completeVC = AuthNavigationHelper.makeCompleteProfileController()
+            window.rootViewController = UINavigationController(rootViewController: completeVC)
+            self.window = window
+            window.makeKeyAndVisible()
+            AuthManager.shared.refreshSessionIfNeeded()
+        } else if isLoggedInWithSupabase && AuthNavigationHelper.needsLaunchPlan {
+            let window = UIWindow(windowScene: windowScene)
+            window.rootViewController = AuthNavigationHelper.makeLaunchPlanController()
+            self.window = window
+            window.makeKeyAndVisible()
+            AuthManager.shared.refreshSessionIfNeeded()
+        } else if didCompleteOnboarding || isLoggedInWithSupabase {
+            // Skip onboarding — go straight to main app
+            let window = UIWindow(windowScene: windowScene)
+            window.rootViewController = MainTabInstaller.makeRootTabBar()
+            self.window = window
+            window.makeKeyAndVisible()
+            
+            // Silently refresh Supabase token if needed
+            AuthManager.shared.refreshSessionIfNeeded()
+        }
+        // Otherwise, the storyboard's initial view controller (onboarding) loads automatically
+        
+        guard scene is UIWindowScene else { return }
+
+        if let tabBarController = window?.rootViewController as? UITabBarController {
+            MainTabInstaller.addSearchTabIfNeeded(on: tabBarController)
+        }
     }
     
     func sceneDidDisconnect(_ scene: UIScene) {
@@ -66,7 +86,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        // Called when the scene has moved from an inactive state to an active state.
+        CloudBackupService.shared.uploadIfDueForDaily()
     }
 
     func sceneWillResignActive(_ scene: UIScene) {

@@ -1,6 +1,6 @@
 import Foundation
 
-class AuthManager {
+nonisolated class AuthManager: @unchecked Sendable {
 
     static let shared = AuthManager()
 
@@ -30,16 +30,17 @@ class AuthManager {
     private let refreshTokenKey = "supabaseRefreshToken"
     private let userIdKey = "supabaseUserId"
     private let isLoggedInKey = "supabaseIsLoggedIn"
+    private let appleEmailKey = "appleSignInEmail"
 
     private let keychain = KeychainHelper.shared
     private let defaults = UserDefaults.standard
 
     private init() {
-
+        // One-time migration: move tokens from UserDefaults to Keychain
         migrateTokensToKeychainIfNeeded()
     }
 
-
+    // MARK: - Public: Session State
     var isLoggedIn: Bool {
         defaults.bool(forKey: isLoggedInKey)
     }
@@ -49,12 +50,23 @@ class AuthManager {
     var accessToken: String? {
         keychain.read(forKey: accessTokenKey)
     }
+    var appleEmail: String? {
+        keychain.read(forKey: appleEmailKey)
+    }
+    var configuredSupabaseURL: String { supabaseURL }
+    var configuredSupabaseAnonKey: String { supabaseAnonKey }
     var isConfigured: Bool {
         !supabaseURL.isEmpty && !supabaseAnonKey.isEmpty &&
         supabaseURL != "YOUR_SUPABASE_URL" && supabaseAnonKey != "YOUR_SUPABASE_ANON_KEY"
     }
 
+    func saveAppleEmail(_ email: String?) {
+        if let email = email, !email.isEmpty {
+            keychain.save(email, forKey: appleEmailKey)
+        }
+    }
 
+    // MARK: - Public: Send OTP
     func sendOTP(phone: String, completion: @escaping (Result<Void, AuthError>) -> Void) {
         guard isConfigured else {
             DispatchQueue.main.async {
@@ -109,7 +121,7 @@ class AuthManager {
         }.resume()
     }
 
-
+    // MARK: - Public: Verify OTP
 
     func verifyOTP(phone: String, code: String, completion: @escaping (Result<Void, AuthError>) -> Void) {
         guard isConfigured else {
@@ -154,7 +166,7 @@ class AuthManager {
             }
 
             if (200...299).contains(httpResponse.statusCode) {
-
+                // Parse the session response
                 if let data = data {
                     self.parseAndSaveSession(data: data)
                 }
@@ -168,7 +180,64 @@ class AuthManager {
         }.resume()
     }
 
+    // MARK: - Public: Apple Sign In
+    func signInWithApple(idToken: String, nonce: String, completion: @escaping (Result<Void, AuthError>) -> Void) {
+        guard isConfigured else {
+            DispatchQueue.main.async { completion(.failure(.notConfigured)) }
+            return
+        }
 
+        let urlString = "\(supabaseURL)/auth/v1/token?grant_type=id_token"
+        guard let url = URL(string: urlString) else {
+            DispatchQueue.main.async { completion(.failure(.invalidURL)) }
+            return
+        }
+
+        let body: [String: Any] = [
+            "id_token": idToken,
+            "nonce": nonce,
+            "provider": "apple"
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.timeoutInterval = 15
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            DispatchQueue.main.async { completion(.failure(.jsonError(error.localizedDescription))) }
+            return
+        }
+
+        session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async { completion(.failure(.network(error.localizedDescription))) }
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                DispatchQueue.main.async { completion(.failure(.unknown)) }
+                return
+            }
+
+            if (200...299).contains(httpResponse.statusCode) {
+                if let data = data {
+                    self.parseAndSaveSession(data: data)
+                }
+                print("[AuthManager] Apple Sign-In successful")
+                DispatchQueue.main.async { completion(.success(())) }
+            } else {
+                let errorMessage = self.extractErrorMessage(from: data) ?? "HTTP \(httpResponse.statusCode)"
+                print("[AuthManager] Apple Sign-In failed: \(errorMessage)")
+                DispatchQueue.main.async { completion(.failure(.server(errorMessage))) }
+            }
+        }.resume()
+    }
+
+    // MARK: - Public: Log Out
 
     func logOut() {
         // Invalidate server session if possible
@@ -188,8 +257,12 @@ class AuthManager {
         keychain.delete(forKey: accessTokenKey)
         keychain.delete(forKey: refreshTokenKey)
         keychain.delete(forKey: userIdKey)
+        keychain.delete(forKey: appleEmailKey)
         defaults.set(false, forKey: isLoggedInKey)
         defaults.removeObject(forKey: "userDidCompleteOnboarding")
+        defaults.removeObject(forKey: AuthNavigationHelper.profileCompleteKey)
+        defaults.removeObject(forKey: AuthNavigationHelper.needsLaunchPlanKey)
+        UsageTracker.shared.clearAccountLocalState()
         print("[AuthManager] User logged out. Session cleared from Keychain.")
     }
 
@@ -197,13 +270,13 @@ class AuthManager {
 
     func deleteAccount(completion: @escaping (Result<Void, AuthError>) -> Void) {
         guard isConfigured, let token = accessToken else {
-
+            // Not configured or no session — just clear local data
             logOut()
             DispatchQueue.main.async { completion(.success(())) }
             return
         }
 
-
+        // Call Supabase to delete the authenticated user via RPC
         let urlString = "\(supabaseURL)/rest/v1/rpc/delete_user"
         guard let url = URL(string: urlString) else {
             logOut()
@@ -218,21 +291,22 @@ class AuthManager {
         request.timeoutInterval = 10
 
         session.dataTask(with: request) { [weak self] _, response, error in
-
+            if let error {
+                DispatchQueue.main.async { completion(.failure(.network(error.localizedDescription))) }
+                return
+            }
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                DispatchQueue.main.async {
+                    completion(.failure(.network("Could not delete account (HTTP \(httpResponse.statusCode)).")))
+                }
+                return
+            }
             self?.logOut()
-
-            if let error = error {
-                print("[AuthManager] Delete account network error: \(error.localizedDescription)")
-            }
-            if let httpResponse = response as? HTTPURLResponse {
-                print("[AuthManager] Delete account response: \(httpResponse.statusCode)")
-            }
-
             DispatchQueue.main.async { completion(.success(())) }
         }.resume()
     }
 
-
+    // MARK: - Public: Refresh Session
 
     func refreshSessionIfNeeded(completion: ((Bool) -> Void)? = nil) {
         guard isConfigured,
@@ -280,7 +354,7 @@ class AuthManager {
         }.resume()
     }
 
-
+    // MARK: - Private: Session Parsing
 
     private func parseAndSaveSession(data: Data) {
         do {
@@ -304,12 +378,15 @@ class AuthManager {
         }
     }
 
+    // MARK: - Public: Profile Sync
 
-
-    func updateUserProfile(name: String?, shopName: String?, phone: String?) {
+    func updateUserProfile(name: String?, shopName: String?, phone: String?, email: String? = nil, completion: ((Error?) -> Void)? = nil) {
         guard isConfigured,
               let userId = currentUserId,
-              let token = accessToken else { return }
+              let token = accessToken else {
+            completion?(nil)
+            return
+        }
 
         let urlString = "\(supabaseURL)/rest/v1/user_profiles"
         guard let url = URL(string: urlString) else { return }
@@ -322,6 +399,7 @@ class AuthManager {
         if let name = name { body["owner_name"] = name }
         if let shopName = shopName { body["shop_name"] = shopName }
         if let phone = phone { body["phone"] = phone }
+        if let email = email { body["email"] = email }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -333,9 +411,22 @@ class AuthManager {
 
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        } catch { return }
+        } catch {
+            completion?(error)
+            return
+        }
 
-        session.dataTask(with: request).resume()
+        session.dataTask(with: request) { _, response, error in
+            if let error {
+                completion?(error)
+                return
+            }
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                completion?(NSError(domain: "AuthManager", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Could not save profile (HTTP \(http.statusCode))."]))
+                return
+            }
+            completion?(nil)
+        }.resume()
     }
     
     func fetchUserProfile(completion: @escaping ([String: Any]?) -> Void) {
@@ -346,8 +437,8 @@ class AuthManager {
             return
         }
 
-
-        let urlString = "\(supabaseURL)/rest/v1/user_profiles?id=eq.\(userId)&select=owner_name,shop_name,phone"
+        // Query Supabase for the specific user id
+        let urlString = "\(supabaseURL)/rest/v1/user_profiles?id=eq.\(userId)&select=owner_name,shop_name,phone,email"
         guard let url = URL(string: urlString) else {
             completion(nil)
             return
@@ -365,13 +456,39 @@ class AuthManager {
                 return
             }
 
-
+            // Supabase returns an array of matching rows
             if let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                let profile = jsonArray.first {
                 completion(profile)
             } else {
                 completion(nil)
             }
+        }.resume()
+    }
+
+    func fetchAuthUserEmail(completion: @escaping (String?) -> Void) {
+        guard isConfigured, let token = accessToken else {
+            completion(nil)
+            return
+        }
+        let urlString = "\(supabaseURL)/auth/v1/user"
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+        session.dataTask(with: request) { data, _, error in
+            guard let data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                completion(nil)
+                return
+            }
+            let email = (json["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            completion((email?.isEmpty == false) ? email : nil)
         }.resume()
     }
 
@@ -383,7 +500,7 @@ class AuthManager {
         return json["error_description"] as? String ?? json["msg"] as? String ?? json["message"] as? String
     }
 
-
+    // MARK: - Error Type
 
     enum AuthError: Error, LocalizedError {
         case notConfigured
@@ -404,13 +521,13 @@ class AuthManager {
             }
         }
     }
-
+    // MARK: - Migration (UserDefaults → Keychain)
 
     private func migrateTokensToKeychainIfNeeded() {
         let migrationKey = "didMigrateTokensToKeychain"
         guard !defaults.bool(forKey: migrationKey) else { return }
 
-
+        // Move tokens from UserDefaults to Keychain if they exist
         if let token = defaults.string(forKey: accessTokenKey) {
             keychain.save(token, forKey: accessTokenKey)
             defaults.removeObject(forKey: accessTokenKey)

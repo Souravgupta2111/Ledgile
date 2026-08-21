@@ -1,6 +1,6 @@
 import Foundation
 
-final class BackupService {
+nonisolated final class BackupService: @unchecked Sendable {
 
     static let shared = BackupService()
 
@@ -72,7 +72,8 @@ final class BackupService {
         func restoreBackup(from sqliteURL: URL) -> Bool {
         let fm = FileManager.default
         let dbPath = sqliteDB.dbPath
-
+        var restored = false
+        sqliteDB.withExclusiveIO {
         do {
 
             let accessing = sqliteURL.startAccessingSecurityScopedResource()
@@ -93,14 +94,16 @@ final class BackupService {
             sqliteDB.reopenDatabase()
 
             print("[BackupService] SQLite restore completed successfully.")
-            return true
+            restored = true
 
         } catch {
             print("[BackupService] Restore failed: \(error)")
 
             sqliteDB.reopenDatabase()
-            return false
+            restored = false
         }
+        }
+        return restored
     }
 
 

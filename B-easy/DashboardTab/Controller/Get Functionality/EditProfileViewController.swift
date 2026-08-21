@@ -71,6 +71,7 @@ extension EditProfileViewController {
         
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4)
         ])
         
@@ -79,7 +80,7 @@ extension EditProfileViewController {
             label.textColor = UIColor(named: "Black&White")
 
         } else {
-            label.text = "Mobile Number (Optional)"
+            label.text = "Mobile Number"
             label.textColor = UIColor(named: "Black&White")
         }
         
@@ -88,7 +89,7 @@ extension EditProfileViewController {
     
     func tableView(_ tableView: UITableView,
                    heightForHeaderInSection section: Int) -> CGFloat {
-        return section == 0 ? 70 : 40
+        return 28
     }
 }
 
@@ -105,10 +106,25 @@ extension EditProfileViewController: UIImagePickerControllerDelegate, UINavigati
         if let phoneCell = tableView.cellForRow(at: IndexPath(row: 0, section: 1)) as? EditProfileTableViewCell {
             updatedPhone = phoneCell.textField.text
         }
-            
-        delegate?.didUpdateProfile(name: updatedName, phone: updatedPhone, image: profileImage)
-            
+
+        let trimmedName = updatedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmedName.isEmpty else {
+            presentSimpleAlert(title: "Name required", message: "Enter the customer’s name.")
+            return
+        }
+        guard let digits = UPIWhatsAppShare.indianMobileDigits(updatedPhone) else {
+            presentSimpleAlert(title: "Mobile required", message: "Enter a 10-digit number for WhatsApp.")
+            return
+        }
+
+        delegate?.didUpdateProfile(name: trimmedName, phone: digits, image: profileImage)
         dismiss(animated: true)
+    }
+
+    private func presentSimpleAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
     
     private func setupFooter() {

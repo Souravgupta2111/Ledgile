@@ -6,9 +6,9 @@ final class GeminiService {
     
     static let shared = GeminiService()
     
-    // Gemini requests are now proxied through a Supabase Edge Function.
-    // The Gemini API key lives ONLY on the server as a Supabase Secret.
-    // The iOS app authenticates to the Edge Function with the user's JWT.
+    // AI requests go through Supabase Edge Function `gemini-proxy`.
+    // Voice JSON → OpenRouter paid Gemma 3 27B. Camera → paid Gemini 2.5 Flash-Lite.
+    // API keys live ONLY on the server. The app authenticates with the user's JWT.
     
     private static func resolveConfigValue(key: String, plistValue: String?) -> String {
         if let val = plistValue, !val.isEmpty, !val.hasPrefix("$(") {
@@ -29,7 +29,7 @@ final class GeminiService {
     private let session = URLSession.shared
     
     private let maxImageDimension: CGFloat = 768
-    private let timeoutInterval: TimeInterval = 20  // slightly longer since we go through a proxy
+    private let timeoutInterval: TimeInterval = 30
     
     private init() {
         let hasAuth = AuthManager.shared.accessToken != nil
@@ -41,95 +41,86 @@ final class GeminiService {
     var isLimitReached: Bool {
         return !UsageTracker.shared.canUseGemini
     }
+
+    func isConfigured(for kind: UsageTracker.AIKind) -> Bool {
+        let hasSupabase = !supabaseURL.isEmpty && !supabaseAnonKey.isEmpty
+        let hasAuth = AuthManager.shared.accessToken != nil
+        return hasSupabase && hasAuth && UsageTracker.shared.canUse(kind)
+    }
     
     
     func parseVoiceForSale(text: String, completion: @escaping (ParsedResult?) -> Void) {
-        print("[GeminiService] ➡️ parseVoiceForSale called | text='\(text)' | isConfigured=\(isConfigured)")
+        print("[GeminiService] parseVoiceForSale | chars=\(text.count)")
         if let cachedJSON = RequestCacheManager.shared.getCachedSaleResponse(for: text),
-           let result = Self.parseSaleJSON(cachedJSON) {
+           let result = Self.parseSaleJSON(cachedJSON, spokenText: text) {
             print("[GeminiService] Cache Hit! Zero latency and $0.00 cost for: '\(text)'")
             completion(result)
             return
         }
         
-        let userPrompt = """
-        Parse this spoken text into a sale transaction JSON.
-        
-        Text: "\(text)"
-        
-        Return JSON matching this schema:
-        \(GeminiPromptTemplates.voiceSaleSchema)
-        """
-        
         sendTextRequest(
-            systemPrompt: GeminiPromptTemplates.voiceSaleSystem,
-            userPrompt: userPrompt
+            systemPrompt: Self.cachedSystemPrompt(
+                GeminiPromptTemplates.voiceSaleSystem,
+                schema: GeminiPromptTemplates.voiceSaleSchema
+            ),
+            userPrompt: text
         ) { jsonString in
             guard let jsonString = jsonString,
-                  let result = Self.parseSaleJSON(jsonString) else {
+                  let result = Self.parseSaleJSON(jsonString, spokenText: text) else {
                 completion(nil)
                 return
             }
             
             RequestCacheManager.shared.cacheSaleResponse(for: text, json: jsonString)
-            UsageTracker.shared.recordGeminiUsage()
+            UsageTracker.shared.record(.voice)
             completion(result)
         }
     }
     
     func parseVoiceForPurchase(text: String, completion: @escaping (ParsedResult?) -> Void) {
-        print("[GeminiService] ➡️ parseVoiceForPurchase called | text='\(text)' | isConfigured=\(isConfigured)")
+        print("[GeminiService] parseVoiceForPurchase | chars=\(text.count)")
         if let cachedJSON = RequestCacheManager.shared.getCachedPurchaseResponse(for: text),
-           let result = Self.parsePurchaseVoiceJSON(cachedJSON) {
+           let result = Self.parsePurchaseVoiceJSON(cachedJSON, spokenText: text) {
             print("[GeminiService] Cache Hit! Zero latency and $0.00 cost for: '\(text)'")
             completion(result)
             return
         }
         
-        let userPrompt = """
-        Parse this spoken text into a purchase/stock entry JSON.
-        
-        Text: "\(text)"
-        
-        Return JSON matching this schema:
-        \(GeminiPromptTemplates.voicePurchaseSchema)
-        """
-        
         sendTextRequest(
-            systemPrompt: GeminiPromptTemplates.voicePurchaseSystem,
-            userPrompt: userPrompt
+            systemPrompt: Self.cachedSystemPrompt(
+                GeminiPromptTemplates.voicePurchaseSystem,
+                schema: GeminiPromptTemplates.voicePurchaseSchema
+            ),
+            userPrompt: text
         ) { jsonString in
             guard let jsonString = jsonString,
-                  let result = Self.parsePurchaseVoiceJSON(jsonString) else {
+                  let result = Self.parsePurchaseVoiceJSON(jsonString, spokenText: text) else {
                 completion(nil)
                 return
             }
             
             RequestCacheManager.shared.cachePurchaseResponse(for: text, json: jsonString)
-            UsageTracker.shared.recordGeminiUsage()
+            UsageTracker.shared.record(.voice)
             completion(result)
         }
     }
     
     func parseBillForSale(image: UIImage, completion: @escaping (ParsedResult?) -> Void) {
         print("[GeminiService] ➡️ parseBillForSale called | imageSize=\(image.size) | isConfigured=\(isConfigured)")
-        let userPrompt = """
-        Extract all sale line items from this bill image.
-        Return JSON matching this schema:
-        \(GeminiPromptTemplates.billSaleSchema)
-        """
-        
         sendImageRequest(
             image: image,
-            systemPrompt: GeminiPromptTemplates.billSaleSystem,
-            userPrompt: userPrompt
+            systemPrompt: Self.cachedSystemPrompt(
+                GeminiPromptTemplates.billSaleSystem,
+                schema: GeminiPromptTemplates.billSaleSchema
+            ),
+            userPrompt: "Extract all sale line items from this bill image."
         ) { jsonString in
             guard let jsonString = jsonString,
                   let result = Self.parseSaleJSON(jsonString) else {
                 completion(nil)
                 return
             }
-            UsageTracker.shared.recordGeminiUsage()
+            UsageTracker.shared.record(.camera)
             completion(result)
         }
     }
@@ -141,51 +132,30 @@ final class GeminiService {
         let schema = isGST ? GeminiPromptTemplates.billPurchaseSchemaGST : GeminiPromptTemplates.billPurchaseSchema
         let sysPrompt = isGST ? GeminiPromptTemplates.billPurchaseSystemGST : GeminiPromptTemplates.billPurchaseSystem
         
-        let userPrompt = """
-        Extract supplier name and all purchase line items from this bill image.
-        Return JSON matching this schema:
-        \(schema)
-        """
-        
         sendImageRequest(
             image: image,
-            systemPrompt: sysPrompt,
-            userPrompt: userPrompt
+            systemPrompt: Self.cachedSystemPrompt(sysPrompt, schema: schema),
+            userPrompt: "Extract supplier name and all purchase line items from this bill image."
         ) { jsonString in
             guard let jsonString = jsonString,
                   let result = Self.parsePurchaseBillJSON(jsonString) else {
                 completion(nil)
                 return
             }
-            UsageTracker.shared.recordGeminiUsage()
+            UsageTracker.shared.record(.camera)
             completion(result)
         }
     }
     
-    func identifyProducts(image: UIImage, completion: @escaping (ParsedResult?) -> Void) {
-        print("[GeminiService] ➡️ identifyProducts called | imageSize=\(image.size) | isConfigured=\(isConfigured)")
-        let userPrompt = """
-        Identify EVERY distinct retail product visible in this image.
-        Do NOT group them into a single item. List EACH product separately. that you can find in the image so we can identify as a product from the image , can be multiple .
-        Return JSON matching this schema:
-        \(GeminiPromptTemplates.objectDetectionSchema)
+    /// Stable system prefix (rules + schema). Unique utterance/image stays in the user turn.
+    private static func cachedSystemPrompt(_ system: String, schema: String) -> String {
         """
+        \(system)
         
-        sendImageRequest(
-            image: image,
-            systemPrompt: GeminiPromptTemplates.objectDetectionSystem,
-            userPrompt: userPrompt
-        ) { jsonString in
-            guard let jsonString = jsonString,
-                  let result = Self.parseObjectJSON(jsonString) else {
-                completion(nil)
-                return
-            }
-            UsageTracker.shared.recordGeminiUsage()
-            completion(result)
-        }
+        Return ONLY valid JSON matching this schema:
+        \(schema)
+        """
     }
-    
     
     private func sendTextRequest(
         systemPrompt: String,
@@ -193,20 +163,10 @@ final class GeminiService {
         completion: @escaping (String?) -> Void
     ) {
         let body: [String: Any] = [
-            "system_instruction": [
-                "parts": [["text": systemPrompt]]
-            ],
-            "contents": [
-                [
-                    "role": "user",
-                    "parts": [["text": userPrompt]]
-                ]
-            ],
-            "generationConfig": [
-                "response_mime_type": "application/json",
-                "temperature": 0.1,
-                "maxOutputTokens": 1024
-            ]
+            "task": "voice",
+            "systemPrompt": systemPrompt,
+            "userPrompt": userPrompt,
+            "maxOutputTokens": 1024
         ]
         
         performRequest(body: body, completion: completion)
@@ -227,28 +187,14 @@ final class GeminiService {
         let base64Image = imageData.base64EncodedString()
         
         let body: [String: Any] = [
-            "system_instruction": [
-                "parts": [["text": systemPrompt]]
+            "task": "vision",
+            "systemPrompt": systemPrompt,
+            "userPrompt": userPrompt,
+            "image": [
+                "mime_type": "image/jpeg",
+                "data": base64Image
             ],
-            "contents": [
-                [
-                    "role": "user",
-                    "parts": [
-                        [
-                            "inline_data": [
-                                "mime_type": "image/jpeg",
-                                "data": base64Image
-                            ]
-                        ],
-                        ["text": userPrompt]
-                    ]
-                ]
-            ],
-            "generationConfig": [
-                "response_mime_type": "application/json",
-                "temperature": 0.1,
-                "maxOutputTokens": 2048
-            ]
+            "maxOutputTokens": 2048
         ]
         
         performRequest(body: body, completion: completion)
@@ -305,8 +251,13 @@ final class GeminiService {
             // Check for HTTP-level errors from the Edge Function
             if let httpResponse = response as? HTTPURLResponse,
                !(200...299).contains(httpResponse.statusCode) {
-                let raw = String(data: data, encoding: .utf8) ?? "(no body)"
-                print("[GeminiService] Edge Function HTTP \(httpResponse.statusCode): \(raw.prefix(300))")
+                if httpResponse.statusCode == 402 {
+                    UsageTracker.shared.markCloudQuotaExhausted()
+                    print("[GeminiService] Server quota exceeded")
+                } else {
+                    let raw = String(data: data, encoding: .utf8) ?? "(no body)"
+                    print("[GeminiService] Edge Function HTTP \(httpResponse.statusCode): \(raw.prefix(120))")
+                }
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
@@ -325,11 +276,15 @@ final class GeminiService {
                     return
                 }
                 
+                if let quota = json["quota"] as? [String: Any] {
+                    UsageTracker.shared.applyServerQuota(quota)
+                }
+                
                 if let candidates = json["candidates"] as? [[String: Any]],
                    let content = candidates.first?["content"] as? [String: Any],
                    let parts = content["parts"] as? [[String: Any]],
                    let text = parts.first?["text"] as? String {
-                    print("[GeminiService] Response (\(String(format: "%.1f", elapsed))s): \(text.prefix(200))...")
+                    print("[GeminiService] Response (\(String(format: "%.1f", elapsed))s), \(text.count) chars")
                     DispatchQueue.main.async { completion(text) }
                 } else {
                     print("[GeminiService] Could not extract text from response")
@@ -397,8 +352,49 @@ final class GeminiService {
         }
         return nil
     }
+
+    /// Drops a customer/supplier the model invented from the whole utterance or an item line.
+    private static func sanitizedPartyName(_ raw: String?, spokenText: String?, itemNames: [String]) -> String? {
+        guard let raw else { return nil }
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+
+        let folded = name.lowercased()
+        let junk: Set<String> = [
+            "null", "none", "nil", "n/a", "na", "unknown",
+            "customer", "supplier", "cash", "credit"
+        ]
+        if junk.contains(folded) { return nil }
+
+        func normalize(_ s: String) -> String {
+            s.lowercased()
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let normalizedName = normalize(name)
+
+        if let spoken = spokenText, !spoken.isEmpty {
+            let spokenNorm = normalize(spoken)
+            if normalizedName == spokenNorm { return nil }
+        }
+
+        for item in itemNames {
+            let itemNorm = normalize(item)
+            if !itemNorm.isEmpty, normalizedName == itemNorm { return nil }
+        }
+
+        if normalizedName.range(
+            of: #"^\d+(\.\d+)?\s*(kg|kilo|g|gm|gram|litre|liter|ltr|ml|pcs|pc|packet|pkt|dozen)"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
+            return nil
+        }
+
+        return name
+    }
     
-    static func parseSaleJSON(_ jsonString: String) -> ParsedResult? {
+    static func parseSaleJSON(_ jsonString: String, spokenText: String? = nil) -> ParsedResult? {
         let cleanJSON = sanitizeJSONString(jsonString)
         guard let data = cleanJSON.data(using: .utf8) else { return nil }
         
@@ -407,7 +403,6 @@ final class GeminiService {
                 return nil
             }
             
-            let customer = json["customer"] as? String
             let paymentMode = json["payment_mode"] as? String
             let isNegation = json["is_negation"] as? Bool ?? false
             
@@ -440,6 +435,12 @@ final class GeminiService {
             }
             
             guard !rawProducts.isEmpty else { return nil }
+
+            let customer = sanitizedPartyName(
+                flexString(from: json["customer"]),
+                spokenText: spokenText,
+                itemNames: rawProducts.map(\.displayName)
+            )
             
             let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
             InventoryMatcher.shared.indexInventory(inventory)
@@ -452,11 +453,7 @@ final class GeminiService {
             var products: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?)] = []
             for (i, m) in matched.enumerated() {
                 let displayName = rawProducts[i].displayName
-                if m.itemID != nil {
-                    products.append((name: m.name, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: m.costPrice))
-                } else {
-                    products.append((name: displayName, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: nil))
-                }
+                products.append((name: displayName, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: m.costPrice))
             }
             
             print("\n[GeminiService] --- DETECTED SALE ITEMS LOG ---")
@@ -478,7 +475,7 @@ final class GeminiService {
                 isNegation: isNegation,
                 isReference: false,
                 productItemIDs: matched.compactMap { $0.itemID },
-                productConfidences: nil
+                productConfidences: matched.map { String(format: "%.2f", $0.matchConfidence) }
             )
         } catch {
             print("[GeminiService] Sale JSON parse error: \(error)")
@@ -486,15 +483,14 @@ final class GeminiService {
         }
     }
     
-    static func parsePurchaseVoiceJSON(_ jsonString: String) -> ParsedResult? {
-        guard let data = jsonString.data(using: .utf8) else { return nil }
+    static func parsePurchaseVoiceJSON(_ jsonString: String, spokenText: String? = nil) -> ParsedResult? {
+        let cleanJSON = sanitizeJSONString(jsonString)
+        guard let data = cleanJSON.data(using: .utf8) else { return nil }
         
         do {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return nil
             }
-            
-            let supplier = json["supplier"] as? String
             
             var rawProducts: [(displayName: String, matchingName: String, quantity: String, unit: String?, costPrice: String?, sellingPrice: String?)] = []
             
@@ -527,6 +523,12 @@ final class GeminiService {
             }
             
             guard !rawProducts.isEmpty else { return nil }
+
+            let supplier = sanitizedPartyName(
+                flexString(from: json["supplier"]),
+                spokenText: spokenText,
+                itemNames: rawProducts.map(\.displayName)
+            )
             
             let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
             InventoryMatcher.shared.indexInventory(inventory)
@@ -624,7 +626,7 @@ final class GeminiService {
             for raw in rawItems {
                 if let match = InventoryMatcher.shared.match(name: raw.matchingName, against: inventory) {
                     items.append(ParsedPurchaseItem(
-                        name: match.item.name,
+                        name: raw.displayName,
                         quantity: raw.quantity,
                         unit: raw.unit ?? match.item.unit,
                         costPrice: raw.costPrice,
@@ -677,94 +679,34 @@ final class GeminiService {
         }
     }
     
-    static func parseObjectJSON(_ jsonString: String) -> ParsedResult? {
-        let cleanJSON = sanitizeJSONString(jsonString)
-        guard let data = cleanJSON.data(using: .utf8) else { return nil }
-        
-        do {
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return nil
-            }
-            
-            var rawProducts: [(displayName: String, matchingName: String, quantity: String, price: String?)] = []
-            
-            if let jsonProducts = json["products"] as? [[String: Any]] {
-                for product in jsonProducts {
-                    let nameRaw = product["name"] as? String ?? ""
-                    let alias = product["category_alias"] as? String ?? ""
-                    let quantity = product["quantity"] as? String ?? "1"
-                    let price = product["price"] as? String
-                    
-                    guard !nameRaw.isEmpty else { continue }
-                    
-                    let matchingName = alias.isEmpty ? nameRaw : "\(nameRaw) \(alias)"
-                    
-                    rawProducts.append((
-                        displayName: nameRaw.trimmingCharacters(in: .whitespaces),
-                        matchingName: matchingName.trimmingCharacters(in: .whitespaces),
-                        quantity: quantity,
-                        price: price
-                    ))
-                }
-            }
-            
-            guard !rawProducts.isEmpty else { return nil }
-            
-            let inventory = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
-            InventoryMatcher.shared.indexInventory(inventory)
-            
-            let matchInput = rawProducts.map {
-                (name: $0.matchingName, quantity: $0.quantity, unit: "pcs" as String?, price: $0.price, costPrice: nil as String?)
-            }
-            let matched = InventoryMatcher.shared.matchProducts(products: matchInput, items: inventory)
-            
-            var products: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?)] = []
-            var itemIDs: [UUID] = []
-            
-            for (i, m) in matched.enumerated() {
-                let displayName = rawProducts[i].displayName
-                if m.itemID != nil {
-                    products.append((name: m.name, quantity: m.quantity, unit: m.unit, price: m.price, costPrice: m.costPrice))
-                    itemIDs.append(m.itemID!)
-                } else {
-                    products.append((name: displayName, quantity: m.quantity, unit: "pcs", price: rawProducts[i].price, costPrice: nil))
-                }
-            }
-            
-            print("\n[GeminiService] --- DETECTED OBJECTS LOG ---")
-            print("[GeminiService] Raw JSON: \(cleanJSON)")
-            for (i, p) in products.enumerated() {
-                let status = matched[i].itemID != nil ? "✅ (Matched Inventory)" : "⚠️ (New/Unmatched)"
-                let priceLog = p.price != nil ? " | Price: ₹\(p.price!)" : ""
-                print("[GeminiService] \(i+1). \(p.name) (Qty: \(p.quantity))\(priceLog) - \(status)")
-            }
-            print("[GeminiService] ----------------------------\n")
-            
-            return ParsedResult(
-                entities: [],
-                products: products,
-                customerName: nil,
-                isNegation: false,
-                isReference: false,
-                productItemIDs: itemIDs.isEmpty ? nil : itemIDs,
-                productConfidences: nil
-            )
-        } catch {
-            print("[GeminiService] Object JSON parse error: \(error)")
-            return nil
-        }
-    }
-    
     
     var isConfigured: Bool {
-        // Configured = Supabase is set up + user is logged in + usage limit not reached
-        let hasSupabase = !supabaseURL.isEmpty && !supabaseAnonKey.isEmpty
-        let hasAuth = AuthManager.shared.accessToken != nil
-        return hasSupabase && hasAuth && !isLimitReached
+        isConfigured(for: .voice) || isConfigured(for: .camera)
     }
     
     var hasAPIKey: Bool {
         // API key is now on the server; we just need Supabase + auth
         return !supabaseURL.isEmpty && AuthManager.shared.accessToken != nil
+    }
+
+    func syncProEntitlement(jws: String) {
+        let urlString = "\(supabaseURL)/functions/v1/gemini-proxy"
+        guard let url = URL(string: urlString),
+              let jwt = AuthManager.shared.accessToken else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "task": "markPro",
+            "jws": jws
+        ])
+        session.dataTask(with: request) { data, _, _ in
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let quota = json["quota"] as? [String: Any] else { return }
+            UsageTracker.shared.applyServerQuota(quota)
+        }.resume()
     }
 }

@@ -8,6 +8,9 @@ Secrets.xcconfig
 # Scratch directory
 scratch/
 
+# Hugging Face clone leftover inside the Core ML folder
+B-easy/VisionTab/MobileSAM-CoreML/.git/
+
 # Xcode user data
 *.xcuserstate
 xcuserdata/

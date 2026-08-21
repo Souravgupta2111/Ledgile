@@ -38,15 +38,17 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     private var entries: [PurchaseEntry] = []
     private var supplierName: String?
     private var supplierGSTIN: String?
+    private var saveSpinnerOverlay: UIView?
     private var isPayLaterEnabled = false
     private var inventoryCache: [Item] = []
     private var currentSuggestions: [Item] = []
     private let suggestionsTableView = UITableView(frame: .zero, style: .plain)
     private weak var activeNameField: UITextField?
 
-
+    // Index of the expanded item (chevron tapped to show detail fields).
     private var expandedItemIndex: Int? = nil
 
+    // Holds voice/scan result passed before viewDidLoad; consumed in viewDidLoad.
     var pendingResult: ParsedResult?
     var pendingPurchaseResult: ParsedPurchaseResult?
     var entryMode: EntryMode = .manual
@@ -61,7 +63,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
 
     private var subTotal: Double {
-        entries.reduce(0) { $0 + ($1.quantity * $1.costPrice) }
+        Money.round2(entries.reduce(0) {
+            let qty = $1.itemType == .services ? max($1.quantity, 1) : $1.quantity
+            return $0 + Money.line(quantity: qty, rate: $1.costPrice)
+        })
     }
 
     
@@ -89,7 +94,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         setupSuggestionsTableView()
         
-
+        // Apply any data passed before viewDidLoad (e.g. from voice or scan callback)
         if let result = pendingResult {
             pendingResult = nil
             appendEntries(from: result)
@@ -117,7 +122,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         suggestionsTableView.contentInset = .zero
         suggestionsTableView.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         
-
+        // Shadow for floating appearance
         suggestionsTableView.layer.shadowColor = UIColor.black.cgColor
         suggestionsTableView.layer.shadowOpacity = 0.15
         suggestionsTableView.layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -143,7 +148,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             return
         }
 
-
+        // Add to the application window so it floats above the table view
         guard let window = view.window else { return }
         
         let fieldRect = field.convert(field.bounds, to: window)
@@ -199,6 +204,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         if entries[index].gstRate == nil, let rate = matched.gstRate {
             entries[index].gstRate = rate
         }
+        entries[index].itemType = matched.itemType
         
         // Auto-fill GST fields from HSN database if still nil
         if entries[index].hsnCode == nil || entries[index].gstRate == nil {
@@ -213,7 +219,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         }
     }
     
-
+    // MARK: - Add New Item (re-open voice/camera if entry started that way)
     
     private func addNewItemByEntryMode() {
         switch entryMode {
@@ -259,12 +265,13 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             var inputQty = Double(product.quantity) ?? 1.0
             var finalUnit = product.unit ?? "pcs"
             
-
+            // Extract numeric quantity from unit if fused (e.g. "500g" -> 500.0, "g")
             if let extracted = UnitConversionService.shared.extractQuantityAndUnit(from: finalUnit) {
                 inputQty *= extracted.0
                 finalUnit = extracted.1
             }
             
+            // Auto-scale fractional units to avoid decimal loss (e.g. 0.5 kg -> 500 g)
             if floor(inputQty) != inputQty {
                 let nUnit = UnitConversionService.shared.normalizeUnit(finalUnit)
                 if nUnit == "kg" {
@@ -401,7 +408,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             entry.costPrice = finalCostPrice
             entry.sellingPrice = finalSellingPrice
             
-            //  extracted GST fields
+            // Apply extracted GST fields
             entry.hsnCode = item.hsnCode ?? matchedItem?.hsnCode
             if let rateStr = item.gstRate, let rate = Double(rateStr) {
                 entry.gstRate = rate
@@ -416,7 +423,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             supplierName = supplier
         }
         
-
+        // Note: result.invoiceNumber and result.totalTaxableValue can be handled later if UI fields exist for invoice number
         
         tableView.reloadData()
     }
@@ -424,7 +431,6 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     @IBAction func saveButtonTapped(_ sender: UIBarButtonItem) {
         guard !entries.isEmpty else { return }
 
-        // Credit validation: supplier name is required for credit purchases
         if isPayLaterEnabled {
             let name = (supplierName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if name.isEmpty {
@@ -447,138 +453,185 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             }
         }
 
-            let supplier = supplierName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let finalSupplier = (supplier?.isEmpty == true) ? nil : supplier
+        let supplier = supplierName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalSupplier = (supplier?.isEmpty == true) ? nil : supplier
+        let capturedEntries = entries
+        let capturedGSTIN = supplierGSTIN
+        let payLater = isPayLaterEnabled
+        let dm = AppDataModel.shared.dataModel
+        let db = dm.db
 
-            let dm = AppDataModel.shared.dataModel
-            let db = dm.db
+        sender.isEnabled = false
+        setSaveInProgress(true)
 
-            do {
-                let allItems = try db.getAllItems()
-                var nameToItem: [String: Item] = [:]
-                for item in allItems {
-                    nameToItem[item.name.lowercased()] = item
-                }
+        LedgerIO.run({
+            let allItems = try db.getAllItems()
+            var nameToItem: [String: Item] = [:]
+            for item in allItems {
+                nameToItem[item.name.lowercased()] = item
+            }
 
-                var purchaseItems: [(itemID: UUID, quantity: Double, costPrice: Double, sellingPrice: Double, expiryDate: Date?)] = []
-                
-                for entry in entries {
-                    guard let itemNameRaw = entry.selectedItemName else { continue }
-                    let itemName = itemNameRaw.trimmingCharacters(in: .whitespaces)
-                    if itemName.isEmpty { continue }
+            var purchaseItems: [(itemID: UUID, quantity: Double, costPrice: Double, sellingPrice: Double, expiryDate: Date?)] = []
 
-                    let key = itemName.lowercased()
-                    let quantity = entry.quantity
-                    let costPrice = entry.costPrice
-                    let sellingPrice = entry.sellingPrice
+            for entry in capturedEntries {
+                guard let itemNameRaw = entry.selectedItemName else { continue }
+                let itemName = itemNameRaw.trimmingCharacters(in: .whitespaces)
+                if itemName.isEmpty { continue }
 
-                    let itemID: UUID
+                let key = itemName.lowercased()
+                // Services are not stocked — treat as a single line amount (qty 1).
+                let quantity = entry.itemType == .services ? max(entry.quantity, 1) : entry.quantity
+                let costPrice = entry.costPrice
+                let sellingPrice = entry.sellingPrice
+                let barcode = entry.barcode?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let barcodeValue = (barcode?.isEmpty == false) ? barcode : nil
 
-                    if var existing = nameToItem[key] {
-                        itemID = existing.id
-                        // Update existing item's GST fields if they are currently nil
-                        var needsUpdate = false
-                        if existing.hsnCode == nil, let hsn = entry.hsnCode {
-                            existing.hsnCode = hsn
-                            needsUpdate = true
-                        }
-                        if existing.gstRate == nil, let rate = entry.gstRate {
-                            existing.gstRate = rate
-                            needsUpdate = true
-                        }
-                        if needsUpdate {
-                            try db.updateItem(existing)
-                            nameToItem[key] = existing
-                        }
-                    } else {
-                        var newItem = Item(
-                            id: UUID(),
-                            name: itemName,
-                            unit: entry.selectedUnitName ?? "pcs",
-                            defaultCostPrice: costPrice,
-                            defaultSellingPrice: sellingPrice,
-                            defaultPriceUpdatedAt: Date(),
-                            lowStockThreshold: entry.lowStockThreshold,
-                            currentStock: 0,
-                            createdDate: Date(),
-                            lastRestockDate: nil,
-                            isActive: true
-                        )
-                        // Persist GST fields from purchase entry
-                        newItem.hsnCode = entry.hsnCode
-                        newItem.gstRate = entry.gstRate
+                if entry.itemType != .services, quantity <= 0 { continue }
 
-                        try db.insertItem(newItem)
-                        nameToItem[key] = newItem
-                        itemID = newItem.id
+                let itemID: UUID
+
+                if var existing = nameToItem[key] {
+                    itemID = existing.id
+                    var needsUpdate = false
+                    if existing.hsnCode == nil, let hsn = entry.hsnCode {
+                        existing.hsnCode = hsn
+                        needsUpdate = true
                     }
-
-                    if !entry.pendingItemPhotos.isEmpty {
-                        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                        let tabsDataDir = docsDir.appendingPathComponent("TabsData", isDirectory: true)
-                        let photosDir = tabsDataDir.appendingPathComponent("ProductPhotos/\(itemID.uuidString)")
-                        try? FileManager.default.createDirectory(at: photosDir, withIntermediateDirectories: true)
-                        
-                        for photo in entry.pendingItemPhotos {
-                            if let jpegData = photo.jpegData(compressionQuality: 0.7) {
-                                let fileName = UUID().uuidString + ".jpg"
-                                let absolutePath = photosDir.appendingPathComponent(fileName)
-                                try? jpegData.write(to: absolutePath)
-                                
-                                let relativePath = "ProductPhotos/\(itemID.uuidString)/\(fileName)"
-                                let productPhoto = ProductPhoto(
-                                    id: UUID(),
-                                    itemID: itemID,
-                                    localPath: relativePath,
-                                    createdAt: Date()
-                                )
-                                try? db.insertProductPhoto(productPhoto)
-                            }
-                        }
-                        ProductFingerprintManager.shared.updateEmbeddings(for: itemID) { }
+                    if existing.gstRate == nil, let rate = entry.gstRate {
+                        existing.gstRate = rate
+                        needsUpdate = true
                     }
-
-                    purchaseItems.append((itemID: itemID, 
-                                          quantity: quantity, 
-                                          costPrice: costPrice, 
-                                          sellingPrice: sellingPrice, 
-                                          expiryDate: entry.expiryDate))
-                }
-
-                guard !purchaseItems.isEmpty else { return }
-                
-                let transaction = try dm.addMultiItemPurchase(
-                    items: purchaseItems,
-                    supplierName: finalSupplier,
-                    invoiceNumber: nil,
-                    supplierGSTIN: supplierGSTIN
-                )
-
-                if let name = finalSupplier, !name.isEmpty {
-                    CreditStore.shared.ensureSupplier(named: name, defaultName: "Supplier", gstin: supplierGSTIN)
-                }
-
-                if isPayLaterEnabled, transaction.totalAmount > 0 {
-                    let note = "Credit purchase \(transaction.invoiceNumber)"
-                    CreditStore.shared.addCreditPurchase(
-                        amount: transaction.totalAmount,
-                        supplierName: finalSupplier ?? "Supplier",
-                        note: note
+                    if existing.barcode == nil || existing.barcode?.isEmpty == true, let barcodeValue {
+                        existing.barcode = barcodeValue
+                        needsUpdate = true
+                    }
+                    if needsUpdate {
+                        try db.updateItem(existing)
+                        nameToItem[key] = existing
+                    }
+                } else {
+                    var newItem = Item(
+                        id: UUID(),
+                        name: itemName,
+                        unit: entry.selectedUnitName ?? "pcs",
+                        barcode: barcodeValue,
+                        defaultCostPrice: costPrice,
+                        defaultSellingPrice: sellingPrice,
+                        defaultPriceUpdatedAt: Date(),
+                        lowStockThreshold: entry.lowStockThreshold,
+                        currentStock: 0,
+                        createdDate: Date(),
+                        lastRestockDate: nil,
+                        isActive: true
                     )
+                    newItem.hsnCode = entry.hsnCode
+                    newItem.gstRate = entry.gstRate
+                    newItem.itemType = entry.itemType
+
+                    try db.insertItem(newItem)
+                    nameToItem[key] = newItem
+                    itemID = newItem.id
                 }
 
-                dismiss(animated: true)
-                navigationController?.popViewController(animated: true)
+                if !entry.pendingItemPhotos.isEmpty {
+                    let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                    let tabsDataDir = docsDir.appendingPathComponent("TabsData", isDirectory: true)
+                    let photosDir = tabsDataDir.appendingPathComponent("ProductPhotos/\(itemID.uuidString)")
+                    try? FileManager.default.createDirectory(at: photosDir, withIntermediateDirectories: true)
 
-            } catch {
+                    for photo in entry.pendingItemPhotos {
+                        if let jpegData = photo.jpegData(compressionQuality: 0.7) {
+                            let fileName = UUID().uuidString + ".jpg"
+                            let absolutePath = photosDir.appendingPathComponent(fileName)
+                            try? jpegData.write(to: absolutePath)
+
+                            let relativePath = "ProductPhotos/\(itemID.uuidString)/\(fileName)"
+                            let productPhoto = ProductPhoto(
+                                id: UUID(),
+                                itemID: itemID,
+                                localPath: relativePath,
+                                createdAt: Date()
+                            )
+                            try? db.insertProductPhoto(productPhoto)
+                        }
+                    }
+                    ProductFingerprintManager.shared.updateEmbeddings(for: itemID) { }
+                }
+
+                purchaseItems.append((
+                    itemID: itemID,
+                    quantity: quantity,
+                    costPrice: costPrice,
+                    sellingPrice: sellingPrice,
+                    expiryDate: entry.expiryDate
+                ))
+            }
+
+            guard !purchaseItems.isEmpty else {
+                throw DataModelError.custom("No items to purchase")
+            }
+
+            let transaction = try dm.addMultiItemPurchase(
+                items: purchaseItems,
+                supplierName: finalSupplier,
+                invoiceNumber: nil,
+                supplierGSTIN: capturedGSTIN
+            )
+
+            if let name = finalSupplier, !name.isEmpty {
+                CreditStore.shared.ensureSupplier(named: name, defaultName: "Supplier", gstin: capturedGSTIN)
+            }
+
+            if payLater, transaction.totalAmount > 0 {
+                CreditStore.shared.addCreditPurchase(
+                    amount: transaction.totalAmount,
+                    supplierName: finalSupplier ?? "Supplier",
+                    note: "Credit purchase \(transaction.invoiceNumber)"
+                )
+            }
+        }) { [weak self] result in
+            guard let self else { return }
+            self.setSaveInProgress(false)
+            sender.isEnabled = true
+            switch result {
+            case .success:
+                self.dismiss(animated: true)
+                self.navigationController?.popViewController(animated: true)
+            case .failure(let error):
                 let alert = UIAlertController(
                     title: "Error",
                     message: error.localizedDescription,
                     preferredStyle: .alert
                 )
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
-                present(alert, animated: true)
+                self.present(alert, animated: true)
             }
+        }
+    }
+
+    private func setSaveInProgress(_ saving: Bool) {
+        view.isUserInteractionEnabled = !saving
+        if saving {
+            if saveSpinnerOverlay == nil {
+                let overlay = UIView(frame: view.bounds)
+                overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                overlay.backgroundColor = UIColor.black.withAlphaComponent(0.25)
+                let spinner = UIActivityIndicatorView(style: .large)
+                spinner.translatesAutoresizingMaskIntoConstraints = false
+                spinner.startAnimating()
+                overlay.addSubview(spinner)
+                NSLayoutConstraint.activate([
+                    spinner.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+                    spinner.centerYAnchor.constraint(equalTo: overlay.centerYAnchor)
+                ])
+                view.addSubview(overlay)
+                saveSpinnerOverlay = overlay
+            }
+            saveSpinnerOverlay?.isHidden = false
+        } else {
+            saveSpinnerOverlay?.removeFromSuperview()
+            saveSpinnerOverlay = nil
+        }
     }
 
     
@@ -610,9 +663,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
         case .items:
             if entries.isEmpty {
-                return 1  // "Add Item" 
+                return 1  // "Add Item" row
             } else {
-                // Each entry = 1 summary row.
+                // Each entry = 1 summary row. If expanded, that entry also gets detail rows.
                 var count = entries.count + 1  // +1 for "Add Item" row
                 if let expanded = expandedItemIndex, expanded < entries.count {
                     count += detailRowCount()  // extra rows for the expanded item
@@ -636,7 +689,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     /// Maps an indexPath.row in the items section to (entryIndex, isDetail, detailRow)
     private func resolveItemRow(_ row: Int) -> (entryIndex: Int, isDetailRow: Bool, detailRow: Int) {
         guard let expanded = expandedItemIndex else {
-            // No expansion 
+            // No expansion — simple mapping
             return (entryIndex: row, isDetailRow: false, detailRow: -1)
         }
         
@@ -694,6 +747,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             }
 
         case .items:
+            // "Add Item" row (last row, accounting for expanded detail)
             let addItemRow: Int
             if entries.isEmpty {
                 addItemRow = 0
@@ -727,17 +781,27 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.selectionStyle = .none
 
             let name = entry.selectedItemName ?? "Item"
+            let isService = entry.itemType == .services
             let qty = entry.quantity > 0 ? String(format: "%g", entry.quantity) : "Qty"
             let cost = entry.costPrice > 0 ? "₹\(entry.costPrice)" : "Cost"
 
             cell.titleLabel?.text = name
-            cell.detailLabel?.text = "\(qty) × \(cost)"
+            if isService {
+                cell.detailLabel?.text = cost
+            } else {
+                cell.detailLabel?.text = "\(qty) × \(cost)"
+            }
 
-            let total = entry.quantity * entry.costPrice
-            cell.priceLabel?.text = "₹\(total)"
+            let lineQty = isService ? max(entry.quantity, 1) : entry.quantity
+            let total = Money.line(quantity: lineQty, rate: entry.costPrice)
+            cell.priceLabel?.text = String(format: "₹%.2f", total)
             
-            // Chevron indicator
-            cell.accessoryType = isExpanded ? .none : .disclosureIndicator
+            cell.backgroundColor = .systemBackground
+            cell.contentView.backgroundColor = .systemBackground
+            let chevron = UIImageView(image: UIImage(systemName: isExpanded ? "chevron.up" : "chevron.down"))
+            chevron.tintColor = .tertiaryLabel
+            cell.accessoryView = chevron
+            cell.accessoryType = .none
 
             return cell
 
@@ -805,23 +869,30 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     
     /// Logical detail row types
     private enum DetailRowType {
-        case itemName, unit, quantity, costPrice, sellingPrice
+        case itemType, itemName, unit, quantity, costPrice, sellingPrice
         case hsnCode, gstRate   // GST-only
         case lowStock, expiryToggle, expiry, barcode, photoRecord
     }
 
-    /// Build the ordered list of detail rows based on GST registration
+    /// Build the ordered list of detail rows based on GST registration + goods/services
     private func detailRowTypes(for entryIndex: Int) -> [DetailRowType] {
         let isGST = (try? AppDataModel.shared.dataModel.db.getSettings())?.isGSTRegistered ?? false
-        var rows: [DetailRowType] = [.itemName, .unit, .quantity, .costPrice, .sellingPrice]
+        let isService = entries[entryIndex].itemType == .services
+        var rows: [DetailRowType] = [.itemType, .itemName, .unit]
+        if !isService {
+            rows.append(.quantity)
+        }
+        rows.append(contentsOf: [.costPrice, .sellingPrice])
         if isGST {
             rows.append(contentsOf: [.hsnCode, .gstRate])
         }
-        rows.append(contentsOf: [.lowStock, .expiryToggle])
-        if entries[entryIndex].expiryDate != nil {
-            rows.append(.expiry)
+        if !isService {
+            rows.append(contentsOf: [.lowStock, .expiryToggle])
+            if entries[entryIndex].expiryDate != nil {
+                rows.append(.expiry)
+            }
+            rows.append(contentsOf: [.barcode, .photoRecord])
         }
-        rows.append(contentsOf: [.barcode, .photoRecord])
         return rows
     }
 
@@ -832,6 +903,36 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         let rowType = rowTypes[detailRow]
 
         switch rowType {
+        case .itemType:
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.selectionStyle = .none
+            cell.contentView.backgroundColor = .cell
+            cell.backgroundColor = .cell
+
+            let titleLabel = UILabel()
+            titleLabel.text = "  Type"
+            titleLabel.font = .systemFont(ofSize: 17)
+            titleLabel.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(titleLabel)
+
+            let seg = UISegmentedControl(items: ["Goods", "Service"])
+            seg.selectedSegmentIndex = entry.itemType == .services ? 1 : 0
+            seg.tag = entryIndex
+            seg.translatesAutoresizingMaskIntoConstraints = false
+            seg.addTarget(self, action: #selector(purchaseItemTypeChanged(_:)), for: .valueChanged)
+            cell.contentView.addSubview(seg)
+
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                titleLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                seg.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                seg.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                seg.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
+                seg.widthAnchor.constraint(equalToConstant: 160),
+                cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            ])
+            return cell
+
         case .itemName:
             // Item Name
             let cell = UITableViewCell(style: .value1, reuseIdentifier: "summary")
@@ -905,8 +1006,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .hsnCode:
             // HSN / SAC Code
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-            cell.titleLabel.text = "  HSN Code"
-            cell.textField.placeholder = "e.g. 1006"
+            let isService = entry.itemType == .services
+            cell.titleLabel.text = isService ? "  SAC Code" : "  HSN Code"
+            cell.textField.placeholder = isService ? "e.g. 9983" : "e.g. 1006"
             cell.textField.keyboardType = .numberPad
             cell.textField.text = entry.hsnCode ?? ""
             cell.textField.isUserInteractionEnabled = true
@@ -953,6 +1055,8 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.textField.keyboardType = .numberPad
             cell.textField.text = entry.lowStockThreshold > 0 ? entry.lowStockThreshold.cleanString : ""
             cell.textField.isUserInteractionEnabled = true
+            cell.textField.rightView = nil
+            cell.textField.rightViewMode = .never
             cell.accessoryType = .none
             cell.onTextChanged = { [weak self] text in
                 self?.entries[entryIndex].lowStockThreshold = Double(text) ?? 0
@@ -1000,6 +1104,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             
             let scanBtn = UIButton(type: .system)
             scanBtn.setImage(UIImage(systemName: "barcode.viewfinder"), for: .normal)
+            scanBtn.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
             scanBtn.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
             scanBtn.tag = entryIndex
             scanBtn.addTarget(self, action: #selector(scanBarcodeTapped(_:)), for: .touchUpInside)
@@ -1009,32 +1114,36 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             return cell
             
         case .photoRecord:
-            // Photo / Record / Delete buttons
+            let lime = UIColor(named: "Lime Moss") ?? .systemGreen
             let cell = UITableViewCell()
             cell.selectionStyle = .none
-            
-            // Photo buttons
+            cell.backgroundColor = .systemBackground
+            cell.contentView.backgroundColor = .systemBackground
+
             let addPhotoBtn = UIButton(type: .system)
             let cameraConfig = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
             addPhotoBtn.setImage(UIImage(systemName: "camera.badge.ellipsis", withConfiguration: cameraConfig), for: .normal)
             addPhotoBtn.setTitle(" Photo", for: .normal)
             addPhotoBtn.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+            addPhotoBtn.tintColor = lime
+            addPhotoBtn.setTitleColor(lime, for: .normal)
             addPhotoBtn.tag = entryIndex
             addPhotoBtn.addTarget(self, action: #selector(addPhotoForEntry(_:)), for: .touchUpInside)
             addPhotoBtn.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(addPhotoBtn)
-            
+
             let recordBtn = UIButton(type: .system)
             let recordConfig = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
             recordBtn.setImage(UIImage(systemName: "record.circle", withConfiguration: recordConfig), for: .normal)
             recordBtn.setTitle(" Record", for: .normal)
             recordBtn.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+            recordBtn.tintColor = lime
+            recordBtn.setTitleColor(lime, for: .normal)
             recordBtn.tag = entryIndex
             recordBtn.addTarget(self, action: #selector(recordVideoForEntry(_:)), for: .touchUpInside)
             recordBtn.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(recordBtn)
-            
-            // Delete button
+
             let deleteBtn = UIButton(type: .system)
             deleteBtn.setImage(UIImage(systemName: "trash", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)), for: .normal)
             deleteBtn.tintColor = .systemRed
@@ -1042,30 +1151,89 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             deleteBtn.addTarget(self, action: #selector(deleteItem(_:)), for: .touchUpInside)
             deleteBtn.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(deleteBtn)
-            
-            let photoCount = entry.pendingItemPhotos.count
+
+            let photos = entry.pendingItemPhotos
             let subtitle = UILabel()
-            subtitle.text = photoCount > 0 ? "\(photoCount) frames" : ""
-            subtitle.font = .systemFont(ofSize: 11)
-            subtitle.textColor = photoCount > 0 ? UIColor(named: "Lime Moss")! : .secondaryLabel
+            if photos.isEmpty {
+                subtitle.text = ""
+            } else {
+                subtitle.text = photos.count == 1 ? "1 Picture" : "\(photos.count) Pictures"
+            }
+            subtitle.font = .systemFont(ofSize: 13)
+            subtitle.textColor = photos.isEmpty ? .secondaryLabel : lime
             subtitle.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(subtitle)
-            cell.contentView.backgroundColor = .cell
+
+            let scroll = UIScrollView()
+            scroll.showsHorizontalScrollIndicator = false
+            scroll.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(scroll)
+
+            let preview = UIStackView()
+            preview.axis = .horizontal
+            preview.spacing = 8
+            preview.translatesAutoresizingMaskIntoConstraints = false
+            scroll.addSubview(preview)
+
+            for (photoIndex, image) in photos.enumerated() {
+                let wrap = UIView()
+                wrap.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    wrap.widthAnchor.constraint(equalToConstant: 56),
+                    wrap.heightAnchor.constraint(equalToConstant: 56)
+                ])
+                let iv = UIImageView(image: image)
+                iv.contentMode = .scaleAspectFill
+                iv.clipsToBounds = true
+                iv.layer.cornerRadius = 8
+                iv.translatesAutoresizingMaskIntoConstraints = false
+                wrap.addSubview(iv)
+                NSLayoutConstraint.activate([
+                    iv.topAnchor.constraint(equalTo: wrap.topAnchor),
+                    iv.leadingAnchor.constraint(equalTo: wrap.leadingAnchor),
+                    iv.trailingAnchor.constraint(equalTo: wrap.trailingAnchor),
+                    iv.bottomAnchor.constraint(equalTo: wrap.bottomAnchor)
+                ])
+                let close = UIButton(type: .system)
+                close.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+                close.tintColor = .secondaryLabel
+                close.tag = entryIndex * 1000 + photoIndex
+                close.addTarget(self, action: #selector(removePendingPhoto(_:)), for: .touchUpInside)
+                close.translatesAutoresizingMaskIntoConstraints = false
+                wrap.addSubview(close)
+                NSLayoutConstraint.activate([
+                    close.topAnchor.constraint(equalTo: wrap.topAnchor, constant: -6),
+                    close.trailingAnchor.constraint(equalTo: wrap.trailingAnchor, constant: 6)
+                ])
+                preview.addArrangedSubview(wrap)
+            }
+
             NSLayoutConstraint.activate([
                 addPhotoBtn.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-                addPhotoBtn.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 12),
-                addPhotoBtn.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12),
-                
+                addPhotoBtn.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 10),
+
                 recordBtn.centerYAnchor.constraint(equalTo: addPhotoBtn.centerYAnchor),
-                recordBtn.leadingAnchor.constraint(equalTo: addPhotoBtn.trailingAnchor, constant: 24),
-                
+                recordBtn.leadingAnchor.constraint(equalTo: addPhotoBtn.trailingAnchor, constant: 20),
+
                 subtitle.centerYAnchor.constraint(equalTo: addPhotoBtn.centerYAnchor),
                 subtitle.leadingAnchor.constraint(equalTo: recordBtn.trailingAnchor, constant: 12),
-                
+
                 deleteBtn.centerYAnchor.constraint(equalTo: addPhotoBtn.centerYAnchor),
                 deleteBtn.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+
+                scroll.topAnchor.constraint(equalTo: addPhotoBtn.bottomAnchor, constant: photos.isEmpty ? 0 : 10),
+                scroll.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                scroll.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                scroll.heightAnchor.constraint(equalToConstant: photos.isEmpty ? 0 : 56),
+                scroll.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -10),
+
+                preview.topAnchor.constraint(equalTo: scroll.topAnchor),
+                preview.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+                preview.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+                preview.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+                preview.heightAnchor.constraint(equalTo: scroll.heightAnchor)
             ])
-            
+
             return cell
         }
     }
@@ -1223,10 +1391,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     return
                 }
                 
-                return 
+                return  // other detail rows handle their own interaction
             }
             
-
+            // Summary row tapped — toggle expand/collapse
             if !resolved.isDetailRow && resolved.entryIndex < entries.count {
                 if expandedItemIndex == resolved.entryIndex {
                     expandedItemIndex = nil
@@ -1274,6 +1442,20 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         entries[index].expiryDate = sender.date
     }
     
+    @objc private func purchaseItemTypeChanged(_ sender: UISegmentedControl) {
+        let index = sender.tag
+        guard index < entries.count else { return }
+        entries[index].itemType = sender.selectedSegmentIndex == 1 ? .services : .goods
+        if entries[index].itemType == .services {
+            entries[index].quantity = max(entries[index].quantity, 1)
+            entries[index].lowStockThreshold = 0
+            entries[index].expiryDate = nil
+            entries[index].pendingItemPhotos = []
+            entries[index].barcode = nil
+        }
+        tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .automatic)
+    }
+
     @objc private func expiryToggleChanged(_ sender: UISwitch) {
         let index = sender.tag
         guard index < entries.count else { return }
@@ -1338,6 +1520,15 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         present(nav, animated: true)
     }
 
+    @objc private func removePendingPhoto(_ sender: UIButton) {
+        let entryIndex = sender.tag / 1000
+        let photoIndex = sender.tag % 1000
+        guard entryIndex < entries.count,
+              photoIndex < entries[entryIndex].pendingItemPhotos.count else { return }
+        entries[entryIndex].pendingItemPhotos.remove(at: photoIndex)
+        tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
+    }
+
     @objc private func addPhotoForEntry(_ sender: UIButton) {
         let entryIndex = sender.tag
         guard entryIndex < entries.count else { return }
@@ -1358,9 +1549,12 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         guard entryIndex < entries.count else { return }
         
         let vc = InventoryCaptureVideoViewController()
-        vc.onComplete = { [weak self] images in
+        vc.onComplete = { [weak self] images, barcode in
             guard let self = self, !images.isEmpty else { return }
             self.entries[entryIndex].pendingItemPhotos.append(contentsOf: images)
+            if let barcode, self.entries[entryIndex].barcode == nil || self.entries[entryIndex].barcode?.isEmpty == true {
+                self.entries[entryIndex].barcode = barcode
+            }
             DispatchQueue.main.async {
                 self.tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
             }
@@ -1398,7 +1592,7 @@ extension AddPurchaseViewController: SupplierSelectionDelegate {
         supplierName = name
         supplierTextField.text = name
         
-
+        // Auto-fill GSTIN from stored supplier profile
         let all = CreditStore.shared.getAllSuppliers()
         if let supplier = all.first(where: { $0.name == name }), let gstin = supplier.gstin, !gstin.isEmpty {
             supplierGSTIN = gstin
@@ -1413,6 +1607,8 @@ extension AddPurchaseViewController: SupplierSelectionDelegate {
 extension AddPurchaseViewController {
     @objc func supplierGSTINChanged(_ sender: UITextField) {
         let text = sender.text?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        
+        // Write uppercased text back so it displays correctly
         if sender.text != text {
             let cursorPos = sender.selectedTextRange
             sender.text = text
@@ -1466,27 +1662,32 @@ extension AddPurchaseViewController: PurchaseUnitSelectionDelegate {
 
 extension AddPurchaseViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-        picker.dismiss(animated: true)
-        if let image = info[.originalImage] as? UIImage {
-            let maxDim: CGFloat = 480
-            let scale = min(maxDim / max(image.size.width, image.size.height), 1.0)
-            let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-            let resized = UIGraphicsGetImageFromCurrentImageContext()
-            UIGraphicsEndImageContext()
-            
-            if let compressed = resized?.jpegData(compressionQuality: 0.7),
-               let final = UIImage(data: compressed) {
-                entries[photoTargetEntryIndex].pendingItemPhotos.append(final)
-            } else {
-                entries[photoTargetEntryIndex].pendingItemPhotos.append(image)
+        picker.dismiss(animated: true) { [weak self] in
+            guard let self, let image = info[.originalImage] as? UIImage else { return }
+            PhotoObjectIsolateViewController.present(from: self, image: image) { [weak self] isolated in
+                self?.appendIsolatedProductPhoto(isolated)
             }
-            tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
         }
     }
     
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
         picker.dismiss(animated: true)
+    }
+
+    private func appendIsolatedProductPhoto(_ image: UIImage) {
+        let maxDim: CGFloat = 480
+        let scale = min(maxDim / max(image.size.width, image.size.height), 1.0)
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resized = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        if let compressed = resized?.jpegData(compressionQuality: 0.7),
+           let final = UIImage(data: compressed) {
+            entries[photoTargetEntryIndex].pendingItemPhotos.append(final)
+        } else {
+            entries[photoTargetEntryIndex].pendingItemPhotos.append(image)
+        }
+        tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
     }
 }

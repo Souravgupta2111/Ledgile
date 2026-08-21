@@ -41,9 +41,9 @@
                         <constraints>
                             <constraint firstAttribute="height" constant="60" id="8XO-8k-8um"/>
                             <constraint firstAttribute="bottom" secondItem="wwb-Lk-5CE" secondAttribute="bottom" constant="8" id="NDv-ne-U3y"/>
-                            <constraint firstAttribute="trailing" secondItem="wwb-Lk-5CE" secondAttribute="trailing" id="UsZ-Bt-ZfP"/>
+                            <constraint firstAttribute="trailing" secondItem="wwb-Lk-5CE" secondAttribute="trailing" constant="24" id="UsZ-Bt-ZfP"/>
                             <constraint firstItem="wwb-Lk-5CE" firstAttribute="top" secondItem="Eqs-xX-Qi7" secondAttribute="top" constant="8" id="eSw-MB-NlN"/>
-                            <constraint firstItem="wwb-Lk-5CE" firstAttribute="leading" secondItem="Eqs-xX-Qi7" secondAttribute="leading" id="zCl-FJ-SHB"/>
+                            <constraint firstItem="wwb-Lk-5CE" firstAttribute="leading" secondItem="Eqs-xX-Qi7" secondAttribute="leading" constant="24" id="zCl-FJ-SHB"/>
                         </constraints>
                     </view>
                 </subviews>

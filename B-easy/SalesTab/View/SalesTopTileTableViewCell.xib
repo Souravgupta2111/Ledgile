@@ -79,7 +79,7 @@
                                             <constraint firstItem="Rku-2f-Gzm" firstAttribute="top" secondItem="J0v-X7-IWk" secondAttribute="bottom" constant="7.3300000000000001" id="OiB-JX-AkS"/>
                                             <constraint firstAttribute="height" constant="156" id="Oox-lh-uyj"/>
                                             <constraint firstItem="M2s-vZ-4gf" firstAttribute="top" secondItem="y2p-ic-eFm" secondAttribute="top" constant="16" id="UKf-Kq-QH2"/>
-                                            <constraint firstAttribute="width" constant="177" id="dy4-Ic-68O"/>
+                                            <constraint firstAttribute="width" constant="177" priority="250" id="dy4-Ic-68O"/>
                                             <constraint firstItem="J0v-X7-IWk" firstAttribute="centerY" secondItem="y2p-ic-eFm" secondAttribute="centerY" id="fYH-8J-6mK"/>
                                             <constraint firstItem="2zE-WQ-szm" firstAttribute="top" secondItem="y2p-ic-eFm" secondAttribute="top" constant="16" id="jYs-J2-OxW"/>
                                             <constraint firstItem="J0v-X7-IWk" firstAttribute="leading" secondItem="y2p-ic-eFm" secondAttribute="leading" constant="16" id="p07-Fb-qD6"/>
@@ -150,7 +150,7 @@
                                             <constraint firstAttribute="bottom" secondItem="L56-Ra-mv9" secondAttribute="bottom" constant="16" id="Wzf-eI-P1g"/>
                                             <constraint firstItem="L56-Ra-mv9" firstAttribute="leading" secondItem="uJA-Hm-J2N" secondAttribute="leading" constant="16" id="XxV-0n-DhC"/>
                                             <constraint firstItem="Jbb-G8-2a4" firstAttribute="top" secondItem="uJA-Hm-J2N" secondAttribute="top" constant="16" id="eUC-mb-hWG"/>
-                                            <constraint firstAttribute="width" constant="177" id="i3V-hH-o3N"/>
+                                            <constraint firstAttribute="width" constant="177" priority="250" id="i3V-hH-o3N"/>
                                             <constraint firstItem="4Yu-5w-AZE" firstAttribute="top" secondItem="BGO-ER-oeS" secondAttribute="bottom" constant="6" id="k3v-HI-ujw"/>
                                             <constraint firstItem="0Dz-iT-hCh" firstAttribute="top" secondItem="lUF-RC-1Go" secondAttribute="bottom" constant="7.3300000000000001" id="qwr-Kx-Ytq"/>
                                             <constraint firstItem="4Yu-5w-AZE" firstAttribute="leading" secondItem="uJA-Hm-J2N" secondAttribute="leading" constant="16" id="xZR-Ux-62V"/>

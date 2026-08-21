@@ -30,7 +30,7 @@ class GSTSettingsViewController: UITableViewController {
             invoicePrefix: "INV", invoiceNumberCounter: 1, includeYearInInvoice: false,
             businessName: "My Shop", expiryNoticeDays: 14, expiryWarningDays: 7, expiryCriticalDays: 3
         )
-        super.init(style: .grouped)
+        super.init(style: .insetGrouped)
     }
 
     required init?(coder: NSCoder) {
@@ -41,11 +41,15 @@ class GSTSettingsViewController: UITableViewController {
         super.viewDidLoad()
         title = "GST Settings"
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
-        
+        tableView.backgroundColor = .systemGroupedBackground
+        let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+        navigationController?.navigationBar.tintColor = lime
+        gstRegisteredSwitch.onTintColor = lime
+        pricesIncludeGSTSwitch.onTintColor = lime
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(saveTapped))
+        navigationItem.rightBarButtonItem?.tintColor = lime
         gstRegisteredSwitch.isOn = appSettings.isGSTRegistered
         pricesIncludeGSTSwitch.isOn = appSettings.pricesIncludeGST
-        
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(saveTapped))
     }
 
     @objc private func gstRegisteredChanged(_ sender: UISwitch) {

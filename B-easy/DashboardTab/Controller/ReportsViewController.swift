@@ -42,7 +42,7 @@ class ReportsViewController: UIViewController {
         
         tableView.backgroundColor = .systemGray6
         tableView.separatorStyle = .none
-        tableView.sectionHeaderTopPadding = 12
+        tableView.sectionHeaderTopPadding = 0
     }
 }
 

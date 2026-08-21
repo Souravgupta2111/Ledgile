@@ -68,6 +68,20 @@ class SalesScanCameraViewController: UIViewController {
      var productLastProcessTime: CFTimeInterval = 0
      let productScanInterval: CFTimeInterval = 0.33  // ~3 FPS
      var productIsProcessingFrame = false  // prevent overlap
+     var productOverlayContainer: UIView?
+     var productAmbiguousPickerShowing = false
+     var productAmbiguousShown: Set<String> = []
+     var lastProductFrame: CGImage?
+     var lastProductFrameSize: CGSize = .zero
+     var liveDetectionBoxes: [(rect: CGRect, hasMask: Bool)] = []
+     private var pinnedMarks: [PinnedScanMark] = []
+     var liveMatchOverlays: [(rect: CGRect, label: String)] = []
+
+    private struct PinnedScanMark {
+        let id: UUID
+        var imageRect: CGRect
+        let crop: CGImage
+    }
 
     private static let storyboardIdentifier = "SalesScanCameraViewController"
 
@@ -93,7 +107,22 @@ class SalesScanCameraViewController: UIViewController {
         view.backgroundColor = .black
         configureStoryboardUI()
         indicationLabel.textColor = .white
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(embeddingsRebuildFinished),
+            name: ProductFingerprintManager.embeddingsDidRebuildNotification,
+            object: nil
+        )
         checkCameraPermission()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func embeddingsRebuildFinished() {
+        guard isProductScanning else { return }
+        updateProductScanStatus()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -118,6 +147,8 @@ class SalesScanCameraViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updatePreviewLayerLayout()
+        productOverlayContainer?.frame = previewView.bounds
+        bringCameraControlsToFront()
     }
 
      func configureStoryboardUI() {
@@ -125,9 +156,12 @@ class SalesScanCameraViewController: UIViewController {
             UIButton.applyGlassStyle(to: btn)
         }
         updateStatusLabel()
-         updateShutterButton(symbolName: "camera.fill", color: .systemBlue)
+         updateShutterButton(symbolName: "camera.fill", color: UIColor(named: "Lime Moss") ?? .systemGreen)
         activityIndicator.hidesWhenStopped = true
         scanTypeControl?.isHidden = mode == .purchase || saleScanIntent != nil
+        let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+        scanTypeControl?.selectedSegmentTintColor = lime
+        scanTypeControl?.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
     }
 
      func updateStatusLabel() {
@@ -166,11 +200,16 @@ class SalesScanCameraViewController: UIViewController {
     }
 
     private func updateProductScanStatus() {
+        if ProductFingerprintManager.shared.isRebuildingEmbeddings {
+            indicationLabel.isHidden = false
+            indicationLabel.text = "Updating product index…"
+            return
+        }
         let count = productConfirmedItems.reduce(0) { $0 + $1.quantity }
         indicationLabel.isHidden = false
         indicationLabel.text = count == 0
-            ? "Scanning products..."
-            : "\(count) product\(count == 1 ? "" : "s") detected"
+            ? "Tap objects to mark them"
+            : "\(count) product\(count == 1 ? "" : "s") marked"
     }
 
     @objc  func scanIntentChanged() {
@@ -252,6 +291,7 @@ class SalesScanCameraViewController: UIViewController {
             self.captureSession = session
 
             DispatchQueue.main.async {
+                self.syncCaptureOrientation()
                 self.attachPreviewLayer(for: session)
             }
             session.startRunning()
@@ -266,10 +306,26 @@ class SalesScanCameraViewController: UIViewController {
         previewView.layer.insertSublayer(layer, at: 0)
         previewLayer = layer
         updatePreviewLayerLayout()
+        ensureProductOverlayContainer()
+        bringCameraControlsToFront()
     }
 
     private func updatePreviewLayerLayout() {
         previewLayer?.frame = previewView.bounds
+        syncCaptureOrientation()
+    }
+
+    private func syncCaptureOrientation() {
+        let orientation = AVCaptureVideoOrientation.portrait
+        if let connection = previewLayer?.connection, connection.isVideoOrientationSupported {
+            connection.videoOrientation = orientation
+        }
+        if let connection = videoDataOutput?.connection(with: .video), connection.isVideoOrientationSupported {
+            connection.videoOrientation = orientation
+        }
+        if let connection = photoOutput?.connection(with: .video), connection.isVideoOrientationSupported {
+            connection.videoOrientation = orientation
+        }
     }
 
     @objc  func cancelTapped() {
@@ -345,10 +401,10 @@ class SalesScanCameraViewController: UIViewController {
      func processBill(image: UIImage, cgImage: CGImage) {
         print("\n[ScanCamera] ═══════════════════════════════════════")
         print("[ScanCamera] processBill called | mode=\(mode == .sale ? "SALE" : "PURCHASE")")
-        print("[ScanCamera] Gemini status: isConfigured=\(GeminiService.shared.isConfigured), hasAPIKey=\(GeminiService.shared.hasAPIKey), isLimitReached=\(GeminiService.shared.isLimitReached)")
+        print("[ScanCamera] Gemini status: isConfigured=\(GeminiService.shared.isConfigured(for: .camera)), hasAPIKey=\(GeminiService.shared.hasAPIKey), isLimitReached=\(GeminiService.shared.isLimitReached)")
         
         // Try Gemini first for superior OCR + parsing in one call
-        if GeminiService.shared.isConfigured {
+        if GeminiService.shared.isConfigured(for: .camera) {
             print("[ScanCamera] ✅ Using Gemini for bill OCR...")
             if self.mode == .sale {
                 GeminiService.shared.parseBillForSale(image: image) { [weak self] result in
@@ -382,8 +438,8 @@ class SalesScanCameraViewController: UIViewController {
         } else {
             print("[ScanCamera] ⚠️ Gemini NOT configured — using on-device OCR only")
             // Show one-time alert if user just hit their Gemini limit
-            if GeminiService.shared.hasAPIKey && GeminiService.shared.isLimitReached {
-                print("[ScanCamera] ⚠️ Reason: free Gemini limit reached")
+            if GeminiService.shared.hasAPIKey && !UsageTracker.shared.canUse(.camera) {
+                print("[ScanCamera] ⚠️ Reason: camera AI limit reached")
                 showFreemiumLimitAlertIfNeeded()
             }
             processBillOnDevice(image: image, cgImage: cgImage)
@@ -399,11 +455,17 @@ class SalesScanCameraViewController: UIViewController {
 
         DispatchQueue.main.async {
             let alert = UIAlertController(
-                title: "Free AI Scans Used Up",
-                message: UsageTracker.shared.limitReachedMessage,
+                title: UsageTracker.shared.isProUser ? "Camera AI limit reached" : "Free AI Scans Used Up",
+                message: UsageTracker.shared.limitReachedMessage(for: .camera),
                 preferredStyle: .alert
             )
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            if !UsageTracker.shared.isProUser {
+                alert.addAction(UIAlertAction(title: "See Pro", style: .default) { [weak self] _ in
+                    guard let self else { return }
+                    ProBenefitsViewController.present(from: self)
+                })
+            }
+            alert.addAction(UIAlertAction(title: "OK", style: .cancel))
             self.present(alert, animated: true)
         }
     }
@@ -428,6 +490,25 @@ class SalesScanCameraViewController: UIViewController {
      func finishWithSaleResult(_ result: ParsedResult) {
         activityIndicator.stopAnimating()
         shutterButton.isEnabled = true
+        if result.printedTotalMismatch {
+            let alert = UIAlertController(
+                title: "Printed total does not match",
+                message: "The bill total \(result.printedGrandTotal ?? "") does not match the line items. Review before saving.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Review", style: .default) { [weak self] _ in
+                self?.deliverSaleResult(result)
+            })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+                self?.dismiss(animated: true)
+            })
+            present(alert, animated: true)
+            return
+        }
+        deliverSaleResult(result)
+    }
+
+    private func deliverSaleResult(_ result: ParsedResult) {
         let callback = onSaleResult
         dismiss(animated: true) {
             callback?(result)
@@ -492,7 +573,7 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
         }
 
         // Live product scanning (CLIP + Barcode + OCR via video frames)
-        if isProductScanning && !productIsProcessingFrame {
+        if isProductScanning && !productIsProcessingFrame && !productAmbiguousPickerShowing {
             let now = CACurrentMediaTime()
             guard now - productLastProcessTime >= productScanInterval else { return }
             productLastProcessTime = now
@@ -505,21 +586,24 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
                 return
             }
 
-            
+            // Run all three detection strategies in parallel on this frame:
+            //   1. CLIP matching (product recognition via trained embeddings)
+            //   2. Barcode scanning (instant match if barcode found in inventory)
+            //   3. OCR label reading (extract weight, variant from packaging text)
             let group = DispatchGroup()
 
-            var clipMatches: [(Item, Float, Int)] = []
+            var clipOutcome = ProductScanOutcome(matches: [], overlays: [], ambiguous: [], allDetections: [])
             var barcodeMatches: [(Item, String)] = []  // (item, barcode)
             var ocrLabels: [String] = []
 
-
+            // ── Strategy 1: CLIP matching ──
             group.enter()
-            ProductFingerprintManager.shared.matchObjectsWithScores(in: cgImage) { matches in
-                clipMatches = matches
+            ProductFingerprintManager.shared.matchObjectsWithOutcome(in: cgImage) { outcome in
+                clipOutcome = outcome
                 group.leave()
             }
 
-
+            // ── Strategy 2: Barcode scanning (parallel) ──
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 defer { group.leave() }
@@ -537,7 +621,7 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
                 }
             }
 
-
+            // ── Strategy 3: OCR label read (parallel) ──
             group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 defer { group.leave() }
@@ -555,24 +639,29 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
                 }
             }
 
-
+            // ── Combine results ──
             group.notify(queue: .main) { [weak self] in
                 guard let self = self else { return }
                 self.productIsProcessingFrame = false
 
+                let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+                self.lastProductFrame = cgImage
+                self.lastProductFrameSize = imageSize
+                self.liveDetectionBoxes = clipOutcome.allDetections
+                self.liveMatchOverlays = clipOutcome.overlays
+                self.redrawProductBoxes()
+
                 for (item, barcode) in barcodeMatches {
-                    if !self.productConfirmedIDs.contains(item.id) {
-                        self.productConfirmedIDs.insert(item.id)
-                        self.productConfirmedItems.append((item: item, quantity: 1))
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        self.updateProductScanStatus()
-                        print("[ProductScanner] Barcode match: \(barcode) → \(item.name)")
-                    }
+                    self.confirmOrRaiseQuantity(item: item, quantity: 1, score: 1.0)
+                    print("[ProductScanner] Barcode match: \(barcode) → \(item.name)")
                 }
 
-                // Process CLIP matches (needs multi-frame consensus)
-                for (item, score, _) in clipMatches {
-                    self.handleProductDetected(item: item, score: score)
+                for (item, score, count) in clipOutcome.matches {
+                    self.handleProductDetected(item: item, score: score, quantity: max(1, count))
+                }
+
+                for pair in clipOutcome.ambiguous {
+                    self.presentCloseSKUPickerIfNeeded(pair.0, pair.1)
                 }
 
                 if !ocrLabels.isEmpty {
@@ -613,7 +702,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
 
      func stopBarcodeScanning() {
         isBarcodeScanning = false
-        updateShutterButton(symbolName: "camera.fill", color: .systemBlue)
+        updateShutterButton(symbolName: "camera.fill", color: UIColor(named: "Lime Moss") ?? .systemGreen)
         updateStatusLabel()
 
         barcodeToastView?.removeFromSuperview()
@@ -671,14 +760,22 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
         }
     }
 
-    //Live Product Scanning (Offline YOLO→CLIP via Video Frames)
-
      func startProductScanning() {
         productCandidates = [:]
         productConfirmedItems = []
         productConfirmedIDs = []
         productIsProcessingFrame = false
+        productAmbiguousPickerShowing = false
+        productAmbiguousShown = []
         isProductScanning = true
+        ProductFingerprintManager.shared.prepareEmbeddingsForCurrentExtractor()
+        pinnedMarks = []
+        liveDetectionBoxes = []
+        liveMatchOverlays = []
+        lastProductFrame = nil
+        clearProductOverlays()
+        productOverlayContainer?.isUserInteractionEnabled = true
+        bringCameraControlsToFront()
 
         // Load barcode inventory for inline barcode matching
         barcodeAllItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
@@ -700,45 +797,313 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
      func stopProductScanning() {
         isProductScanning = false
         productIsProcessingFrame = false
-        updateShutterButton(symbolName: "camera.fill", color: .systemBlue)
+        productAmbiguousPickerShowing = false
+        pinnedMarks = []
+        liveDetectionBoxes = []
+        liveMatchOverlays = []
+        lastProductFrame = nil
+        productOverlayContainer?.isUserInteractionEnabled = false
+        clearProductOverlays()
+        bringCameraControlsToFront()
+        updateShutterButton(symbolName: "camera.fill", color: UIColor(named: "Lime Moss") ?? .systemGreen)
         updateStatusLabel()
     }
 
-    func handleProductDetected(item: Item, score: Float) {
+    private func ensureProductOverlayContainer() {
+        if productOverlayContainer == nil {
+            let container = UIView()
+            container.backgroundColor = .clear
+            let tap = UITapGestureRecognizer(target: self, action: #selector(handleProductOverlayTap(_:)))
+            container.addGestureRecognizer(tap)
+            previewView.addSubview(container)
+            productOverlayContainer = container
+        }
+        productOverlayContainer?.frame = previewView.bounds
+        productOverlayContainer?.isUserInteractionEnabled = isProductScanning
+        bringCameraControlsToFront()
+    }
+
+    /// Keep Bill / Products / Barcode tappable above the full-screen detection overlay.
+    private func bringCameraControlsToFront() {
+        if let control = scanTypeControl, !control.isHidden {
+            previewView.bringSubviewToFront(control)
+        }
+        previewView.bringSubviewToFront(indicationLabel)
+        previewView.bringSubviewToFront(activityIndicator)
+        if isProductScanning, let container = productOverlayContainer {
+            // Overlay below segment control but above the live preview.
+            if let control = scanTypeControl {
+                previewView.insertSubview(container, belowSubview: control)
+            }
+        }
+    }
+
+    private func clearProductOverlays() {
+        productOverlayContainer?.subviews.forEach { $0.removeFromSuperview() }
+    }
+
+    private func redrawProductBoxes() {
+        ensureProductOverlayContainer()
+        clearProductOverlays()
+        guard isProductScanning, let container = productOverlayContainer else { return }
+        container.frame = previewView.bounds
+        let imageSize = lastProductFrameSize
+        guard imageSize.width > 0, imageSize.height > 0 else { return }
+
+        for detection in liveDetectionBoxes {
+            addBoxView(
+                imageRect: detection.rect,
+                imageSize: imageSize,
+                in: container,
+                color: detection.hasMask ? .systemGreen : .cyan,
+                dashed: true,
+                label: nil
+            )
+        }
+
+        for mark in pinnedMarks {
+            addBoxView(
+                imageRect: mark.imageRect,
+                imageSize: imageSize,
+                in: container,
+                color: UIColor(named: "Lime Moss") ?? .systemGreen,
+                dashed: false,
+                label: "Marked"
+            )
+        }
+
+        for overlay in liveMatchOverlays {
+            addBoxView(
+                imageRect: overlay.rect,
+                imageSize: imageSize,
+                in: container,
+                color: .systemYellow,
+                dashed: false,
+                label: overlay.label
+            )
+        }
+    }
+
+    private func addBoxView(
+        imageRect: CGRect,
+        imageSize: CGSize,
+        in container: UIView,
+        color: UIColor,
+        dashed: Bool,
+        label: String?
+    ) {
+        let viewRect = mapImageRect(imageRect, imageSize: imageSize, into: container.bounds.size)
+        guard viewRect.width > 8, viewRect.height > 8,
+              viewRect.intersects(container.bounds) else { return }
+
+        let box = UIView(frame: viewRect)
+        box.backgroundColor = color.withAlphaComponent(0.10)
+        box.isUserInteractionEnabled = false
+
+        if dashed {
+            let dashedBorder = CAShapeLayer()
+            dashedBorder.strokeColor = color.cgColor
+            dashedBorder.fillColor = nil
+            dashedBorder.lineDashPattern = [5, 3]
+            dashedBorder.lineWidth = 2
+            dashedBorder.frame = box.bounds
+            dashedBorder.path = UIBezierPath(roundedRect: box.bounds, cornerRadius: 4).cgPath
+            box.layer.addSublayer(dashedBorder)
+        } else {
+            box.layer.borderColor = color.cgColor
+            box.layer.borderWidth = 2.5
+            box.layer.cornerRadius = 4
+        }
+
+        if let label {
+            let caption = UILabel()
+            caption.text = " \(label) "
+            caption.font = .systemFont(ofSize: 11, weight: .semibold)
+            caption.textColor = .black
+            caption.backgroundColor = color.withAlphaComponent(0.92)
+            caption.sizeToFit()
+            caption.frame = CGRect(
+                x: 0,
+                y: max(0, -18),
+                width: max(box.bounds.width, caption.bounds.width + 6),
+                height: 18
+            )
+            box.addSubview(caption)
+        }
+        container.addSubview(box)
+    }
+
+    @objc private func handleProductOverlayTap(_ gesture: UITapGestureRecognizer) {
+        guard isProductScanning, lastProductFrameSize.width > 0 else { return }
+        let point = gesture.location(in: productOverlayContainer)
+        let imagePoint = mapViewPoint(point, imageSize: lastProductFrameSize, from: productOverlayContainer?.bounds.size ?? .zero)
+
+        if let index = pinnedMarks.firstIndex(where: { $0.imageRect.insetBy(dx: -12, dy: -12).contains(imagePoint) }) {
+            pinnedMarks.remove(at: index)
+            redrawProductBoxes()
+            updateProductScanStatus()
+            return
+        }
+
+        let hitLive = liveDetectionBoxes.first(where: { $0.rect.contains(imagePoint) })
+        let imageRect: CGRect
+        if let hit = hitLive {
+            imageRect = hit.rect
+        } else {
+            let side = min(lastProductFrameSize.width, lastProductFrameSize.height) * 0.28
+            imageRect = CGRect(
+                x: imagePoint.x - side / 2,
+                y: imagePoint.y - side / 2,
+                width: side,
+                height: side
+            ).intersection(CGRect(origin: .zero, size: lastProductFrameSize))
+        }
+        guard imageRect.width > 8, imageRect.height > 8, let frame = lastProductFrame else { return }
+
+        indicationLabel.text = "Marking…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            var box = DetectedObjectBox(rect: imageRect, confidence: 1, mask: nil)
+            if MobileSAMService.isEnabled, let sam = MobileSAMService.shared, let encoding = sam.encodeImage(frame) {
+                box = sam.generateMasks(encoding: encoding, boxes: [box]).first ?? box
+            }
+            guard let crop = self.cropCGImage(frame, to: box.rect) else { return }
+
+            DispatchQueue.main.async {
+                let mark = PinnedScanMark(id: UUID(), imageRect: box.rect, crop: crop)
+                self.pinnedMarks.append(mark)
+                self.redrawProductBoxes()
+                self.indicationLabel.text = "Marked \(self.pinnedMarks.count) — matching…"
+
+                ProductFingerprintManager.shared.matchMarkedCrop(crop) { [weak self] item, score in
+                    guard let self else { return }
+                    if let item {
+                        self.confirmOrRaiseQuantity(item: item, quantity: 1, score: max(score, 0.88))
+                        self.indicationLabel.text = "✓ \(item.name)"
+                    } else if score >= 0.65 {
+                        self.updateProductScanStatus()
+                        self.indicationLabel.text = "Marked — looks different (score \(Int(score * 100))%)"
+                    } else {
+                        self.updateProductScanStatus()
+                        self.indicationLabel.text = "Marked — not in stock yet"
+                    }
+                }
+            }
+        }
+    }
+
+    private func cropCGImage(_ image: CGImage, to rect: CGRect) -> CGImage? {
+        let clamped = rect.integral.standardized.intersection(
+            CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        )
+        guard clamped.width > 1, clamped.height > 1 else { return nil }
+        return image.cropping(to: clamped)
+    }
+
+    private func mapViewPoint(_ point: CGPoint, imageSize: CGSize, from viewSize: CGSize) -> CGPoint {
+        guard imageSize.width > 0, imageSize.height > 0, viewSize.width > 0, viewSize.height > 0 else { return .zero }
+        let scale = max(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
+        let scaledW = imageSize.width * scale
+        let scaledH = imageSize.height * scale
+        let offsetX = (viewSize.width - scaledW) / 2
+        let offsetY = (viewSize.height - scaledH) / 2
+        return CGPoint(
+            x: (point.x - offsetX) / scale,
+            y: (point.y - offsetY) / scale
+        )
+    }
+
+    private func mapImageRect(_ imageRect: CGRect, imageSize: CGSize, into viewSize: CGSize) -> CGRect {
+        let scale = max(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
+        let scaledW = imageSize.width * scale
+        let scaledH = imageSize.height * scale
+        let offsetX = (viewSize.width - scaledW) / 2
+        let offsetY = (viewSize.height - scaledH) / 2
+        return CGRect(
+            x: imageRect.origin.x * scale + offsetX,
+            y: imageRect.origin.y * scale + offsetY,
+            width: imageRect.width * scale,
+            height: imageRect.height * scale
+        )
+    }
+
+    private func presentCloseSKUPickerIfNeeded(_ first: Item, _ second: Item) {
+        let key = [first.id.uuidString, second.id.uuidString].sorted().joined(separator: "|")
+        guard !productAmbiguousShown.contains(key), !productAmbiguousPickerShowing else { return }
+        if productConfirmedIDs.contains(first.id) || productConfirmedIDs.contains(second.id) { return }
+
+        productAmbiguousShown.insert(key)
+        productAmbiguousPickerShowing = true
+
+        let sheet = UIAlertController(
+            title: "Which product?",
+            message: "These look similar. Choose the item on the table.",
+            preferredStyle: .actionSheet
+        )
+        sheet.addAction(UIAlertAction(title: first.name, style: .default) { [weak self] _ in
+            self?.confirmOrRaiseQuantity(item: first, quantity: 1, score: 0.9)
+            self?.productAmbiguousPickerShowing = false
+        })
+        sheet.addAction(UIAlertAction(title: second.name, style: .default) { [weak self] _ in
+            self?.confirmOrRaiseQuantity(item: second, quantity: 1, score: 0.9)
+            self?.productAmbiguousPickerShowing = false
+        })
+        sheet.addAction(UIAlertAction(title: "Neither", style: .cancel) { [weak self] _ in
+            self?.productAmbiguousPickerShowing = false
+        })
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = previewView
+            popover.sourceRect = CGRect(x: previewView.bounds.midX, y: previewView.bounds.midY, width: 1, height: 1)
+        }
+        present(sheet, animated: true)
+    }
+
+    func handleProductDetected(item: Item, score: Float, quantity: Int = 1) {
         assert(Thread.isMainThread, "handleProductDetected must be called on main thread")
 
-        guard score >= 0.68 else { return }
-        guard !productConfirmedIDs.contains(item.id) else { return }
+        // Live auto-add is stricter than marked-crop matching to avoid carpet / background FPs.
+        guard score >= 0.86 else { return }
+        let qty = Double(max(1, quantity))
 
+        if productConfirmedIDs.contains(item.id) {
+            confirmOrRaiseQuantity(item: item, quantity: qty, score: score)
+            return
+        }
 
         if var candidate = productCandidates[item.id] {
             candidate.frameCount += 1
             candidate.score = max(candidate.score, score)
             productCandidates[item.id] = candidate
 
-
-            if candidate.frameCount >= 3 {
-                productConfirmedIDs.insert(item.id)
+            if candidate.frameCount >= 5 || score >= 0.93 {
                 productCandidates.removeValue(forKey: item.id)
-
-
-                productConfirmedItems.append((item: item, quantity: 1))
-
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                updateProductScanStatus()
-
-                print("[ProductScanner] Confirmed: \(item.name) (score: \(String(format: "%.2f", score)), frames: \(candidate.frameCount))")
+                confirmOrRaiseQuantity(item: item, quantity: qty, score: score)
+                print("[ProductScanner] Confirmed: \(item.name) (score: \(String(format: "%.2f", score)), frames: \(candidate.frameCount), qty: \(qty))")
             }
         } else {
-
             productCandidates[item.id] = (item: item, score: score, frameCount: 1)
         }
+    }
+
+    private func confirmOrRaiseQuantity(item: Item, quantity: Double, score: Float) {
+        if let idx = productConfirmedItems.firstIndex(where: { $0.item.id == item.id }) {
+            let raised = max(productConfirmedItems[idx].quantity, quantity)
+            if raised != productConfirmedItems[idx].quantity {
+                productConfirmedItems[idx].quantity = raised
+                updateProductScanStatus()
+            }
+            return
+        }
+        productConfirmedIDs.insert(item.id)
+        productConfirmedItems.append((item: item, quantity: max(1, quantity)))
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        updateProductScanStatus()
     }
      func processOCRLabels(_ labels: [String]) {
         let allText = labels.joined(separator: " ").lowercased()
         guard !allText.isEmpty else { return }
 
-
+        // ── Step 1: Extract all weight/volume mentions from the label ──
         var detectedWeights: [(value: Double, unit: String, normalized: String)] = []
         let weightPattern = #"(\d+\.?\d*)\s*(g|gm|gms|gram|grams|kg|kgs|ml|l|ltr|litre|litres|liter|liters)\b"#
         if let regex = try? NSRegularExpression(pattern: weightPattern, options: .caseInsensitive) {
@@ -748,7 +1113,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                    let unitRange = Range(match.range(at: 2), in: allText),
                    let value = Double(allText[valueRange]) {
                     let unit = String(allText[unitRange]).lowercased()
-
+                    // Normalize to base unit for comparison
                     let normalized = normalizeWeight(value: value, unit: unit)
                     detectedWeights.append((value: value, unit: unit, normalized: normalized))
                     print("[OCR] Detected weight: \(value) \(unit) → \(normalized)")
@@ -756,7 +1121,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             }
         }
 
-
+        // ── Step 2: Extract MRP/price mentions ──
         var detectedPrices: [Double] = []
         let pricePattern = #"(?:mrp|rs\.?|₹|price|m\.r\.p)[\s.:]*(\d+\.?\d*)"#
         if let regex = try? NSRegularExpression(pattern: pricePattern, options: .caseInsensitive) {
@@ -769,7 +1134,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                 }
             }
         }
-
+        // Also catch standalone ₹ followed by number (e.g., "₹20" without MRP prefix)
         let standalonePrice = #"₹\s*(\d+\.?\d*)"#
         if let regex = try? NSRegularExpression(pattern: standalonePrice, options: []) {
             let matches = regex.matches(in: allText, range: NSRange(allText.startIndex..., in: allText))
@@ -783,12 +1148,12 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             }
         }
 
-
+        // ── Step 3: Match OCR text against inventory with variant awareness ──
         let allItems = barcodeAllItems.isEmpty
             ? ((try? AppDataModel.shared.dataModel.db.getAllItems()) ?? [])
             : barcodeAllItems
 
-
+        // Group items by base name (e.g., "Lays Classic" groups "Lays Classic 20g" and "Lays Classic 52g")
         var candidateMatches: [(item: Item, nameScore: Float, weightMatch: Bool, priceMatch: Bool)] = []
 
         for item in allItems {
@@ -797,18 +1162,18 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             let itemName = item.name.lowercased()
             let words = itemName.split(separator: " ").map(String.init)
 
-
+            // Check how many product name words appear in OCR text
             let matchingWords = words.filter { word in
-                word.count >= 3 && allText.contains(word)
+                word.count >= 4 && allText.contains(word)
             }
             let nameScore = words.isEmpty ? 0 : Float(matchingWords.count) / Float(words.count)
 
             guard nameScore >= 0.4 && matchingWords.count >= 1 else { continue }
 
-
+            // Check if item name contains a weight that matches OCR weight
             var weightMatch = false
             if !detectedWeights.isEmpty {
-
+                // Extract weight from item name (e.g., "Lays Classic 52g" → "52g")
                 if let weightRegex = try? NSRegularExpression(pattern: weightPattern, options: .caseInsensitive) {
                     let nameMatches = weightRegex.matches(in: itemName, range: NSRange(itemName.startIndex..., in: itemName))
                     for nm in nameMatches {
@@ -818,7 +1183,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                             let itemUnit = String(itemName[ur]).lowercased()
                             let itemNorm = normalizeWeight(value: itemValue, unit: itemUnit)
 
-
+                            // Check if any detected weight matches this item's weight
                             for dw in detectedWeights {
                                 if dw.normalized == itemNorm {
                                     weightMatch = true
@@ -831,7 +1196,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                 }
             }
 
-
+            // Check if OCR price matches item's selling price (±2 tolerance for rounding)
             var priceMatch = false
             if !detectedPrices.isEmpty {
                 let itemPrice = item.defaultSellingPrice
@@ -847,6 +1212,8 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             candidateMatches.append((item: item, nameScore: nameScore, weightMatch: weightMatch, priceMatch: priceMatch))
         }
 
+        // ── Step 4: Resolve variants ──
+        // Priority: weight+price match > weight only > price only > name score
         let sorted = candidateMatches.sorted { a, b in
             // Both weight and price match is strongest
             let aStrength = (a.weightMatch ? 2 : 0) + (a.priceMatch ? 1 : 0)
@@ -861,7 +1228,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             guard !confirmedInThisPass.contains(item.id) else { continue }
 
             // Strong match: weight OR price match (or both), plus reasonable name score
-            let isStrongMatch = match.weightMatch || match.priceMatch || match.nameScore >= 0.7
+            let isStrongMatch = match.weightMatch && match.nameScore >= 0.4
 
             if isStrongMatch {
                 // Determine the confirmation method for toast

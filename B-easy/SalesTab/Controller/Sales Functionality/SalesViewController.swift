@@ -23,7 +23,8 @@ class SalesViewController: UIViewController, UITableViewDataSource, UITableViewD
         tableView.estimatedRowHeight = 120
         tableView.dataSource = self
         tableView.delegate = self
-        tableView.sectionHeaderTopPadding = 0
+        tableView.backgroundColor = .systemGray6
+        HomeTabSpacing.apply(to: tableView)
         tableView.register(UINib(nibName: "ItemTableViewCell", bundle: nil),
                            forCellReuseIdentifier: "ItemTableViewCell")
         
@@ -148,6 +149,11 @@ class SalesViewController: UIViewController, UITableViewDataSource, UITableViewD
         
         datePicker.datePickerMode = .date
         datePicker.preferredDatePickerStyle = .compact
+        datePicker.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
+        datePicker.maximumDate = Date()
+        if let oldest = (try? AppDataModel.shared.dataModel.db.getTransactions())?.map(\.date).min() {
+            datePicker.minimumDate = Calendar.current.startOfDay(for: oldest)
+        }
         datePicker.addTarget(self, action: #selector(dateChanged(_:)), for: .valueChanged)
         
         let stack = UIStackView(arrangedSubviews: [label, UIView(), datePicker])
@@ -232,7 +238,7 @@ class SalesViewController: UIViewController, UITableViewDataSource, UITableViewD
                 revenueAmount: revenueString,
                 profitAmount: profitString,
                 revenueReceipts: "\(dm.getTodaySaleCount()) receipts",
-                profitItems: "\(dm.getTodayItemsSoldCount()) items",
+                profitItems: Self.itemCountLabel(dm.getTodayItemsSoldCount()),
                 salesPercentChange: salesPercentChange,
                 profitPercentChange: profitPercentChange
             )
@@ -285,6 +291,13 @@ class SalesViewController: UIViewController, UITableViewDataSource, UITableViewD
         tableView.deselectRow(at: indexPath, animated: true)
         let tx = filteredTransactions[indexPath.row].transaction
         presentBillSheet(for: tx)
+    }
+
+    private static func itemCountLabel(_ count: Double) -> String {
+        let isWhole = count == count.rounded()
+        let numberText = isWhole ? String(Int(count.rounded())) : String(format: "%g", count)
+        let word = (abs(count) == 0 || abs(count) == 1) ? "item" : "items"
+        return "\(numberText) \(word)"
     }
 }
 extension SalesViewController: SalesTopTileTableViewCell.SalesTopTileTableViewCellDelegate {

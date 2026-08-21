@@ -11,6 +11,8 @@ class LabelDatePickerTableViewCell: UITableViewCell {
     override func awakeFromNib() {
         super.awakeFromNib()
         datePicker.addTarget(self, action: #selector(dateChanged), for: .valueChanged)
+        datePicker.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
+        datePicker.minimumDate = Calendar.current.startOfDay(for: Date())
     }
     override func setSelected(_ selected: Bool, animated: Bool) {
         super.setSelected(selected, animated: animated)

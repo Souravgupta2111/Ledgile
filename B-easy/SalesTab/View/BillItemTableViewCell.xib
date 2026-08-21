@@ -58,10 +58,10 @@
                         <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <constraints>
                             <constraint firstAttribute="bottom" secondItem="OZx-hn-vL1" secondAttribute="bottom" id="EpE-4k-aS5"/>
-                            <constraint firstAttribute="trailing" secondItem="ieR-Dk-25s" secondAttribute="trailing" constant="12" id="G3R-Jp-EaA"/>
+                            <constraint firstAttribute="trailing" secondItem="ieR-Dk-25s" secondAttribute="trailing" constant="20" id="G3R-Jp-EaA"/>
                             <constraint firstAttribute="bottom" secondItem="ieR-Dk-25s" secondAttribute="bottom" constant="4" id="Jek-yA-tAL"/>
                             <constraint firstItem="OZx-hn-vL1" firstAttribute="top" secondItem="K7K-gt-xDi" secondAttribute="top" id="V1r-bt-b3U"/>
-                            <constraint firstItem="OZx-hn-vL1" firstAttribute="leading" secondItem="K7K-gt-xDi" secondAttribute="leading" constant="16" id="e6R-Fa-JFi"/>
+                            <constraint firstItem="OZx-hn-vL1" firstAttribute="leading" secondItem="K7K-gt-xDi" secondAttribute="leading" constant="24" id="e6R-Fa-JFi"/>
                             <constraint firstItem="ieR-Dk-25s" firstAttribute="top" secondItem="K7K-gt-xDi" secondAttribute="top" constant="4" id="guI-1u-Cj7"/>
                             <constraint firstAttribute="height" constant="60" id="qSV-aA-0R8"/>
                             <constraint firstItem="ieR-Dk-25s" firstAttribute="leading" secondItem="OZx-hn-vL1" secondAttribute="trailing" id="ugM-Vr-hZr"/>

@@ -1,0 +1,2 @@
+[functions.gemini-proxy]
+verify_jwt = true

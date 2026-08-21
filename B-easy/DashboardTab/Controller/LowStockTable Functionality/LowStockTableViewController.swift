@@ -42,11 +42,27 @@ class LowStockTableViewController: UITableViewController {
         content.secondaryTextProperties.color = .secondaryLabel
 
         cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        cell.selectionStyle = .default
         return cell
     }
 
     override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         cell.backgroundColor = .systemBackground
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let alert = alerts[indexPath.row]
+        let profileVC: ItemProfileTableViewController
+        if let storyboard,
+           let vc = storyboard.instantiateViewController(withIdentifier: "ItemProfileTableViewController") as? ItemProfileTableViewController {
+            profileVC = vc
+        } else {
+            profileVC = ItemProfileTableViewController(style: .insetGrouped)
+        }
+        profileVC.itemID = alert.itemID
+        navigationController?.pushViewController(profileVC, animated: true)
     }
 }
 

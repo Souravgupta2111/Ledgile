@@ -20,7 +20,7 @@
 - **Natural Language Parsing**: Automatically matches spoken items to inventory.
 
 ### 📸 Intelligent Vision & OCR
-- **Bill & Invoice Scanning**: Instantly digitize physical bills. Powered by on-device YOLOv8 segmentation and CoreML text recognition to extract items, prices, and tax data.
+- **Bill & Invoice Scanning**: Instantly digitize physical bills. On-device text recognition extracts items, prices, and tax data.
 - **Visual Inventory Search**: Find products using image embeddings (MobileCLIP).
 
 ### 📦 Smart Stock Management
@@ -43,7 +43,7 @@
 - **Platform**: iOS 15.0+
 - **Language**: Swift 5
 - **UI Framework**: UIKit (with programmatic + XIB-based layouts)
-- **Machine Learning**: CoreML, Whisper (ggml), YOLOv8, MobileCLIP
+- **Machine Learning**: CoreML, Whisper (ggml), MobileCLIP
 - **Local Storage**: SQLite
 - **Dependency Management**: CocoaPods / Swift Package Manager
 

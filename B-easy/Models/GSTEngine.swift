@@ -5,6 +5,23 @@ import Foundation
 
 enum GSTEngine {
 
+    // MARK: - Tax Calculation
+
+    /// Calculate tax for a single item
+    /// - Parameters:
+    ///   - price: The price per unit (MRP or exclusive depending on `pricesIncludeGST`)
+    ///   - quantity: Number of units
+    ///   - gstRate: GST rate as percentage (e.g. 18.0 for 18%)
+    ///   - cessRate: Additional cess rate as percentage (e.g. 12.0)
+    ///   - isInterState: If true → IGST; if false → CGST+SGST
+    ///   - pricesIncludeGST: If true, price is MRP (tax-inclusive), reverse calculate
+    static func paise(_ value: Double) -> Int64 {
+        Int64((value * 100.0).rounded())
+    }
+
+    static func rupees(_ paise: Int64) -> Double {
+        Double(paise) / 100.0
+    }
 
     static func calculateTax(
         price: Double,
@@ -15,52 +32,61 @@ enum GSTEngine {
         pricesIncludeGST: Bool = true
     ) -> ItemTaxResult {
 
-        let totalPrice = price * quantity
-        let effectiveGSTRate = gstRate / 100.0
-        let effectiveCessRate = cessRate / 100.0
+        let totalPaise = paise(price * quantity)
+        let gstRateFrac = gstRate / 100.0
+        let cessRateFrac = cessRate / 100.0
+        let combined = 1.0 + gstRateFrac + cessRateFrac
 
-        let taxableValue: Double
+        let taxablePaise: Int64
+        var gstPaise: Int64
+        var cessPaise: Int64
         if pricesIncludeGST {
-            // Reverse calculation: MRP ÷ (1 + rate) = taxable
-            taxableValue = totalPrice / (1.0 + effectiveGSTRate + effectiveCessRate)
+            taxablePaise = Int64((Double(totalPaise) / combined).rounded())
+            let remainder = max(Int64(0), totalPaise - taxablePaise)
+            cessPaise = Int64((Double(taxablePaise) * cessRateFrac).rounded())
+            if cessPaise > remainder { cessPaise = remainder }
+            gstPaise = remainder - cessPaise
         } else {
-            taxableValue = totalPrice
+            taxablePaise = totalPaise
+            gstPaise = Int64((Double(taxablePaise) * gstRateFrac).rounded())
+            cessPaise = Int64((Double(taxablePaise) * cessRateFrac).rounded())
         }
 
-        let gstAmount = taxableValue * effectiveGSTRate
-        let cessAmount = taxableValue * effectiveCessRate
-
-        let cgst: Double
-        let sgst: Double
-        let igst: Double
-
+        let cgstPaise: Int64
+        let sgstPaise: Int64
+        let igstPaise: Int64
         if isInterState {
-            cgst = 0
-            sgst = 0
-            igst = gstAmount
+            cgstPaise = 0
+            sgstPaise = 0
+            igstPaise = gstPaise
         } else {
-            cgst = gstAmount / 2.0
-            sgst = gstAmount / 2.0
-            igst = 0
+            cgstPaise = gstPaise / 2
+            sgstPaise = gstPaise - cgstPaise
+            igstPaise = 0
         }
 
-        let totalTax = gstAmount + cessAmount
-        let totalWithTax = taxableValue + totalTax
+        let totalTaxPaise = cgstPaise + sgstPaise + igstPaise + cessPaise
+        let totalWithTaxPaise = pricesIncludeGST ? totalPaise : (taxablePaise + totalTaxPaise)
 
         return ItemTaxResult(
-            taxableValue: round2(taxableValue),
-            cgst: round2(cgst),
-            sgst: round2(sgst),
-            igst: round2(igst),
-            cess: round2(cessAmount),
-            totalTax: round2(totalTax),
-            totalWithTax: round2(totalWithTax)
+            taxableValue: rupees(taxablePaise),
+            cgst: rupees(cgstPaise),
+            sgst: rupees(sgstPaise),
+            igst: rupees(igstPaise),
+            cess: rupees(cessPaise),
+            totalTax: rupees(totalTaxPaise),
+            totalWithTax: rupees(totalWithTaxPaise)
         )
     }
 
+    static func identityHolds(_ result: ItemTaxResult) -> Bool {
+        paise(result.taxableValue) + paise(result.totalTax) == paise(result.totalWithTax)
+            && paise(result.cgst) + paise(result.sgst) + paise(result.igst) + paise(result.cess) == paise(result.totalTax)
+    }
 
+    // MARK: - Bill-Level Breakup
 
-
+    /// Generate a complete GST breakup from an array of per-item tax results with their rates
     static func generateBreakup(
         itemResults: [(gstRate: Double, result: ItemTaxResult)]
     ) -> GSTBreakup {
@@ -81,64 +107,108 @@ enum GSTEngine {
         let rateWise = grouped.map { (rate, entry) in
             RateWiseEntry(
                 gstRate: rate,
-                taxableValue: round2(entry.taxable),
-                cgst: round2(entry.cgst),
-                sgst: round2(entry.sgst),
-                igst: round2(entry.igst),
-                cess: round2(entry.cess)
+                taxableValue: rupees(paise(entry.taxable)),
+                cgst: rupees(paise(entry.cgst)),
+                sgst: rupees(paise(entry.sgst)),
+                igst: rupees(paise(entry.igst)),
+                cess: rupees(paise(entry.cess))
             )
         }.sorted { $0.gstRate < $1.gstRate }
 
-        let totalTaxable = rateWise.reduce(0) { $0 + $1.taxableValue }
-        let totalCGST = rateWise.reduce(0) { $0 + $1.cgst }
-        let totalSGST = rateWise.reduce(0) { $0 + $1.sgst }
-        let totalIGST = rateWise.reduce(0) { $0 + $1.igst }
-        let totalCess = rateWise.reduce(0) { $0 + $1.cess }
+        let totalTaxable = rateWise.reduce(Int64(0)) { $0 + paise($1.taxableValue) }
+        let totalCGST = rateWise.reduce(Int64(0)) { $0 + paise($1.cgst) }
+        let totalSGST = rateWise.reduce(Int64(0)) { $0 + paise($1.sgst) }
+        let totalIGST = rateWise.reduce(Int64(0)) { $0 + paise($1.igst) }
+        let totalCess = rateWise.reduce(Int64(0)) { $0 + paise($1.cess) }
 
         return GSTBreakup(
-            totalTaxableValue: round2(totalTaxable),
-            totalCGST: round2(totalCGST),
-            totalSGST: round2(totalSGST),
-            totalIGST: round2(totalIGST),
-            totalCess: round2(totalCess),
+            totalTaxableValue: rupees(totalTaxable),
+            totalCGST: rupees(totalCGST),
+            totalSGST: rupees(totalSGST),
+            totalIGST: rupees(totalIGST),
+            totalCess: rupees(totalCess),
             rateWiseSummary: rateWise
         )
     }
 
+    // MARK: - Inter-State Detection
 
+    static func discountedUnitPrice(
+        lineRevenue: Double,
+        subtotal: Double,
+        discount: Double,
+        quantity: Double
+    ) -> Double {
+        guard quantity > 0 else { return 0 }
+        let share = subtotal > 0 ? lineRevenue / subtotal : 0
+        let net = max(0, lineRevenue - discount * share)
+        return net / quantity
+    }
 
-    static func isInterStateSupply(sellerStateCode: String?, buyerStateCode: String?) -> Bool {
-        guard let seller = sellerStateCode, let buyer = buyerStateCode,
-              !seller.isEmpty, !buyer.isEmpty else {
-            return false    // Default to intra-state when unknown
+    static func buyerStateCode(explicit: String?, gstin: String?, shopStateCode: String?) -> String? {
+        if let explicit, !explicit.isEmpty { return explicit }
+        if let gstin {
+            let prefix = String(gstin.prefix(2))
+            if prefix.count == 2, prefix.allSatisfy(\.isNumber) { return prefix }
         }
+        _ = shopStateCode
+        return nil
+    }
+
+    /// `nil` when seller or buyer state is missing. Never treat unknown POS as intra-state.
+    static func isInterStateSupply(sellerStateCode: String?, buyerStateCode: String?) -> Bool? {
+        let seller = sellerStateCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let buyer = buyerStateCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard seller.count >= 2, buyer.count >= 2 else { return nil }
         return seller != buyer
     }
 
+    // MARK: - Composition Scheme
 
+    /// Calculate composition scheme tax (flat rate on total turnover)
+    /// This is NOT charged per-invoice; it's for quarterly filing calculation
     static func compositionTax(totalTurnover: Double, compositionRate: Double) -> Double {
         return round2(totalTurnover * (compositionRate / 100.0))
     }
 
+    // MARK: - GSTIN Validation
 
+    /// Basic GSTIN format validation (15 characters, alphanumeric pattern)
     static func isValidGSTIN(_ gstin: String) -> Bool {
         let trimmed = gstin.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard trimmed.count == 15 else { return false }
-
-
         let pattern = "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$"
-        return trimmed.range(of: pattern, options: .regularExpression) != nil
+        guard trimmed.range(of: pattern, options: .regularExpression) != nil else { return false }
+        return gstinCheckCharacter(trimmed) == trimmed.last
     }
 
+    private static func gstinCheckCharacter(_ gstin: String) -> Character? {
+        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        var hash = 0
+        for (i, ch) in gstin.prefix(14).enumerated() {
+            guard let code = charset.firstIndex(of: ch) else { return nil }
+            let product = code * (1 + i % 2)
+            hash += product / 36 + product % 36
+        }
+        let check = (36 - (hash % 36)) % 36
+        return charset[check]
+    }
 
+    // MARK: - Taxable Value from MRP
+
+    /// Reverse calculate taxable value from MRP (inclusive price)
     static func taxableValueFromMRP(mrp: Double, gstRate: Double, cessRate: Double = 0) -> Double {
         let totalRate = (gstRate + cessRate) / 100.0
         return round2(mrp / (1.0 + totalRate))
     }
 
-
+    // MARK: - Helpers
 
     private static func round2(_ value: Double) -> Double {
-        (value * 100).rounded() / 100
+        Money.round2(value)
+    }
+
+    static func roundRupees(_ value: Double) -> Double {
+        Money.round2(value)
     }
 }

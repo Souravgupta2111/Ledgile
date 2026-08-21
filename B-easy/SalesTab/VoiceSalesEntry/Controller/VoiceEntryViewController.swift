@@ -22,6 +22,7 @@ class VoiceEntryViewController: UIViewController {
     
      var silenceTimer: Timer?
      var lastSpeechActivity: CFAbsoluteTime = 0
+     var hasHeardSpeech = false
      let silenceThreshold: Float = 0.015
      let maxSilenceDuration: TimeInterval = 2.0
     
@@ -88,14 +89,15 @@ class VoiceEntryViewController: UIViewController {
         sfSpeechPartialCount = 0
         lastSFSpeechText = ""
         recordingStartTime = CFAbsoluteTimeGetCurrent()
-        
-        lastSpeechActivity = CFAbsoluteTimeGetCurrent()
+        lastSpeechActivity = 0
+        hasHeardSpeech = false
+        startSilenceTimer()
 
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setCategory(.record, mode: .spokenAudio, options: .duckOthers)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            print("[VoiceSale] ✅ Audio session configured (record/measurement)")
+            print("[VoiceSale] ✅ Audio session configured (record/spokenAudio)")
         } catch {
             print("[VoiceSale] ❌ Audio session setup FAILED: \(error)")
         }
@@ -127,6 +129,7 @@ class VoiceEntryViewController: UIViewController {
                 self.lastSFSpeechText = spokenText
                 
                 self.lastSpeechActivity = CFAbsoluteTimeGetCurrent()
+                self.hasHeardSpeech = true
                 
                 DispatchQueue.main.async {
                     self.resultLabel.text = spokenText
@@ -160,7 +163,9 @@ class VoiceEntryViewController: UIViewController {
                 }
                 
                 if maxAmp > self.silenceThreshold {
+                    self.hasHeardSpeech = true
                     self.lastSpeechActivity = CFAbsoluteTimeGetCurrent()
+                self.hasHeardSpeech = true
                 }
             }
             
@@ -201,6 +206,16 @@ class VoiceEntryViewController: UIViewController {
     }
     
 
+     func startSilenceTimer() {
+        silenceTimer?.invalidate()
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self, self.audioEngine.isRunning, self.hasHeardSpeech else { return }
+            let quietFor = CFAbsoluteTimeGetCurrent() - self.lastSpeechActivity
+            guard quietFor >= self.maxSilenceDuration else { return }
+            self.stopListeningAndProcessImmediate()
+        }
+    }
+
      func stopListening() {
         silenceTimer?.invalidate()
         silenceTimer = nil
@@ -238,18 +253,15 @@ class VoiceEntryViewController: UIViewController {
         
         let whisperAudioDuration = Double(audioFrames.count) / 16000.0
         
-        let rmsEnergy: Float = {
-            guard !audioFrames.isEmpty else { return 0 }
-            let sumOfSquares = audioFrames.reduce(Float(0)) { $0 + $1 * $1 }
-            return sqrt(sumOfSquares / Float(audioFrames.count))
-        }()
-        let isMostlySilence = rmsEnergy < 0.005
+        let (rmsEnergy, peakEnergy) = Self.audioEnergy(audioFrames)
+        let hasRecognizedSpeech = Self.isUsableRecognizedText(sfSpeechText)
+        let isMostlySilence = !hasRecognizedSpeech && (audioFrames.isEmpty || (rmsEnergy < 0.0006 && peakEnergy < 0.015))
         
         print("\n[VoiceSale] ═══ stopListeningAndProcessImmediate() ═══")
         print("[VoiceSale] recordingDuration=\(String(format: "%.2f", recordingDuration))s")
         print("[VoiceSale] sfSpeechText='\(sfSpeechText)'")
         print("[VoiceSale] whisperAudioFrames=\(audioFrames.count) | duration=\(String(format: "%.2f", whisperAudioDuration))s")
-        print("[VoiceSale] rmsEnergy=\(String(format: "%.5f", rmsEnergy)) | isMostlySilence=\(isMostlySilence)")
+        print("[VoiceSale] rmsEnergy=\(String(format: "%.5f", rmsEnergy)) peak=\(String(format: "%.5f", peakEnergy)) | isMostlySilence=\(isMostlySilence)")
         
         stopListening()
         
@@ -276,23 +288,14 @@ class VoiceEntryViewController: UIViewController {
             let whisperStart = CFAbsoluteTimeGetCurrent()
             let whisperResult = await WhisperService.shared.transcribe(audioFrames: audioFrames)
             let whisperTime = CFAbsoluteTimeGetCurrent() - whisperStart
-            print("[VoiceSale] Whisper transcribe returned in \(String(format: "%.2f", whisperTime))s | result='\(whisperResult ?? "nil")'")
+            print("[VoiceSale] Whisper transcribe returned in \(String(format: "%.2f", whisperTime))s | chars=\(whisperResult?.count ?? 0)")
             
             await MainActor.run {
                 self.micButton?.isEnabled = true
                 
                 
                 var useWhisper = true
-                
-                if recordingDuration < 5.0 {
-                    if !sfSpeechText.isEmpty {
-                        print("[VoiceSale] 🔀 Short recording (\(String(format: "%.1f", recordingDuration))s) + SFSpeech has text → preferring SFSpeech")
-                        useWhisper = false
-                    } else {
-                        print("[VoiceSale] Short recording but SFSpeech is empty → keeping Whisper")
-                    }
-                }
-                
+
                 if useWhisper, let whisperText = whisperResult {
                     if WhisperService.shared.isGarbageTranscription(whisperText, duration: whisperAudioDuration) {
                         print("[VoiceSale] Whisper hallucination detected: \(whisperText)")
@@ -337,10 +340,10 @@ class VoiceEntryViewController: UIViewController {
         }
         
         print("\n[VoiceSale] ═══════════════════════════════════════")
-        print("[VoiceSale] processFinalTextAndNavigate | text='\(text)'")
-        print("[VoiceSale] Gemini status: isConfigured=\(GeminiService.shared.isConfigured), hasAPIKey=\(GeminiService.shared.hasAPIKey), isLimitReached=\(GeminiService.shared.isLimitReached)")
+        print("[VoiceSale] processFinalTextAndNavigate | chars=\(text.count)")
+        print("[VoiceSale] Gemini status: isConfigured=\(GeminiService.shared.isConfigured(for: .voice)), hasAPIKey=\(GeminiService.shared.hasAPIKey), isLimitReached=\(GeminiService.shared.isLimitReached)")
         
-        if GeminiService.shared.isConfigured {
+        if GeminiService.shared.isConfigured(for: .voice) {
             print("[VoiceSale] ✅ Trying Gemini for: \(text)")
             GeminiService.shared.parseVoiceForSale(text: text) { [weak self] geminiResult in
                 guard let self = self else { return }
@@ -365,8 +368,8 @@ class VoiceEntryViewController: UIViewController {
             }
         } else {
             print("[VoiceSale] ⚠️ Gemini NOT configured — using MLInference only")
-            if GeminiService.shared.hasAPIKey && GeminiService.shared.isLimitReached {
-                print("[VoiceSale] ⚠️ Reason: free Gemini limit reached")
+            if GeminiService.shared.hasAPIKey && !UsageTracker.shared.canUse(.voice) {
+                print("[VoiceSale] ⚠️ Reason: voice AI limit reached")
                 showFreemiumLimitAlertIfNeeded()
             }
             let result = MLInference.shared.run(text: text)
@@ -386,11 +389,17 @@ class VoiceEntryViewController: UIViewController {
 
         DispatchQueue.main.async {
             let alert = UIAlertController(
-                title: "Free AI Scans Used Up",
-                message: UsageTracker.shared.limitReachedMessage,
+                title: UsageTracker.shared.isProUser ? "Voice AI limit reached" : "Free AI Scans Used Up",
+                message: UsageTracker.shared.limitReachedMessage(for: .voice),
                 preferredStyle: .alert
             )
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            if !UsageTracker.shared.isProUser {
+                alert.addAction(UIAlertAction(title: "See Pro", style: .default) { [weak self] _ in
+                    guard let self else { return }
+                    ProBenefitsViewController.present(from: self)
+                })
+            }
+            alert.addAction(UIAlertAction(title: "OK", style: .cancel))
             self.present(alert, animated: true)
         }
     }
@@ -529,6 +538,26 @@ class VoiceEntryViewController: UIViewController {
         }
         
         return attributedString
+    }
+
+    private static func isUsableRecognizedText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+            && trimmed != "Listening..."
+            && trimmed != "Processing..."
+            && trimmed != " Processing ..."
+    }
+
+    private static func audioEnergy(_ frames: [Float]) -> (rms: Float, peak: Float) {
+        guard !frames.isEmpty else { return (0, 0) }
+        var sumSquares: Float = 0
+        var peak: Float = 0
+        for sample in frames {
+            let absSample = abs(sample)
+            sumSquares += sample * sample
+            if absSample > peak { peak = absSample }
+        }
+        return (sqrt(sumSquares / Float(frames.count)), peak)
     }
 }
 

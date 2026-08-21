@@ -173,6 +173,76 @@ final class ProductEmbeddingStore {
         return result
     }
 
+    // MARK: - Color Profiles
+
+    func saveColorProfile(itemID: UUID, profile: ProductFingerprintManager.ProductColorProfile) {
+        queue.sync {
+            ensureDb()
+            guard let db = db else { return }
+            let sql = """
+            CREATE TABLE IF NOT EXISTS product_color_profiles (
+                item_id TEXT PRIMARY KEY,
+                luminance REAL NOT NULL,
+                saturation REAL NOT NULL
+            );
+            """
+            executeStatements(sql)
+            let upsert = """
+            INSERT OR REPLACE INTO product_color_profiles (item_id, luminance, saturation)
+            VALUES (?, ?, ?);
+            """
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, upsert, -1, &stmt, nil) == SQLITE_OK else { return }
+            let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            sqlite3_bind_text(stmt, 1, (itemID.uuidString as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(stmt, 2, Double(profile.luminance))
+            sqlite3_bind_double(stmt, 3, Double(profile.saturation))
+            sqlite3_step(stmt)
+        }
+    }
+
+    func loadAllColorProfiles() -> [UUID: ProductFingerprintManager.ProductColorProfile] {
+        var result: [UUID: ProductFingerprintManager.ProductColorProfile] = [:]
+        queue.sync {
+            ensureDb()
+            guard let db = db else { return }
+            let sql = """
+            CREATE TABLE IF NOT EXISTS product_color_profiles (
+                item_id TEXT PRIMARY KEY,
+                luminance REAL NOT NULL,
+                saturation REAL NOT NULL
+            );
+            SELECT item_id, luminance, saturation FROM product_color_profiles;
+            """
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let idPtr = sqlite3_column_text(stmt, 0),
+                      let uuid = UUID(uuidString: String(cString: idPtr)) else { continue }
+                let lum = Float(sqlite3_column_double(stmt, 1))
+                let sat = Float(sqlite3_column_double(stmt, 2))
+                result[uuid] = ProductFingerprintManager.ProductColorProfile(luminance: lum, saturation: sat)
+            }
+        }
+        return result
+    }
+
+    func deleteColorProfile(itemID: UUID) {
+        queue.sync {
+            ensureDb()
+            guard let db = db else { return }
+            let sql = "DELETE FROM product_color_profiles WHERE item_id = ?;"
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            sqlite3_bind_text(stmt, 1, (itemID.uuidString as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_step(stmt)
+        }
+    }
+
     // MARK: - Delete
 
     /// Remove all embeddings when item or photos are deleted.

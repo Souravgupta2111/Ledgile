@@ -49,7 +49,9 @@ extension RecentTransactionViewController: UITableViewDataSource, UITableViewDel
             cell.quantityLabel.text = "Unknown"
         }
         
-        cell.priceLabel.textColor = tx.type == .purchase ? .label : UIColor(named: "Lime Moss")!
+        cell.itemNameLabel.textColor = .label
+        cell.quantityLabel.textColor = .secondaryLabel
+        cell.priceLabel.textColor = tx.type == .purchase ? .systemRed : (UIColor(named: "Lime Moss") ?? .systemGreen)
         cell.priceLabel.text = "₹\(tx.totalAmount)"
         
         cell.separatorView.backgroundColor = .separator
@@ -58,7 +60,8 @@ extension RecentTransactionViewController: UITableViewDataSource, UITableViewDel
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        cell.backgroundColor = .white
+        cell.backgroundColor = .systemBackground
+        cell.contentView.backgroundColor = .systemBackground
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

@@ -9,7 +9,9 @@ class SalesItemTableViewCell: UITableViewCell {
     
     override func awakeFromNib() {
         super.awakeFromNib()
-        // Initialization code
+        backgroundColor = .systemBackground
+        contentView.backgroundColor = .systemBackground
+        contentView.subviews.first?.backgroundColor = .systemBackground
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

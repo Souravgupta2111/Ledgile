@@ -27,17 +27,7 @@ class SalesTopTileTableViewCell: UITableViewCell {
     }
     override func awakeFromNib() {
         super.awakeFromNib()
-        selectionStyle = .none
-        
-        revenueAmountLabel.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleRevenueTap)))
-        revenueAmountLabel.superview?.isUserInteractionEnabled = true
-        
-        profitAmountLabel.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleProfitTap)))
-        profitAmountLabel.superview?.isUserInteractionEnabled = true
     }
-
-    @objc private func handleRevenueTap() { delegate?.topTileCellDidTapRevenue(self) }
-    @objc private func handleProfitTap() { delegate?.topTileCellDidTapProfit(self) }
     override func setSelected(_ selected: Bool, animated: Bool) {
         super.setSelected(selected, animated: animated)
     }

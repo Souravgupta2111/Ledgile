@@ -1,5 +1,18 @@
 import Foundation
 
+// MARK: - ITEM TYPE
+enum ItemType: String, Codable, CaseIterable {
+    case goods = "goods"
+    case services = "services"
+
+    var displayName: String {
+        switch self {
+        case .goods:    return "Goods"
+        case .services: return "Service"
+        }
+    }
+}
+
 // MARK: - ITEM
 struct Item: Identifiable, Codable, Equatable {
     let id: UUID
@@ -19,7 +32,7 @@ struct Item: Identifiable, Codable, Equatable {
     let createdDate: Date
     var lastRestockDate: Date?
     var isActive: Bool
-    var salesCount: Int? = nil
+    var salesCount: Double? = nil
     var salesTier: Int? = nil
 
     // Alternate custom unit (e.g., 1 Katta = 50 kg)
@@ -27,15 +40,21 @@ struct Item: Identifiable, Codable, Equatable {
     var alternateUnitFactor: Double? = nil
 
     // GST fields (all optional — no impact on existing items)
-    var hsnCode: String? = nil       // e.g., "19021100"
+    var hsnCode: String? = nil       // e.g., "19021100" for goods, SAC code for services
     var gstRate: Double? = nil       // e.g., 18.0 (percent)
     var cessRate: Double? = nil      // e.g., 12.0 (for tobacco, aerated drinks)
 
+    // Product type — goods (physical inventory) or services (no stock tracking)
+    var itemType: ItemType = .goods
+
     var effectiveSalesTier: Int { salesTier ?? 2 }
-    var effectiveSalesCount: Int { salesCount ?? 0 }
+    var effectiveSalesCount: Int { Int((salesCount ?? 0).rounded()) }
+
+    var isService: Bool { itemType == .services }
 
     var isLowStock: Bool {
-        currentStock <= lowStockThreshold
+        guard !isService else { return false }
+        return currentStock <= lowStockThreshold
     }
 }
 
@@ -148,24 +167,26 @@ struct TransactionItem: Identifiable, Codable, Equatable {
     var sgstAmount: Double? = nil         // State GST
     var igstAmount: Double? = nil         // Integrated GST (inter-state)
     var cessAmount: Double? = nil
+    
+    var itemType: ItemType? = nil
 
     var totalRevenue: Double {
         guard let price = sellingPricePerUnit else { return 0 }
-        return quantity * price
+        return Money.line(quantity: quantity, rate: price)
     }
     
     var totalCost: Double {
         guard let price = costPricePerUnit else { return 0 }
-        return quantity * price
+        return Money.line(quantity: quantity, rate: price)
     }
     
     var profit: Double {
         guard let sell = sellingPricePerUnit, let cost = costPricePerUnit else { return 0 }
-        return quantity * (sell - cost)
+        return Money.round2(totalRevenue - totalCost)
     }
     
     var profitMargin: Double {
-        guard let sell = sellingPricePerUnit, sell > 0 else { return 0 }
+        guard let sell = sellingPricePerUnit, sell > 0, totalRevenue > 0 else { return 0 }
         return (profit / totalRevenue) * 100
     }
 }
@@ -309,6 +330,10 @@ struct AppSettings: Codable {
     var defaultGSTRate: Double? = nil          // Most used rate (e.g., 18.0)
     var compositionRate: Double? = nil         // 1.0% for manufacturers, 5.0% for restaurants
 
+    /// Personal PhonePe / Paytm / GPay UPI ID (VPA). No payment gateway.
+    var upiVPA: String? = nil
+    var upiQRImageData: Data? = nil
+
     mutating func generateNextInvoice() -> String {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: Date())
@@ -349,13 +374,15 @@ struct IncompleteSaleItem: Identifiable, Codable, Equatable {
     
     let createdAt: Date
     
+    var itemType: ItemType? = nil
+    
     var totalRevenue: Double {
-        quantity * sellingPricePerUnit
+        Money.line(quantity: quantity, rate: sellingPricePerUnit)
     }
     
     var estimatedProfit: Double? {
         guard let cost = costPricePerUnit else { return nil }
-        return quantity * (sellingPricePerUnit - cost)
+        return Money.round2(totalRevenue - Money.line(quantity: quantity, rate: cost))
     }
     
     var daysIncomplete: Int {
@@ -378,8 +405,8 @@ struct GSTBreakup: Codable {
     let totalSGST: Double
     let totalIGST: Double
     let totalCess: Double
-    var totalTax: Double { totalCGST + totalSGST + totalIGST + totalCess }
-    var grandTotal: Double { totalTaxableValue + totalTax }
+    var totalTax: Double { Money.round2(totalCGST + totalSGST + totalIGST + totalCess) }
+    var grandTotal: Double { Money.round2(totalTaxableValue + totalTax) }
     let rateWiseSummary: [RateWiseEntry]
 
     enum CodingKeys: String, CodingKey {

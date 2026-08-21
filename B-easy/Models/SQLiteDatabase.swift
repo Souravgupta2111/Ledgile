@@ -3,7 +3,7 @@ import SQLite3
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-final class SQLiteDatabase: Database {
+nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
 
     static let shared = SQLiteDatabase()
 
@@ -22,14 +22,22 @@ final class SQLiteDatabase: Database {
     }()
 
 
-    init() {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dbURL = docs.appendingPathComponent("ledgile.sqlite")
-        dbPath = dbURL.path
+    init(path: String? = nil) {
+        if let path, path == ":memory:" {
+            dbPath = ":memory:"
+            guard sqlite3_open_v2(":memory:", &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_MEMORY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+                print("[SQLiteDB] ERROR: Could not open in-memory database")
+                return
+            }
+        } else {
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+            let dbURL = path.map { URL(fileURLWithPath: $0) } ?? docs.appendingPathComponent("ledgile.sqlite")
+            dbPath = dbURL.path
 
-        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
-            print("[SQLiteDB] ERROR: Could not open database at \(dbPath)")
-            return
+            guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+                print("[SQLiteDB] ERROR: Could not open database at \(dbPath)")
+                return
+            }
         }
 
         exec("PRAGMA journal_mode=WAL")
@@ -37,7 +45,58 @@ final class SQLiteDatabase: Database {
         createTables()
         migrateGSTColumns()
         migrateProfileGSTINColumns()
+        migrateCreditTransactionIDs()
+        migrateUPICollectionColumns()
+        _ = exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_invoice ON transactions(invoice_number)")
         capitalizeExistingItemNames()
+    }
+
+    private let ioLock = NSLock()
+
+    func withExclusiveIO(_ body: () throws -> Void) rethrows {
+        ioLock.lock()
+        defer { ioLock.unlock() }
+        try body()
+    }
+
+    private var writeDepth = 0
+
+    func performWrite(_ body: () throws -> Void) throws {
+        try withExclusiveIO {
+            if writeDepth == 0 {
+                guard exec("BEGIN IMMEDIATE") else {
+                    throw SQLiteDBError.stepFailed("BEGIN IMMEDIATE")
+                }
+            }
+            writeDepth += 1
+            do {
+                try body()
+                writeDepth -= 1
+                if writeDepth == 0 {
+                    guard exec("COMMIT") else {
+                        _ = exec("ROLLBACK")
+                        throw SQLiteDBError.stepFailed("COMMIT")
+                    }
+                }
+            } catch {
+                writeDepth = 0
+                _ = exec("ROLLBACK")
+                throw error
+            }
+        }
+    }
+
+    func decrementBatchQuantity(id: UUID, by quantity: Double) throws {
+        let sql = "UPDATE item_batches SET quantity_remaining = quantity_remaining - ? WHERE id = ? AND quantity_remaining >= ?"
+        let stmt = try prepared(sql)
+        defer { sqlite3_finalize(stmt) }
+        bindDouble(stmt, 1, quantity)
+        bindUUID(stmt, 2, id)
+        bindDouble(stmt, 3, quantity - 0.0001)
+        try stepDone(stmt)
+        if sqlite3_changes(db) == 0 {
+            throw DataModelError.insufficientStock(available: 0, requested: quantity)
+        }
     }
 
     deinit {
@@ -62,6 +121,8 @@ final class SQLiteDatabase: Database {
         createTables()
         migrateGSTColumns()
         migrateProfileGSTINColumns()
+        migrateCreditTransactionIDs()
+        migrateUPICollectionColumns()
     }
 
 
@@ -86,7 +147,8 @@ final class SQLiteDatabase: Database {
             gst_rate REAL,
             cess_rate REAL,
             alternate_unit_name TEXT,
-            alternate_unit_factor REAL
+            alternate_unit_factor REAL,
+            item_type TEXT DEFAULT 'goods'
         );
 
         CREATE TABLE IF NOT EXISTS item_batches (
@@ -209,7 +271,9 @@ final class SQLiteDatabase: Database {
             business_state_code TEXT,
             prices_include_gst INTEGER NOT NULL DEFAULT 1,
             default_gst_rate REAL,
-            composition_rate REAL
+            composition_rate REAL,
+            upi_vpa TEXT,
+            upi_qr_image_data BLOB
         );
 
         CREATE TABLE IF NOT EXISTS customers (
@@ -232,7 +296,8 @@ final class SQLiteDatabase: Database {
             amount REAL NOT NULL,
             date TEXT NOT NULL,
             type TEXT NOT NULL,
-            note TEXT
+            note TEXT,
+            transaction_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS supplier_payments (
@@ -290,6 +355,7 @@ final class SQLiteDatabase: Database {
         // Alternate Units
         addColumnIfNeeded("items", "alternate_unit_name", "TEXT")
         addColumnIfNeeded("items", "alternate_unit_factor", "REAL")
+        addColumnIfNeeded("items", "item_type", "TEXT DEFAULT 'goods'")
 
         // Transactions
         addColumnIfNeeded("transactions", "buyer_gstin", "TEXT")
@@ -327,6 +393,16 @@ final class SQLiteDatabase: Database {
     private func migrateProfileGSTINColumns() {
         addColumnIfNeeded("customers", "gstin", "TEXT")
         addColumnIfNeeded("suppliers", "gstin", "TEXT")
+    }
+
+    private func migrateCreditTransactionIDs() {
+        addColumnIfNeeded("customer_payments", "transaction_id", "TEXT")
+        addColumnIfNeeded("supplier_payments", "transaction_id", "TEXT")
+    }
+
+    private func migrateUPICollectionColumns() {
+        addColumnIfNeeded("app_settings", "upi_vpa", "TEXT")
+        addColumnIfNeeded("app_settings", "upi_qr_image_data", "BLOB")
     }
 
 
@@ -402,6 +478,33 @@ final class SQLiteDatabase: Database {
     }
 
 
+    enum SQLiteDBError: Error, LocalizedError {
+        case prepareFailed(String)
+        case stepFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .prepareFailed(let sql): return "Database prepare failed: \(sql)"
+            case .stepFailed(let msg): return "Database write failed: \(msg)"
+            }
+        }
+    }
+
+    private func prepared(_ sql: String) throws -> OpaquePointer {
+        guard let stmt = prepare(sql) else {
+            throw SQLiteDBError.prepareFailed(sql)
+        }
+        return stmt
+    }
+
+    private func stepDone(_ stmt: OpaquePointer) throws {
+        let rc = sqlite3_step(stmt)
+        guard rc == SQLITE_DONE else {
+            let msg = String(cString: sqlite3_errmsg(db))
+            throw SQLiteDBError.stepFailed(msg)
+        }
+    }
+
     @discardableResult
     func exec(_ sql: String) -> Bool {
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -445,8 +548,15 @@ final class SQLiteDatabase: Database {
     private func bindDouble(_ stmt: OpaquePointer, _ idx: Int32, _ val: Double) {
         sqlite3_bind_double(stmt, idx, val)
     }
+    private func bindMoney(_ stmt: OpaquePointer, _ idx: Int32, _ val: Double) {
+        bindDouble(stmt, idx, Money.round2(val))
+    }
     private func bindOptDouble(_ stmt: OpaquePointer, _ idx: Int32, _ val: Double?) {
         if let v = val { bindDouble(stmt, idx, v) }
+        else { sqlite3_bind_null(stmt, idx) }
+    }
+    private func bindOptMoney(_ stmt: OpaquePointer, _ idx: Int32, _ val: Double?) {
+        if let v = val { bindMoney(stmt, idx, v) }
         else { sqlite3_bind_null(stmt, idx) }
     }
     private func bindBool(_ stmt: OpaquePointer, _ idx: Int32, _ val: Bool) {
@@ -501,7 +611,11 @@ final class SQLiteDatabase: Database {
     }
     private func readDate(_ stmt: OpaquePointer, _ col: Int32) -> Date {
         let s = readString(stmt, col)
-        return Self.iso8601.date(from: s) ?? Self.iso8601NoFrac.date(from: s) ?? Date()
+        if let d = Self.iso8601.date(from: s) ?? Self.iso8601NoFrac.date(from: s) {
+            return d
+        }
+        print("[SQLiteDB] Unparseable date '\(s)' — not substituting now")
+        return Date.distantPast
     }
     private func readOptDate(_ stmt: OpaquePointer, _ col: Int32) -> Date? {
         guard sqlite3_column_type(stmt, col) != SQLITE_NULL else { return nil }
@@ -529,13 +643,14 @@ final class SQLiteDatabase: Database {
             createdDate:            readDate(s, 9),
             lastRestockDate:        readOptDate(s, 10),
             isActive:               readBool(s, 11),
-            salesCount:             readOptInt(s, 12),
+            salesCount:             readOptDouble(s, 12),
             salesTier:              readOptInt(s, 13),
             alternateUnitName:      readOptString(s, 17),
             alternateUnitFactor:    readOptDouble(s, 18),
             hsnCode:                readOptString(s, 14),
             gstRate:                readOptDouble(s, 15),
-            cessRate:               readOptDouble(s, 16)
+            cessRate:               readOptDouble(s, 16),
+            itemType:               ItemType(rawValue: readOptString(s, 19) ?? "goods") ?? .goods
         )
     }
 
@@ -673,7 +788,9 @@ final class SQLiteDatabase: Database {
             businessStateCode:      readOptString(s, 17),
             pricesIncludeGST:       readBool(s, 18),
             defaultGSTRate:         readOptDouble(s, 19),
-            compositionRate:        readOptDouble(s, 20)
+            compositionRate:        readOptDouble(s, 20),
+            upiVPA:                 sqlite3_column_count(s) > 21 ? readOptString(s, 21) : nil,
+            upiQRImageData:         sqlite3_column_count(s) > 22 ? readBlob(s, 22) : nil
         )
     }
 
@@ -698,13 +815,15 @@ final class SQLiteDatabase: Database {
     }
 
     private func readPayment(_ s: OpaquePointer) -> Payment {
-        Payment(
+        let txCol = sqlite3_column_count(s) > 6 ? readOptString(s, 6) : nil
+        return Payment(
             id:         readUUID(s, 0),
             customerID: readUUID(s, 1),
             amount:     readDouble(s, 2),
             date:       readDate(s, 3),
             type:       CreditTransactionType(rawValue: readString(s, 4)) ?? .received,
-            note:       readOptString(s, 5)
+            note:       readOptString(s, 5),
+            transactionID: txCol.flatMap(UUID.init(uuidString:))
         )
     }
 
@@ -721,7 +840,7 @@ final class SQLiteDatabase: Database {
 
 
     func getItem(id: UUID) throws -> Item? {
-        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor FROM items WHERE id=?"
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type FROM items WHERE id=?"
         guard let stmt = prepare(sql) else { return nil }
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, id)
@@ -729,7 +848,16 @@ final class SQLiteDatabase: Database {
     }
 
     func getAllItems() throws -> [Item] {
-        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor FROM items"
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type FROM items WHERE is_active = 1"
+        guard let stmt = prepare(sql) else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        var result: [Item] = []
+        while sqlite3_step(stmt) == SQLITE_ROW { result.append(readItem(stmt)) }
+        return result
+    }
+
+    func getAllItemsIncludingInactive() throws -> [Item] {
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type FROM items"
         guard let stmt = prepare(sql) else { return [] }
         defer { sqlite3_finalize(stmt) }
         var result: [Item] = []
@@ -738,7 +866,7 @@ final class SQLiteDatabase: Database {
     }
 
     func insertItem(_ item: Item) throws {
-        let sql = "INSERT INTO items (id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        let sql = "INSERT INTO items (id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         guard let stmt = prepare(sql) else {
             throw NSError(domain: "SQLiteDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare INSERT for items table. Column migration may have failed."])
         }
@@ -747,26 +875,27 @@ final class SQLiteDatabase: Database {
         bindText(stmt, 2, item.name.capitalized)
         bindText(stmt, 3, item.unit)
         bindOptText(stmt, 4, item.barcode)
-        bindDouble(stmt, 5, item.defaultCostPrice)
-        bindDouble(stmt, 6, item.defaultSellingPrice)
+        bindMoney(stmt, 5, item.defaultCostPrice)
+        bindMoney(stmt, 6, item.defaultSellingPrice)
         bindDate(stmt, 7, item.defaultPriceUpdatedAt)
         bindDouble(stmt, 8, item.lowStockThreshold)
         bindDouble(stmt, 9, item.currentStock)
         bindDate(stmt, 10, item.createdDate)
         bindOptDate(stmt, 11, item.lastRestockDate)
         bindBool(stmt, 12, item.isActive)
-        bindOptInt(stmt, 13, item.salesCount)
+        bindOptDouble(stmt, 13, item.salesCount)
         bindOptInt(stmt, 14, item.salesTier)
         bindOptText(stmt, 15, item.hsnCode)
         bindOptDouble(stmt, 16, item.gstRate)
         bindOptDouble(stmt, 17, item.cessRate)
         bindOptText(stmt, 18, item.alternateUnitName)
         bindOptDouble(stmt, 19, item.alternateUnitFactor)
+        bindText(stmt, 20, item.itemType.rawValue)
         sqlite3_step(stmt)
     }
 
     func updateItem(_ item: Item) throws {
-        let sql = "UPDATE items SET name=?,unit=?,barcode=?,default_cost_price=?,default_selling_price=?,default_price_updated_at=?,low_stock_threshold=?,current_stock=?,last_restock_date=?,is_active=?,sales_count=?,sales_tier=?,hsn_code=?,gst_rate=?,cess_rate=?,alternate_unit_name=?,alternate_unit_factor=? WHERE id=?"
+        let sql = "UPDATE items SET name=?,unit=?,barcode=?,default_cost_price=?,default_selling_price=?,default_price_updated_at=?,low_stock_threshold=?,current_stock=?,last_restock_date=?,is_active=?,sales_count=?,sales_tier=?,hsn_code=?,gst_rate=?,cess_rate=?,alternate_unit_name=?,alternate_unit_factor=?,item_type=? WHERE id=?"
         guard let stmt = prepare(sql) else {
             throw NSError(domain: "SQLiteDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare UPDATE for items table. Column migration may have failed."])
         }
@@ -774,30 +903,34 @@ final class SQLiteDatabase: Database {
         bindText(stmt, 1, item.name.capitalized)
         bindText(stmt, 2, item.unit)
         bindOptText(stmt, 3, item.barcode)
-        bindDouble(stmt, 4, item.defaultCostPrice)
-        bindDouble(stmt, 5, item.defaultSellingPrice)
+        bindMoney(stmt, 4, item.defaultCostPrice)
+        bindMoney(stmt, 5, item.defaultSellingPrice)
         bindDate(stmt, 6, item.defaultPriceUpdatedAt)
         bindDouble(stmt, 7, item.lowStockThreshold)
         bindDouble(stmt, 8, item.currentStock)
         bindOptDate(stmt, 9, item.lastRestockDate)
         bindBool(stmt, 10, item.isActive)
-        bindOptInt(stmt, 11, item.salesCount)
+        bindOptDouble(stmt, 11, item.salesCount)
         bindOptInt(stmt, 12, item.salesTier)
         bindOptText(stmt, 13, item.hsnCode)
         bindOptDouble(stmt, 14, item.gstRate)
         bindOptDouble(stmt, 15, item.cessRate)
         bindOptText(stmt, 16, item.alternateUnitName)
         bindOptDouble(stmt, 17, item.alternateUnitFactor)
-        bindUUID(stmt, 18, item.id)
+        bindText(stmt, 18, item.itemType.rawValue)
+        bindUUID(stmt, 19, item.id)
         sqlite3_step(stmt)
     }
 
     func deleteItem(id: UUID) throws {
-        let sql = "DELETE FROM items WHERE id=?"
-        guard let stmt = prepare(sql) else { return }
+        let sql = "UPDATE items SET is_active=0 WHERE id=?"
+        let stmt = try prepared(sql)
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, id)
-        sqlite3_step(stmt)
+        try stepDone(stmt)
+        if sqlite3_changes(db) == 0 {
+            throw DataModelError.itemNotFound
+        }
     }
 
 
@@ -813,33 +946,33 @@ final class SQLiteDatabase: Database {
 
     func insertBatch(_ batch: ItemBatch) throws {
         let sql = "INSERT INTO item_batches (id,item_id,purchase_transaction_id,quantity_purchased,quantity_remaining,cost_price,selling_price,expiry_date,received_date) VALUES (?,?,?,?,?,?,?,?,?)"
-        guard let stmt = prepare(sql) else { return }
+        let stmt = try prepared(sql)
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, batch.id)
         bindUUID(stmt, 2, batch.itemID)
         bindUUID(stmt, 3, batch.purchaseTransactionID)
         bindDouble(stmt, 4, batch.quantityPurchased)
         bindDouble(stmt, 5, batch.quantityRemaining)
-        bindDouble(stmt, 6, batch.costPrice)
-        bindDouble(stmt, 7, batch.sellingPrice)
+        bindMoney(stmt, 6, batch.costPrice)
+        bindMoney(stmt, 7, batch.sellingPrice)
         bindOptDate(stmt, 8, batch.expiryDate)
         bindDate(stmt, 9, batch.receivedDate)
-        sqlite3_step(stmt)
+        try stepDone(stmt)
     }
 
     func updateBatch(_ batch: ItemBatch) throws {
         let sql = "UPDATE item_batches SET quantity_remaining=? WHERE id=?"
-        guard let stmt = prepare(sql) else { return }
+        let stmt = try prepared(sql)
         defer { sqlite3_finalize(stmt) }
         bindDouble(stmt, 1, batch.quantityRemaining)
         bindUUID(stmt, 2, batch.id)
-        sqlite3_step(stmt)
+        try stepDone(stmt)
     }
 
 
     func insertTransaction(_ transaction: Transaction) throws {
         let sql = "INSERT INTO transactions (id,type,date,invoice_number,customer_name,customer_phone,supplier_name,total_amount,notes,buyer_gstin,place_of_supply,place_of_supply_code,is_inter_state,total_taxable_value,total_cgst,total_sgst,total_igst,total_cess,is_reverse_charge) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        guard let stmt = prepare(sql) else { return }
+        let stmt = try prepared(sql)
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, transaction.id)
         bindText(stmt, 2, transaction.type.rawValue)
@@ -848,19 +981,19 @@ final class SQLiteDatabase: Database {
         bindOptText(stmt, 5, transaction.customerName)
         bindOptText(stmt, 6, transaction.customerPhone)
         bindOptText(stmt, 7, transaction.supplierName)
-        bindDouble(stmt, 8, transaction.totalAmount)
+        bindMoney(stmt, 8, transaction.totalAmount)
         bindOptText(stmt, 9, transaction.notes)
         bindOptText(stmt, 10, transaction.buyerGSTIN)
         bindOptText(stmt, 11, transaction.placeOfSupply)
         bindOptText(stmt, 12, transaction.placeOfSupplyCode)
         if let isInter = transaction.isInterState { bindBool(stmt, 13, isInter) } else { sqlite3_bind_null(stmt, 13) }
-        bindOptDouble(stmt, 14, transaction.totalTaxableValue)
-        bindOptDouble(stmt, 15, transaction.totalCGST)
-        bindOptDouble(stmt, 16, transaction.totalSGST)
-        bindOptDouble(stmt, 17, transaction.totalIGST)
-        bindOptDouble(stmt, 18, transaction.totalCess)
+        bindOptMoney(stmt, 14, transaction.totalTaxableValue)
+        bindOptMoney(stmt, 15, transaction.totalCGST)
+        bindOptMoney(stmt, 16, transaction.totalSGST)
+        bindOptMoney(stmt, 17, transaction.totalIGST)
+        bindOptMoney(stmt, 18, transaction.totalCess)
         if let isRC = transaction.isReverseCharge { bindBool(stmt, 19, isRC) } else { sqlite3_bind_null(stmt, 19) }
-        sqlite3_step(stmt)
+        try stepDone(stmt)
     }
 
     func getTransactions() throws -> [Transaction] {
@@ -875,7 +1008,7 @@ final class SQLiteDatabase: Database {
 
     func insertTransactionItems(_ items: [TransactionItem]) throws {
         let sql = "INSERT INTO transaction_items (id,transaction_id,item_id,item_name,unit,quantity,selling_price_per_unit,cost_price_per_unit,created_date,hsn_code,gst_rate,taxable_value,cgst_amount,sgst_amount,igst_amount,cess_amount) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        guard let stmt = prepare(sql) else { return }
+        let stmt = try prepared(sql)
         defer { sqlite3_finalize(stmt) }
         for item in items {
             sqlite3_reset(stmt)
@@ -885,17 +1018,17 @@ final class SQLiteDatabase: Database {
             bindText(stmt, 4, item.itemName.capitalized)
             bindText(stmt, 5, item.unit)
             bindDouble(stmt, 6, item.quantity)
-            bindOptDouble(stmt, 7, item.sellingPricePerUnit)
-            bindOptDouble(stmt, 8, item.costPricePerUnit)
+            bindOptMoney(stmt, 7, item.sellingPricePerUnit)
+            bindOptMoney(stmt, 8, item.costPricePerUnit)
             bindDate(stmt, 9, item.createdDate)
             bindOptText(stmt, 10, item.hsnCode)
             bindOptDouble(stmt, 11, item.gstRate)
-            bindOptDouble(stmt, 12, item.taxableValue)
-            bindOptDouble(stmt, 13, item.cgstAmount)
-            bindOptDouble(stmt, 14, item.sgstAmount)
-            bindOptDouble(stmt, 15, item.igstAmount)
-            bindOptDouble(stmt, 16, item.cessAmount)
-            sqlite3_step(stmt)
+            bindOptMoney(stmt, 12, item.taxableValue)
+            bindOptMoney(stmt, 13, item.cgstAmount)
+            bindOptMoney(stmt, 14, item.sgstAmount)
+            bindOptMoney(stmt, 15, item.igstAmount)
+            bindOptMoney(stmt, 16, item.cessAmount)
+            try stepDone(stmt)
         }
     }
 
@@ -926,7 +1059,7 @@ final class SQLiteDatabase: Database {
         for tx in toUpdate {
             let updateSql = "UPDATE transaction_items SET cost_price_per_unit = ? WHERE id = ?"
             if let updateStmt = prepare(updateSql) {
-                bindDouble(updateStmt, 1, newCP)
+                bindMoney(updateStmt, 1, newCP)
                 bindUUID(updateStmt, 2, tx.txItemID)
                 sqlite3_step(updateStmt)
                 sqlite3_finalize(updateStmt)
@@ -983,15 +1116,15 @@ final class SQLiteDatabase: Database {
         bindText(stmt, 2, item.itemName.capitalized)
         bindText(stmt, 3, item.unit)
         bindDouble(stmt, 4, item.quantity)
-        bindOptDouble(stmt, 5, item.sellingPricePerUnit)
-        bindOptDouble(stmt, 6, item.costPricePerUnit)
+        bindOptMoney(stmt, 5, item.sellingPricePerUnit)
+        bindOptMoney(stmt, 6, item.costPricePerUnit)
         bindOptText(stmt, 7, item.hsnCode)
         bindOptDouble(stmt, 8, item.gstRate)
-        bindOptDouble(stmt, 9, item.taxableValue)
-        bindOptDouble(stmt, 10, item.cgstAmount)
-        bindOptDouble(stmt, 11, item.sgstAmount)
-        bindOptDouble(stmt, 12, item.igstAmount)
-        bindOptDouble(stmt, 13, item.cessAmount)
+        bindOptMoney(stmt, 9, item.taxableValue)
+        bindOptMoney(stmt, 10, item.cgstAmount)
+        bindOptMoney(stmt, 11, item.sgstAmount)
+        bindOptMoney(stmt, 12, item.igstAmount)
+        bindOptMoney(stmt, 13, item.cessAmount)
         bindUUID(stmt, 14, item.id)
         sqlite3_step(stmt)
     }
@@ -999,7 +1132,7 @@ final class SQLiteDatabase: Database {
 
     func insertSaleItemBatches(_ batches: [SaleItemBatch]) throws {
         let sql = "INSERT INTO sale_item_batches (id,transaction_item_id,batch_id,quantity_consumed,cost_price_used,selling_price_used,batch_received_date,batch_expiry_date) VALUES (?,?,?,?,?,?,?,?)"
-        guard let stmt = prepare(sql) else { return }
+        let stmt = try prepared(sql)
         defer { sqlite3_finalize(stmt) }
         for b in batches {
             sqlite3_reset(stmt)
@@ -1007,11 +1140,11 @@ final class SQLiteDatabase: Database {
             bindUUID(stmt, 2, b.transactionItemID)
             bindUUID(stmt, 3, b.batchID)
             bindDouble(stmt, 4, b.quantityConsumed)
-            bindDouble(stmt, 5, b.costPriceUsed)
-            bindDouble(stmt, 6, b.sellingPriceUsed)
+            bindMoney(stmt, 5, b.costPriceUsed)
+            bindMoney(stmt, 6, b.sellingPriceUsed)
             bindDate(stmt, 7, b.batchReceivedDate)
             bindOptDate(stmt, 8, b.batchExpiryDate)
-            sqlite3_step(stmt)
+            try stepDone(stmt)
         }
     }
 
@@ -1035,11 +1168,11 @@ final class SQLiteDatabase: Database {
         bindUUID(stmt, 3, item.transactionItemID)
         bindText(stmt, 4, item.itemName.capitalized)
         bindDouble(stmt, 5, item.quantity)
-        bindDouble(stmt, 6, item.sellingPricePerUnit)
+        bindMoney(stmt, 6, item.sellingPricePerUnit)
         bindBool(stmt, 7, item.isCompleted)
         bindOptDate(stmt, 8, item.completedAt)
         bindOptText(stmt, 9, item.unit)
-        bindOptDouble(stmt, 10, item.costPricePerUnit)
+        bindOptMoney(stmt, 10, item.costPricePerUnit)
         bindOptText(stmt, 11, item.supplierName)
         bindOptDate(stmt, 12, item.expiryDate)
         bindDate(stmt, 13, item.createdAt)
@@ -1081,7 +1214,7 @@ final class SQLiteDatabase: Database {
         bindBool(stmt, 1, item.isCompleted)
         bindOptDate(stmt, 2, item.completedAt)
         bindOptText(stmt, 3, item.unit)
-        bindOptDouble(stmt, 4, item.costPricePerUnit)
+        bindOptMoney(stmt, 4, item.costPricePerUnit)
         bindOptText(stmt, 5, item.supplierName)
         bindOptDate(stmt, 6, item.expiryDate)
         bindUUID(stmt, 7, item.id)
@@ -1115,11 +1248,11 @@ final class SQLiteDatabase: Database {
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, summary.id)
         bindText(stmt, 2, dayStr)
-        bindDouble(stmt, 3, summary.totalRevenue)
-        bindDouble(stmt, 4, summary.totalProfit)
+        bindMoney(stmt, 3, summary.totalRevenue)
+        bindMoney(stmt, 4, summary.totalProfit)
         bindInt(stmt, 5, summary.salesTransactionCount)
         bindDouble(stmt, 6, summary.itemsSoldCount)
-        bindDouble(stmt, 7, summary.totalPurchaseAmount)
+        bindMoney(stmt, 7, summary.totalPurchaseAmount)
         bindInt(stmt, 8, summary.purchaseTransactionCount)
         sqlite3_step(stmt)
     }
@@ -1133,7 +1266,7 @@ final class SQLiteDatabase: Database {
 
 
     func getSettings() throws -> AppSettings {
-        let sql = "SELECT invoice_prefix,invoice_number_counter,current_year,include_year_in_invoice,owner_name,business_name,profile_name,business_phone,profile_image_data,business_address,gst_number,expiry_notice_days,expiry_warning_days,expiry_critical_days,is_gst_registered,gst_scheme,business_state,business_state_code,prices_include_gst,default_gst_rate,composition_rate FROM app_settings WHERE key='main'"
+        let sql = "SELECT invoice_prefix,invoice_number_counter,current_year,include_year_in_invoice,owner_name,business_name,profile_name,business_phone,profile_image_data,business_address,gst_number,expiry_notice_days,expiry_warning_days,expiry_critical_days,is_gst_registered,gst_scheme,business_state,business_state_code,prices_include_gst,default_gst_rate,composition_rate,upi_vpa,upi_qr_image_data FROM app_settings WHERE key='main'"
         guard let stmt = prepare(sql) else { return defaultSettings() }
         defer { sqlite3_finalize(stmt) }
         if sqlite3_step(stmt) == SQLITE_ROW {
@@ -1146,8 +1279,8 @@ final class SQLiteDatabase: Database {
 
     func updateSettings(_ settings: AppSettings) throws {
         let sql = """
-        INSERT INTO app_settings (key,invoice_prefix,invoice_number_counter,current_year,include_year_in_invoice,owner_name,business_name,profile_name,business_phone,profile_image_data,business_address,gst_number,expiry_notice_days,expiry_warning_days,expiry_critical_days,is_gst_registered,gst_scheme,business_state,business_state_code,prices_include_gst,default_gst_rate,composition_rate)
-        VALUES ('main',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO app_settings (key,invoice_prefix,invoice_number_counter,current_year,include_year_in_invoice,owner_name,business_name,profile_name,business_phone,profile_image_data,business_address,gst_number,expiry_notice_days,expiry_warning_days,expiry_critical_days,is_gst_registered,gst_scheme,business_state,business_state_code,prices_include_gst,default_gst_rate,composition_rate,upi_vpa,upi_qr_image_data)
+        VALUES ('main',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(key) DO UPDATE SET
             invoice_prefix=excluded.invoice_prefix,
             invoice_number_counter=excluded.invoice_number_counter,
@@ -1169,9 +1302,11 @@ final class SQLiteDatabase: Database {
             business_state_code=excluded.business_state_code,
             prices_include_gst=excluded.prices_include_gst,
             default_gst_rate=excluded.default_gst_rate,
-            composition_rate=excluded.composition_rate
+            composition_rate=excluded.composition_rate,
+            upi_vpa=excluded.upi_vpa,
+            upi_qr_image_data=excluded.upi_qr_image_data
         """
-        guard let stmt = prepare(sql) else { return }
+        let stmt = try prepared(sql)
         defer { sqlite3_finalize(stmt) }
         bindText(stmt, 1, settings.invoicePrefix)
         bindInt(stmt, 2, settings.invoiceNumberCounter)
@@ -1194,7 +1329,9 @@ final class SQLiteDatabase: Database {
         bindBool(stmt, 19, settings.pricesIncludeGST)
         bindOptDouble(stmt, 20, settings.defaultGSTRate)
         bindOptDouble(stmt, 21, settings.compositionRate)
-        sqlite3_step(stmt)
+        bindOptText(stmt, 22, settings.upiVPA)
+        bindBlob(stmt, 23, settings.upiQRImageData)
+        try stepDone(stmt)
     }
 
     private func defaultSettings() -> AppSettings {
@@ -1271,8 +1408,18 @@ final class SQLiteDatabase: Database {
     }
 
     func deleteCustomerCascade(id: UUID) {
-        exec("DELETE FROM customer_payments WHERE customer_id='\(id.uuidString)'")
-        exec("DELETE FROM customers WHERE id='\(id.uuidString)'")
+        let paySQL = "DELETE FROM customer_payments WHERE customer_id=?"
+        if let stmt = prepare(paySQL) {
+            defer { sqlite3_finalize(stmt) }
+            bindUUID(stmt, 1, id)
+            sqlite3_step(stmt)
+        }
+        let custSQL = "DELETE FROM customers WHERE id=?"
+        if let stmt = prepare(custSQL) {
+            defer { sqlite3_finalize(stmt) }
+            bindUUID(stmt, 1, id)
+            sqlite3_step(stmt)
+        }
     }
 
     func getCustomerByID(_ id: UUID) -> Customer? {
@@ -1318,8 +1465,18 @@ final class SQLiteDatabase: Database {
     }
 
     func deleteSupplierCascade(id: UUID) {
-        exec("DELETE FROM supplier_payments WHERE supplier_id='\(id.uuidString)'")
-        exec("DELETE FROM suppliers WHERE id='\(id.uuidString)'")
+        let paySQL = "DELETE FROM supplier_payments WHERE supplier_id=?"
+        if let stmt = prepare(paySQL) {
+            defer { sqlite3_finalize(stmt) }
+            bindUUID(stmt, 1, id)
+            sqlite3_step(stmt)
+        }
+        let supSQL = "DELETE FROM suppliers WHERE id=?"
+        if let stmt = prepare(supSQL) {
+            defer { sqlite3_finalize(stmt) }
+            bindUUID(stmt, 1, id)
+            sqlite3_step(stmt)
+        }
     }
 
     func getSupplierByID(_ id: UUID) -> Supplier? {
@@ -1341,20 +1498,26 @@ final class SQLiteDatabase: Database {
 
 
     func insertCustomerPayment(_ payment: Payment) {
-        let sql = "INSERT INTO customer_payments (id,customer_id,amount,date,type,note) VALUES (?,?,?,?,?,?)"
-        guard let stmt = prepare(sql) else { return }
+        let sql = "INSERT INTO customer_payments (id,customer_id,amount,date,type,note,transaction_id) VALUES (?,?,?,?,?,?,?)"
+        let stmt: OpaquePointer
+        do {
+            stmt = try prepared(sql)
+        } catch {
+            return
+        }
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, payment.id)
         bindUUID(stmt, 2, payment.customerID)
-        bindDouble(stmt, 3, payment.amount)
+        bindMoney(stmt, 3, payment.amount)
         bindDate(stmt, 4, payment.date)
         bindText(stmt, 5, payment.type.rawValue)
         bindOptText(stmt, 6, payment.note)
+        bindOptText(stmt, 7, payment.transactionID?.uuidString)
         sqlite3_step(stmt)
     }
 
     func getCustomerPayments(forCustomer customerID: UUID) -> [Payment] {
-        let sql = "SELECT id,customer_id,amount,date,type,note FROM customer_payments WHERE customer_id=? ORDER BY date ASC"
+        let sql = "SELECT id,customer_id,amount,date,type,note,transaction_id FROM customer_payments WHERE customer_id=? ORDER BY date ASC"
         guard let stmt = prepare(sql) else { return [] }
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, customerID)
@@ -1369,7 +1532,7 @@ final class SQLiteDatabase: Database {
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, payment.id)
         bindUUID(stmt, 2, payment.supplierID)
-        bindDouble(stmt, 3, payment.amount)
+        bindMoney(stmt, 3, payment.amount)
         bindDate(stmt, 4, payment.date)
         bindText(stmt, 5, payment.type.rawValue)
         bindOptText(stmt, 6, payment.note)
@@ -1416,19 +1579,23 @@ final class SQLiteDatabase: Database {
     }
 
     func backupDatabase(to destinationPath: String) -> Bool {
-        sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_FULL, nil, nil)
+        var success = false
+        withExclusiveIO {
+            sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_FULL, nil, nil)
 
-        var destDB: OpaquePointer?
-        guard sqlite3_open(destinationPath, &destDB) == SQLITE_OK else { return false }
-        defer { sqlite3_close(destDB) }
+            var destDB: OpaquePointer?
+            guard sqlite3_open(destinationPath, &destDB) == SQLITE_OK else { return }
+            defer { sqlite3_close(destDB) }
 
-        guard let backup = sqlite3_backup_init(destDB, "main", db, "main") else {
-            return false
+            guard let backup = sqlite3_backup_init(destDB, "main", db, "main") else {
+                return
+            }
+
+            sqlite3_backup_step(backup, -1)
+            sqlite3_backup_finish(backup)
+
+            success = sqlite3_errcode(destDB) == SQLITE_OK
         }
-
-        sqlite3_backup_step(backup, -1)
-        sqlite3_backup_finish(backup)
-
-        return sqlite3_errcode(destDB) == SQLITE_OK
+        return success
     }
 }

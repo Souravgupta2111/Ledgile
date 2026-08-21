@@ -1,14 +1,6 @@
 import UIKit
 import DGCharts
-
-protocol SalesByItemTopTileDelegate: AnyObject {
-    func didSelectChartBar(at index: Int)
-    func didDeselectChartBar()
-}
-
-class SalesByItemTopTileTableViewCell: UITableViewCell, ChartViewDelegate {
-
-    weak var delegate: SalesByItemTopTileDelegate?
+class SalesByItemTopTileTableViewCell: UITableViewCell {
 
     @IBOutlet weak var amountLabel: UILabel!
     @IBOutlet weak var changeLabel: UILabel!
@@ -16,14 +8,11 @@ class SalesByItemTopTileTableViewCell: UITableViewCell, ChartViewDelegate {
     @IBOutlet weak var topItemLabel: UILabel!
     @IBOutlet weak var barChartView: BarChartView!
     @IBOutlet weak var itemsSoldCount: UILabel!
-    @IBOutlet weak var itemsSoldSubtitleLabel: UILabel!
-    @IBOutlet weak var topItemSubtitleLabel: UILabel!
     private lazy var currencyMarker = makeMarker()
     
     
     override func awakeFromNib() {
         super.awakeFromNib()
-        lineChartView.delegate = self
         setupCharts()
     }
 
@@ -72,7 +61,6 @@ class SalesByItemTopTileTableViewCell: UITableViewCell, ChartViewDelegate {
         growthText: String,
         itemsSold: Int,
         topItem: String,
-        subtitle: String,
         lineChartPoints: [ChartDataProvider.ChartPoint],
         barChartValues: [Double],
         barChartLabels: [String],
@@ -82,21 +70,12 @@ class SalesByItemTopTileTableViewCell: UITableViewCell, ChartViewDelegate {
         changeLabel.text = growthText
         itemsSoldCount.text = "\(itemsSold)"
         topItemLabel.text = topItem
-        itemsSoldSubtitleLabel.text = "This Week"
-        topItemSubtitleLabel.text = subtitle
 
         // --- Main chart ---
         configureMainChart(lineChartPoints)
 
         // --- Bottom bar chart (item-level) ---
         configureBottomChart(barChartValues, barChartLabels)
-    }
-
-    func updateTopItemDetails(itemsSold: Int, topItemName: String, subtitle: String) {
-        itemsSoldCount.text = "\(itemsSold)"
-        topItemLabel.text = topItemName
-        itemsSoldSubtitleLabel.text = "This Week"
-        topItemSubtitleLabel.text = subtitle
     }
 
     private func configureMainChart(_ points: [ChartDataProvider.ChartPoint]) {
@@ -227,13 +206,5 @@ class SalesByItemTopTileTableViewCell: UITableViewCell, ChartViewDelegate {
 
     private func currencyText(for value: Double) -> String {
         "₹\(Int(value.rounded()))"
-    }
-
-    func chartValueSelected(_ chartView: ChartViewBase, entry: ChartDataEntry, highlight: Highlight) {
-        delegate?.didSelectChartBar(at: Int(entry.x))
-    }
-
-    func chartValueNothingSelected(_ chartView: ChartViewBase) {
-        delegate?.didDeselectChartBar()
     }
 }

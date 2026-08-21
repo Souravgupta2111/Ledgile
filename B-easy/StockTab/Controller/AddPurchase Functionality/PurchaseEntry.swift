@@ -11,11 +11,11 @@ struct PurchaseEntry {
     
     var lowStockThreshold: Double = 0
     var barcode: String? = nil
-    
-    // GST fields
     var hsnCode: String? = nil
     var gstRate: Double? = nil
     
     var pendingItemPhotos: [UIImage] = []
     var expiryDate: Date? = nil
+
+    var itemType: ItemType = .goods
 }

@@ -39,7 +39,9 @@ class PurchaseItemInformationTableViewController: UITableViewController {
             return
         }
 
-        if entry.quantity <= 0 {
+        if entry.itemType == .services {
+            entry.quantity = max(entry.quantity, 1)
+        } else if entry.quantity <= 0 {
             showAlert(title: "Invalid Quantity", message: "Enter quantity greater than 0.")
             return
         }
@@ -68,12 +70,27 @@ class PurchaseItemInformationTableViewController: UITableViewController {
 
 extension PurchaseItemInformationTableViewController {
     
+    private var isService: Bool { entry.itemType == .services }
+
+    private enum Row {
+        case type, item, unit, quantity, sellingPrice, costPrice, lowStock, expiry, photo
+    }
+
+    /// Goods: Type, Item, Unit, Quantity, Selling/Cost, Low Stock, Expiry, Photo
+    /// Services: Type, Item, Unit, Selling/Cost (no quantity / stock fields)
+    private var visibleRows: [Row] {
+        if isService {
+            return [.type, .item, .unit, .sellingPrice, .costPrice]
+        }
+        return [.type, .item, .unit, .quantity, .sellingPrice, .costPrice, .lowStock, .expiry, .photo]
+    }
+
     override func numberOfSections(in tableView: UITableView) -> Int {
         return 1
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 8
+        return visibleRows.count
     }
 
     override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
@@ -85,10 +102,37 @@ extension PurchaseItemInformationTableViewController {
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        switch visibleRows[indexPath.row] {
 
-        switch indexPath.row {
+        case .type:
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.selectionStyle = .none
 
-        case 0:
+            let titleLabel = UILabel()
+            titleLabel.text = "Type"
+            titleLabel.font = .systemFont(ofSize: 17)
+            titleLabel.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(titleLabel)
+
+            let seg = UISegmentedControl(items: ["Goods", "Service"])
+            seg.selectedSegmentIndex = isService ? 1 : 0
+            seg.translatesAutoresizingMaskIntoConstraints = false
+            seg.addTarget(self, action: #selector(itemTypeChanged(_:)), for: .valueChanged)
+            cell.contentView.addSubview(seg)
+
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                titleLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                seg.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                seg.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                seg.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
+                seg.widthAnchor.constraint(equalToConstant: 160),
+                cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            ])
+
+            return cell
+
+        case .item:
             let cell = UITableViewCell(style: .value1, reuseIdentifier: "rightDetail")
             cell.textLabel?.text = "Item"
             cell.textLabel?.textColor = .systemRed
@@ -103,7 +147,7 @@ extension PurchaseItemInformationTableViewController {
             cell.accessoryType = .disclosureIndicator
             return cell
 
-        case 1:
+        case .unit:
             let cell = UITableViewCell(style: .value1, reuseIdentifier: "rightDetail")
             cell.textLabel?.text = "Unit"
             
@@ -117,7 +161,7 @@ extension PurchaseItemInformationTableViewController {
             cell.accessoryType = .disclosureIndicator
             return cell
 
-        case 2:
+        case .quantity:
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
             cell.titleLabel.text = "Quantity"
             cell.titleLabel.textColor = .systemRed
@@ -129,7 +173,7 @@ extension PurchaseItemInformationTableViewController {
             }
             return cell
 
-        case 3:
+        case .sellingPrice:
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
             cell.titleLabel.text = "Selling Price"
             cell.titleLabel.textColor = .systemRed
@@ -141,7 +185,7 @@ extension PurchaseItemInformationTableViewController {
             }
             return cell
 
-        case 4:
+        case .costPrice:
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
             cell.titleLabel.text = "Cost Price"
             cell.textField.placeholder = "₹ 0.00"
@@ -152,7 +196,7 @@ extension PurchaseItemInformationTableViewController {
             }
             return cell
 
-        case 5:
+        case .lowStock:
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
             cell.titleLabel.text = "Low Stock Alert"
             cell.textField.placeholder = "Enter count"
@@ -163,7 +207,7 @@ extension PurchaseItemInformationTableViewController {
             }
             return cell
 
-        case 6:
+        case .expiry:
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelDatePickerTableViewCell", for: indexPath) as! LabelDatePickerTableViewCell
             cell.titleLabel.text = "Expiry Date"
             cell.datePicker.date = entry.expiryDate ?? Date()
@@ -173,7 +217,7 @@ extension PurchaseItemInformationTableViewController {
             }
             return cell
 
-        case 7:
+        case .photo:
             let cell = UITableViewCell()
             cell.selectionStyle = .none
             
@@ -191,6 +235,8 @@ extension PurchaseItemInformationTableViewController {
             addPhotoBtn.setImage(UIImage(systemName: "camera.badge.ellipsis", withConfiguration: cameraConfig), for: .normal)
             addPhotoBtn.setTitle("Add Photo", for: .normal)
             addPhotoBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+            addPhotoBtn.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
+            addPhotoBtn.setTitleColor(UIColor(named: "Lime Moss") ?? .systemGreen, for: .normal)
             addPhotoBtn.addTarget(self, action: #selector(addPhotoTapped), for: .touchUpInside)
             addPhotoBtn.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(addPhotoBtn)
@@ -201,6 +247,8 @@ extension PurchaseItemInformationTableViewController {
             recordBtn.setImage(UIImage(systemName: "record.circle", withConfiguration: recordConfig), for: .normal)
             recordBtn.setTitle("Record", for: .normal)
             recordBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+            recordBtn.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
+            recordBtn.setTitleColor(UIColor(named: "Lime Moss") ?? .systemGreen, for: .normal)
             recordBtn.addTarget(self, action: #selector(recordTrainingVideoTapped), for: .touchUpInside)
             recordBtn.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(recordBtn)
@@ -210,7 +258,7 @@ extension PurchaseItemInformationTableViewController {
             if entry.pendingItemPhotos.isEmpty {
                 subtitle.text = "Add photos or record 5–8s video for object detection"
             } else {
-                subtitle.text = "\(entry.pendingItemPhotos.count) frames captured"
+                subtitle.text = entry.pendingItemPhotos.count == 1 ? "1 Picture" : "\(entry.pendingItemPhotos.count) Pictures"
             }
             subtitle.font = .systemFont(ofSize: 13)
             subtitle.textColor = entry.pendingItemPhotos.isEmpty ? .secondaryLabel : UIColor(named: "Lime Moss")!
@@ -235,22 +283,35 @@ extension PurchaseItemInformationTableViewController {
             ])
             
             return cell
-
-        default:
-            return UITableViewCell()
         }
     }
+
+    @objc private func itemTypeChanged(_ sender: UISegmentedControl) {
+        entry.itemType = sender.selectedSegmentIndex == 0 ? .goods : .services
+        // Clear goods-specific fields when switching to services
+        if entry.itemType == .services {
+            entry.quantity = max(entry.quantity, 1)
+            entry.lowStockThreshold = 0
+            entry.expiryDate = nil
+            entry.pendingItemPhotos = []
+        }
+        tableView.reloadData()
+    }
 }
+
 
 // MARK: - Selection
 
 extension PurchaseItemInformationTableViewController {
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        if indexPath.row == 0 {
+        switch visibleRows[indexPath.row] {
+        case .item:
             performSegue(withIdentifier: "item_selection", sender: nil)
-        } else if indexPath.row == 1 {
+        case .unit:
             performSegue(withIdentifier: "unit_selection", sender: nil)
+        default:
+            break
         }
     }
     
@@ -288,24 +349,31 @@ extension PurchaseItemInformationTableViewController {
 
     @objc private func recordTrainingVideoTapped() {
         let vc = InventoryCaptureVideoViewController()
-        vc.onComplete = { [weak self] images in
+        vc.onComplete = { [weak self] images, barcode in
             guard let self = self, !images.isEmpty else { return }
             self.entry.pendingItemPhotos.append(contentsOf: images)
+            if self.entry.barcode == nil || self.entry.barcode?.isEmpty == true {
+                self.entry.barcode = barcode
+            }
             print("[Purchase] Recorded \(images.count) training frames from video (total: \(self.entry.pendingItemPhotos.count))")
 
             // If item is already selected, trigger embedding update
             if let itemName = self.entry.selectedItemName, !itemName.isEmpty {
                 let allItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
-                if let item = allItems.first(where: { $0.name == itemName }) {
+                if var item = allItems.first(where: { $0.name == itemName }) {
+                    if let barcode, item.barcode == nil || item.barcode?.isEmpty == true {
+                        item.barcode = barcode
+                        try? AppDataModel.shared.dataModel.db.updateItem(item)
+                    }
                     ProductFingerprintManager.shared.updateEmbeddings(for: item.id) {
                         print("[Purchase] Updated CLIP embeddings for \(itemName)")
                     }
                 }
             }
 
-            // Refresh row 7 to show frame count
+            // Refresh row 8 to show frame count
             DispatchQueue.main.async {
-                self.tableView.reloadRows(at: [IndexPath(row: 7, section: 0)], with: .automatic)
+                self.tableView.reloadRows(at: [IndexPath(row: 8, section: 0)], with: .automatic)
             }
         }
         vc.onCancel = { /* nothing */ }
@@ -346,29 +414,33 @@ extension PurchaseItemInformationTableViewController {
 
 extension PurchaseItemInformationTableViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-        picker.dismiss(animated: true)
-        if let image = info[.originalImage] as? UIImage {
-            // Compress for small storage
-            let maxDim: CGFloat = 480
-            let scale = min(maxDim / max(image.size.width, image.size.height), 1.0)
-            let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-            let resized = UIGraphicsGetImageFromCurrentImageContext()
-            UIGraphicsEndImageContext()
-
-            if let compressed = resized?.jpegData(compressionQuality: 0.7),
-               let final = UIImage(data: compressed) {
-                entry.pendingItemPhotos.append(final)
-            } else {
-                entry.pendingItemPhotos.append(image)
+        picker.dismiss(animated: true) { [weak self] in
+            guard let self, let image = info[.originalImage] as? UIImage else { return }
+            PhotoObjectIsolateViewController.present(from: self, image: image) { [weak self] isolated in
+                self?.appendIsolatedProductPhoto(isolated)
             }
-            print("[Purchase] Added photo (total: \(entry.pendingItemPhotos.count))")
-            tableView.reloadRows(at: [IndexPath(row: 7, section: 0)], with: .automatic)
         }
     }
 
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
         picker.dismiss(animated: true)
+    }
+
+    private func appendIsolatedProductPhoto(_ image: UIImage) {
+        let maxDim: CGFloat = 480
+        let scale = min(maxDim / max(image.size.width, image.size.height), 1.0)
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resized = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        if let compressed = resized?.jpegData(compressionQuality: 0.7),
+           let final = UIImage(data: compressed) {
+            entry.pendingItemPhotos.append(final)
+        } else {
+            entry.pendingItemPhotos.append(image)
+        }
+        print("[Purchase] Added isolated photo (total: \(entry.pendingItemPhotos.count))")
+        tableView.reloadRows(at: [IndexPath(row: 8, section: 0)], with: .automatic)
     }
 }

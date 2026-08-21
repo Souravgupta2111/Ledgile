@@ -40,6 +40,32 @@ class GetChatInterfaceViewController: UIViewController {
         youReceiveLabel.clipsToBounds = true
         loadTransactions()
         updateBalance()
+        let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+        let whatsapp = UIBarButtonItem(
+            image: UIImage(systemName: "message.fill"),
+            style: .plain,
+            target: self,
+            action: #selector(remindWhatsAppTapped)
+        )
+        whatsapp.accessibilityLabel = "WhatsApp reminder"
+        let edit = UIAction(title: "Edit", image: UIImage(systemName: "pencil")) { [weak self] _ in
+            self?.editButtonTapped(UIBarButtonItem())
+        }
+        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+            self?.deleteButtonTapped(UIBarButtonItem())
+        }
+        let more = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis.circle"),
+            menu: UIMenu(children: [edit, delete])
+        )
+        more.tintColor = lime
+        whatsapp.tintColor = lime
+        navigationItem.rightBarButtonItems = [more, whatsapp]
+    }
+
+    @objc private func remindWhatsAppTapped() {
+        guard let customer else { return }
+        UPIWhatsAppShare.remindOutstanding(from: self, customer: customer)
     }
     
     private func loadTransactions() {

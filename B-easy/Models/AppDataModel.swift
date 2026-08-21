@@ -1,5 +1,5 @@
 import Foundation
-class AppDataModel {
+nonisolated class AppDataModel: @unchecked Sendable {
 
     static let shared = AppDataModel()
 

@@ -1,4 +1,5 @@
 import UIKit
+import AuthenticationServices
 
 class SignupViewController: UIViewController, UITextFieldDelegate {
 
@@ -38,6 +39,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         configureFields()
         configureCountryCodeButton()
         updateSendCodeState()
+        configureAppleSignIn()
     }
 
 
@@ -61,6 +63,9 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
 
         sendCodeButton.layer.cornerRadius = 14
         sendCodeButton.clipsToBounds = true
+        sendCodeButton.backgroundColor = .black
+        sendCodeButton.setTitleColor(.white, for: .normal)
+        sendCodeButton.setTitleColor(.lightGray, for: .disabled)
     }
 
 
@@ -97,19 +102,20 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
     // MARK: - Validation
 
     private func isValidName(_ name: String) -> Bool {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 2 else { return false }
-        return trimmed.allSatisfy { $0.isLetter || $0 == " " }
+        AuthNavigationHelper.isValidPersonName(name)
+    }
+
+    private func isValidShopName(_ name: String) -> Bool {
+        AuthNavigationHelper.isValidShopName(name)
     }
 
     private func isValidPhone(_ phone: String) -> Bool {
-        let digits = phone.filter { $0.isNumber }
-        return digits.count == 10
+        AuthNavigationHelper.isValidPhone(phone, countryCode: selectedCountryCode)
     }
 
     private func allFieldsValid() -> Bool {
         return isValidName(personNameField.text ?? "") &&
-               isValidName(shopNameField.text ?? "") &&
+               isValidShopName(shopNameField.text ?? "") &&
                isValidPhone(phoneField.text ?? "")
     }
 
@@ -149,11 +155,11 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         if !isValidName(personNameField.text ?? "") {
             errors.append("• Enter a valid name (at least 2 letters)")
         }
-        if !isValidName(shopNameField.text ?? "") {
-            errors.append("• Enter a valid shop name (at least 2 letters)")
+        if !isValidShopName(shopNameField.text ?? "") {
+            errors.append("• Enter a valid shop name (letters or numbers, at least 2 characters)")
         }
         if !isValidPhone(phoneField.text ?? "") {
-            errors.append("• Enter a valid 10-digit phone number")
+            errors.append("• Enter a valid phone number")
         }
 
         if !errors.isEmpty {
@@ -221,6 +227,59 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         }
     }
 
+    // MARK: - Apple Sign In
+    
+    private let appleSignInButton = ASAuthorizationAppleIDButton(authorizationButtonType: .signUp, authorizationButtonStyle: .black)
+    
+    private func configureAppleSignIn() {
+        appleSignInButton.translatesAutoresizingMaskIntoConstraints = false
+        appleSignInButton.addTarget(self, action: #selector(handleAppleSignIn), for: .touchUpInside)
+        appleSignInButton.cornerRadius = 14
+        view.addSubview(appleSignInButton)
+        
+        NSLayoutConstraint.activate([
+            appleSignInButton.topAnchor.constraint(equalTo: sendCodeButton.bottomAnchor, constant: 20),
+            appleSignInButton.leadingAnchor.constraint(equalTo: sendCodeButton.leadingAnchor),
+            appleSignInButton.trailingAnchor.constraint(equalTo: sendCodeButton.trailingAnchor),
+            appleSignInButton.heightAnchor.constraint(equalToConstant: 50)
+        ])
+    }
+    
+    @objc private func handleAppleSignIn() {
+        AppleSignInHelper.shared.startSignIn(presentationAnchor: view.window) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let data):
+                    self?.setLoading(true)
+                    AuthManager.shared.signInWithApple(idToken: data.idToken, nonce: data.nonce) { authResult in
+                        switch authResult {
+                        case .success:
+                            guard let self = self else { return }
+                            AuthNavigationHelper.continueAfterAppleAuth(
+                                from: self,
+                                appleName: data.fullName,
+                                appleEmail: data.email
+                            )
+                        case .failure(let error):
+                            self?.setLoading(false)
+                            self?.showErrorAlert(error.localizedDescription)
+                        }
+                    }
+                case .failure(let error):
+                    if (error as NSError).code != ASAuthorizationError.canceled.rawValue {
+                        self?.showErrorAlert(error.localizedDescription)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func showErrorAlert(_ message: String) {
+        let alert = UIAlertController(title: "Error", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+
     // MARK: - UITextFieldDelegate
 
     func textField(_ textField: UITextField,
@@ -234,11 +293,17 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
             }
             let current = textField.text ?? ""
             let newLen = current.count + string.count - range.length
-            return newLen <= 10
+            return newLen <= (selectedCountryCode == "+91" ? 10 : 15)
         }
 
-        if textField == personNameField || textField == shopNameField {
+        if textField == personNameField {
             let allowed = CharacterSet.letters.union(.whitespaces)
+            return allowed.isSuperset(of: CharacterSet(charactersIn: string)) || string.isEmpty
+        }
+
+        if textField == shopNameField {
+            let allowed = CharacterSet.letters.union(.decimalDigits).union(.whitespaces)
+                .union(CharacterSet(charactersIn: "&-.'"))
             return allowed.isSuperset(of: CharacterSet(charactersIn: string)) || string.isEmpty
         }
 

@@ -14,6 +14,7 @@ struct Payment: Identifiable, Codable, Equatable {
     var date: Date
     var type: CreditTransactionType
     var note: String?
+    var transactionID: UUID? = nil
     
     static func == (lhs: Payment, rhs: Payment) -> Bool {
         lhs.id == rhs.id

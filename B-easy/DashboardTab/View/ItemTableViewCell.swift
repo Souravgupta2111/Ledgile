@@ -20,10 +20,16 @@ class ItemTableViewCell: UITableViewCell {
         super.setSelected(selected, animated: animated)
 
     }
-    func configure(itemName: String, qty: String, price: String) {
+    func configure(itemName: String, qty: String, price: String, isService: Bool = false) {
         itemNameLabel.text = itemName
-        quantityLabel.text = "Qty: \(qty)"
         priceLabel.text = price
+        if isService {
+            quantityLabel.text = "Service"
+            quantityLabel.textColor = UIColor(named: "Lime Moss") ?? .systemGreen
+        } else {
+            quantityLabel.text = "Qty: \(qty)"
+            quantityLabel.textColor = .secondaryLabel
+        }
     }
     func applySectionCornerMask(isFirst: Bool, isLast: Bool) {
         

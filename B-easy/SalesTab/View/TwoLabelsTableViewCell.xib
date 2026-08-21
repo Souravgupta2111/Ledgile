@@ -20,7 +20,7 @@
                         <rect key="frame" x="0.0" y="0.0" width="320" height="50"/>
                         <subviews>
                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="c2r-02-0lc">
-                                <rect key="frame" x="32" y="0.0" width="130" height="50"/>
+                                <rect key="frame" x="16" y="0.0" width="130" height="50"/>
                                 <constraints>
                                     <constraint firstAttribute="width" constant="130" id="1MB-cD-n3d"/>
                                 </constraints>
@@ -40,8 +40,8 @@
                         </subviews>
                         <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <constraints>
-                            <constraint firstItem="c2r-02-0lc" firstAttribute="leading" secondItem="A4w-Ya-nvB" secondAttribute="leading" constant="32" id="DSB-3z-e0L"/>
-                            <constraint firstAttribute="trailing" secondItem="WHm-B2-whJ" secondAttribute="trailing" constant="32" id="Exu-gH-7UA"/>
+                            <constraint firstItem="c2r-02-0lc" firstAttribute="leading" secondItem="A4w-Ya-nvB" secondAttribute="leading" constant="24" id="DSB-3z-e0L"/>
+                            <constraint firstAttribute="trailing" secondItem="WHm-B2-whJ" secondAttribute="trailing" constant="24" id="Exu-gH-7UA"/>
                             <constraint firstAttribute="height" constant="50" id="Qde-L7-jrY"/>
                             <constraint firstAttribute="bottom" secondItem="c2r-02-0lc" secondAttribute="bottom" id="Xrw-B7-mKc"/>
                             <constraint firstAttribute="bottom" secondItem="WHm-B2-whJ" secondAttribute="bottom" id="mTz-ym-b0U"/>

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - CreditStore — Persistence Singleton for Credit System
 
-final class CreditStore {
+nonisolated final class CreditStore: @unchecked Sendable {
     
     static let shared = CreditStore()
 
@@ -16,6 +16,10 @@ final class CreditStore {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+    
+    // ─────────────────────────────────────────────
+    // MARK: - Customer CRUD
+    // ─────────────────────────────────────────────
     
     func addCustomer(_ customer: Customer) {
         var c = customer
@@ -46,25 +50,35 @@ final class CreditStore {
     }
 
     @discardableResult
-    func ensureCustomer(named rawName: String?, defaultName: String = "Customer", gstin: String? = nil) -> Customer {
+    func ensureCustomer(named rawName: String?, defaultName: String = "Customer", gstin: String? = nil, phone: String? = nil) -> Customer {
         let resolvedName = normalizedName(rawName) ?? defaultName
+        let cleanedPhone = UPIWhatsAppShare.indianMobileDigits(phone)
 
         let all = db.getAllCustomers()
         if var existing = all.first(where: { $0.name.caseInsensitiveCompare(resolvedName) == .orderedSame }) {
-            // Update GSTIN if provided and different
+            var changed = false
             if let newGSTIN = gstin, !newGSTIN.isEmpty, existing.gstin != newGSTIN {
                 existing.gstin = newGSTIN
+                changed = true
+            }
+            if let cleanedPhone, existing.phone != cleanedPhone {
+                existing.phone = cleanedPhone
+                changed = true
+            }
+            if changed {
                 updateCustomer(existing)
             }
             return existing
         }
 
-        let customer = Customer(id: UUID(), name: resolvedName, phone: nil, gstin: gstin)
+        let customer = Customer(id: UUID(), name: resolvedName, phone: cleanedPhone, gstin: gstin)
         addCustomer(customer)
         return customer
     }
     
-
+    // ─────────────────────────────────────────────
+    // MARK: - Supplier CRUD
+    // ─────────────────────────────────────────────
     
     func addSupplier(_ supplier: Supplier) {
         var s = supplier
@@ -113,17 +127,27 @@ final class CreditStore {
         return supplier
     }
     
-
+    // ─────────────────────────────────────────────
+    // MARK: - Customer Payment CRUD
+    // ─────────────────────────────────────────────
     
     func addPayment(_ payment: Payment) {
-        db.insertCustomerPayment(payment)
+        var rounded = payment
+        rounded.amount = Money.round2(payment.amount)
+        db.insertCustomerPayment(rounded)
     }
     
     func getPayments(forCustomer customerID: UUID) -> [Payment] {
         return db.getCustomerPayments(forCustomer: customerID)
     }
     
-
+    /// Net balance for a customer:
+    /// Positive = customer owes you (you'll receive)
+    /// Negative = you owe the customer
+    ///
+    /// Customer ledger meaning:
+    /// - .paid: you gave value to customer (e.g. credit sale) => receivable increases
+    /// - .received: customer paid you back => receivable decreases
     func getNetBalance(forCustomer customerID: UUID) -> Double {
         let payments = db.getCustomerPayments(forCustomer: customerID)
         var balance: Double = 0
@@ -135,25 +159,30 @@ final class CreditStore {
                 balance += p.amount    // You gave customer value → receivable goes up
             }
         }
-        return balance
+        return Money.round2(balance)
     }
     
-
+    // ─────────────────────────────────────────────
+    // MARK: - Supplier Payment CRUD
+    // ─────────────────────────────────────────────
     
     func addSupplierPayment(_ payment: SupplierPayment) {
-        db.insertSupplierPaymentRecord(payment)
+        var rounded = payment
+        rounded.amount = Money.round2(payment.amount)
+        db.insertSupplierPaymentRecord(rounded)
     }
 
-    func addCreditSale(amount: Double, customerName: String?, note: String? = nil) {
+    func addCreditSale(amount: Double, customerName: String?, phone: String? = nil, note: String? = nil, transactionID: UUID? = nil) {
         guard amount > 0 else { return }
-        let customer = ensureCustomer(named: customerName, defaultName: "Customer")
+        let customer = ensureCustomer(named: customerName, defaultName: "Customer", phone: phone)
         let payment = Payment(
             id: UUID(),
             customerID: customer.id,
             amount: amount,
             date: Date(),
             type: .paid,
-            note: note
+            note: note,
+            transactionID: transactionID
         )
         addPayment(payment)
     }
@@ -175,7 +204,10 @@ final class CreditStore {
     func getPayments(forSupplier supplierID: UUID) -> [SupplierPayment] {
         return db.getSupplierPayments(forSupplier: supplierID)
     }
-
+    
+    /// Net balance for a supplier:
+    /// Positive = supplier gave you more than you paid → you owe them
+    /// Negative = you paid more than they gave
     func getNetBalance(forSupplier supplierID: UUID) -> Double {
         let payments = db.getSupplierPayments(forSupplier: supplierID)
         var balance: Double = 0
@@ -187,24 +219,28 @@ final class CreditStore {
                 balance -= p.amount    // Money paid to supplier → you owe less
             }
         }
-        return balance
+        return Money.round2(balance)
     }
-
+    
+    // ─────────────────────────────────────────────
+    // MARK: - Aggregate Helpers
+    // ─────────────────────────────────────────────
+    
     /// Total amount all customers owe you
     func getTotalReceivable() -> Double {
         let customers = db.getAllCustomers()
-        return customers.reduce(0.0) { sum, c in
+        return Money.round2(customers.reduce(0.0) { sum, c in
             let balance = getNetBalance(forCustomer: c.id)
             return sum + max(0, balance)
-        }
+        })
     }
     
     /// Total amount you owe all suppliers
     func getTotalPayable() -> Double {
         let suppliers = db.getAllSuppliersFromDB()
-        return suppliers.reduce(0.0) { sum, s in
+        return Money.round2(suppliers.reduce(0.0) { sum, s in
             let balance = getNetBalance(forSupplier: s.id)
             return sum + max(0, balance)
-        }
+        })
     }
 }

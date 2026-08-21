@@ -4,7 +4,7 @@ import Foundation
 
 
 
-protocol Database {
+nonisolated protocol Database {
     // Item
     func getItem(id: UUID) throws -> Item?
     func getAllItems() throws -> [Item]
@@ -44,6 +44,9 @@ protocol Database {
     func getSettings() throws -> AppSettings
     func updateSettings(_ settings: AppSettings) throws
 
+    func performWrite(_ body: () throws -> Void) throws
+    func decrementBatchQuantity(id: UUID, by quantity: Double) throws
+
     // Product Photos (for object detection fingerprinting)
     func insertProductPhoto(_ photo: ProductPhoto) throws
     func getProductPhotos(for itemID: UUID) throws -> [ProductPhoto]
@@ -76,13 +79,47 @@ enum DataModelError: Error, LocalizedError {
 
 // MARK: - DataModel (Domain Logic)
 
-final class DataModel {
+nonisolated final class DataModel: @unchecked Sendable {
     
     public let db: Database
      let calendar = Calendar.current
     
     init(database: Database) {
         self.db = database
+    }
+
+    /// Money only. Do not use for kg/litre quantity.
+    private func rupees(_ value: Double) -> Double { Money.round2(value) }
+
+    private func lineRupees(quantity: Double, rate: Double) -> Double {
+        Money.line(quantity: quantity, rate: rate)
+    }
+
+    private func resolveBuyerPlaceOfSupply(
+        isGST: Bool,
+        explicit: String?,
+        gstin: String?,
+        shopStateCode: String?
+    ) throws -> String? {
+        let fromGSTINOrExplicit = GSTEngine.buyerStateCode(
+            explicit: explicit,
+            gstin: gstin,
+            shopStateCode: nil
+        )
+        if isGST, gstin != nil, fromGSTINOrExplicit == nil {
+            throw DataModelError.custom("Place of supply is required for invoices with a buyer GSTIN.")
+        }
+        if let fromGSTINOrExplicit { return fromGSTINOrExplicit }
+        _ = shopStateCode
+        return nil
+    }
+
+    private func gstInterStateOrThrow(isGST: Bool, sellerCode: String?, buyerCode: String?) throws -> Bool {
+        guard isGST else { return false }
+        guard let known = GSTEngine.isInterStateSupply(sellerStateCode: sellerCode, buyerStateCode: buyerCode) else {
+            throw DataModelError.custom("Place of supply is required for GST invoices. Unknown place of supply is not treated as intra-state.")
+        }
+        return known
     }
     
     // MARK: - PURCHASE FLOW
@@ -128,11 +165,11 @@ final class DataModel {
         var txTotalIGST: Double? = nil
         var txTotalCess: Double? = nil
 
-        if settings.isGSTRegistered, let gstRate = item.gstRate {
-            let isInterState = GSTEngine.isInterStateSupply(
-                sellerStateCode: supplierGSTIN != nil ? String(supplierGSTIN!.prefix(2)) : nil,
-                buyerStateCode: settings.businessStateCode
-            )
+        if settings.isGSTRegistered, let gstRate = item.gstRate,
+           let isInterState = GSTEngine.isInterStateSupply(
+            sellerStateCode: supplierGSTIN.map { String($0.prefix(2)) },
+            buyerStateCode: settings.businessStateCode
+           ) {
             let taxResult = GSTEngine.calculateTax(
                 price: costPrice,
                 quantity: quantity,
@@ -167,7 +204,7 @@ final class DataModel {
             customerName: nil,
             customerPhone: nil,
             supplierName: supplierName,
-            totalAmount: quantity * costPrice,
+            totalAmount: lineRupees(quantity: quantity, rate: costPrice),
             notes: nil,
             buyerGSTIN: txBuyerGSTIN,
             placeOfSupply: txPlaceOfSupply,
@@ -200,32 +237,37 @@ final class DataModel {
         txItem.igstAmount = txItemIGST
         txItem.cessAmount = txItemCess
         
-        let batch = ItemBatch(
-            id: UUID(),
-            itemID: itemID,
-            purchaseTransactionID: transaction.id,
-            quantityPurchased: quantity,
-            quantityRemaining: quantity,
-            costPrice: costPrice,
-            sellingPrice: sellingPrice,
-            expiryDate: expiryDate,
-            receivedDate: now
-        )
         item.defaultCostPrice = costPrice
         item.defaultSellingPrice = sellingPrice
         item.defaultPriceUpdatedAt = now
-        item.currentStock += quantity
-        item.lastRestockDate = now
         
         try db.insertTransaction(transaction)
         try db.insertTransactionItems([txItem])
-        try db.insertBatch(batch)
+
+        // Services: no batch or stock tracking
+        if !item.isService {
+            let batch = ItemBatch(
+                id: UUID(),
+                itemID: itemID,
+                purchaseTransactionID: transaction.id,
+                quantityPurchased: quantity,
+                quantityRemaining: quantity,
+                costPrice: costPrice,
+                sellingPrice: sellingPrice,
+                expiryDate: expiryDate,
+                receivedDate: now
+            )
+            try db.insertBatch(batch)
+            item.currentStock += quantity
+            item.lastRestockDate = now
+        }
+
         try db.updateItem(item)
         try db.updateSettings(settings)
         
         let summary = try updatedDailySummary(
             date: day,
-            purchaseAmount: quantity * costPrice
+            purchaseAmount: lineRupees(quantity: quantity, rate: costPrice)
         )
         try db.upsertDailySummary(summary)
         return invoiceNumber
@@ -257,9 +299,10 @@ final class DataModel {
         // GST accumulators (for ITC — Input Tax Credit)
         let isGST = settings.isGSTRegistered && settings.gstScheme != "composition"
         let isInterState = isGST ? GSTEngine.isInterStateSupply(
-            sellerStateCode: supplierGSTIN != nil ? String(supplierGSTIN!.prefix(2)) : nil,
+            sellerStateCode: supplierGSTIN.map { String($0.prefix(2)) },
             buyerStateCode: settings.businessStateCode
         ) : false
+        let applyPurchaseGST = isGST && isInterState != nil
         var billTotalTaxable: Double = 0
         var billTotalCGST: Double = 0
         var billTotalSGST: Double = 0
@@ -295,14 +338,14 @@ final class DataModel {
             )
 
             // Per-item GST calculation (Regular scheme — for ITC)
-            if isGST, let gstRate = item.gstRate {
+            if applyPurchaseGST, let gstRate = item.gstRate, let interState = isInterState {
                 let taxResult = GSTEngine.calculateTax(
                     price: purchaseItem.costPrice,
                     quantity: purchaseItem.quantity,
                     gstRate: gstRate,
                     cessRate: item.cessRate ?? 0,
-                    isInterState: isInterState,
-                    pricesIncludeGST: settings.pricesIncludeGST
+                    isInterState: interState,
+                    pricesIncludeGST: false
                 )
                 txItem.hsnCode = item.hsnCode
                 txItem.gstRate = gstRate
@@ -322,27 +365,30 @@ final class DataModel {
 
             allTxItems.append(txItem)
             
-            let batch = ItemBatch(
-                id: UUID(),
-                itemID: purchaseItem.itemID,
-                purchaseTransactionID: transactionID,
-                quantityPurchased: purchaseItem.quantity,
-                quantityRemaining: purchaseItem.quantity,
-                costPrice: purchaseItem.costPrice,
-                sellingPrice: purchaseItem.sellingPrice,
-                expiryDate: purchaseItem.expiryDate,
-                receivedDate: now
-            )
-            allBatches.append(batch)
-            
+            // Services: no batch or stock tracking
+            if !item.isService {
+                let batch = ItemBatch(
+                    id: UUID(),
+                    itemID: purchaseItem.itemID,
+                    purchaseTransactionID: transactionID,
+                    quantityPurchased: purchaseItem.quantity,
+                    quantityRemaining: purchaseItem.quantity,
+                    costPrice: purchaseItem.costPrice,
+                    sellingPrice: purchaseItem.sellingPrice,
+                    expiryDate: purchaseItem.expiryDate,
+                    receivedDate: now
+                )
+                allBatches.append(batch)
+                item.currentStock += purchaseItem.quantity
+                item.lastRestockDate = now
+            }
+
             item.defaultCostPrice = purchaseItem.costPrice
             item.defaultSellingPrice = purchaseItem.sellingPrice
             item.defaultPriceUpdatedAt = now
-            item.currentStock += purchaseItem.quantity
-            item.lastRestockDate = now
             inMemoryItems[purchaseItem.itemID] = item
             
-            totalPurchaseAmount += purchaseItem.quantity * purchaseItem.costPrice
+            totalPurchaseAmount += lineRupees(quantity: purchaseItem.quantity, rate: purchaseItem.costPrice)
         }
         
         let transaction = Transaction(
@@ -358,7 +404,7 @@ final class DataModel {
             buyerGSTIN: isGST ? supplierGSTIN : nil,
             placeOfSupply: isGST ? settings.businessState : nil,
             placeOfSupplyCode: isGST ? settings.businessStateCode : nil,
-            isInterState: isGST ? isInterState : nil,
+            isInterState: isInterState,
             totalTaxableValue: isGST && hasGSTItems ? billTotalTaxable : nil,
             totalCGST: isGST && hasGSTItems ? billTotalCGST : nil,
             totalSGST: isGST && hasGSTItems ? billTotalSGST : nil,
@@ -367,24 +413,24 @@ final class DataModel {
             isReverseCharge: false
         )
         
-        try db.insertTransaction(transaction)
-        try db.insertTransactionItems(allTxItems)
-        for batch in allBatches {
-            try db.insertBatch(batch)
+        try db.performWrite {
+            try db.insertTransaction(transaction)
+            try db.insertTransactionItems(allTxItems)
+            for batch in allBatches {
+                try db.insertBatch(batch)
+            }
+            for item in inMemoryItems.values {
+                try db.updateItem(item)
+            }
+            if invoiceNumber == nil {
+                try db.updateSettings(settings)
+            }
+            let summary = try updatedDailySummary(
+                date: day,
+                purchaseAmount: totalPurchaseAmount
+            )
+            try db.upsertDailySummary(summary)
         }
-        for item in inMemoryItems.values {
-            try db.updateItem(item)
-        }
-        
-        if invoiceNumber == nil {
-            try db.updateSettings(settings)
-        }
-        
-        let summary = try updatedDailySummary(
-            date: day,
-            purchaseAmount: totalPurchaseAmount
-        )
-        try db.upsertDailySummary(summary)
         
         return transaction
     }
@@ -428,9 +474,9 @@ final class DataModel {
             batches[i].quantityRemaining -= consumeQty
             consumptions.append((batch: batches[i], consumed: consumeQty))
 
-            totalCost += consumeQty * batches[i].costPrice
+            totalCost += lineRupees(quantity: consumeQty, rate: batches[i].costPrice)
             let price = sellingPrice ?? batches[i].sellingPrice
-            totalRevenue += consumeQty * price
+            totalRevenue += lineRupees(quantity: consumeQty, rate: price)
             remaining -= consumeQty
         }
 
@@ -502,8 +548,8 @@ final class DataModel {
             
             // Track consumption
             batchConsumptions.append((batch: batch, consumed: consumeQty))
-            let batchRevenue = consumeQty * batch.sellingPrice
-            let batchCost = consumeQty * batch.costPrice
+            let batchRevenue = lineRupees(quantity: consumeQty, rate: batch.sellingPrice)
+            let batchCost = lineRupees(quantity: consumeQty, rate: batch.costPrice)
             
             totalRevenue += batchRevenue
             totalCost += batchCost
@@ -516,10 +562,17 @@ final class DataModel {
         let totalProfit = totalRevenue - totalCost
         
         let isGST = settings.isGSTRegistered && settings.gstScheme != "composition"
-        let isInterState = isGST ? GSTEngine.isInterStateSupply(
-            sellerStateCode: settings.businessStateCode,
-            buyerStateCode: buyerStateCode ?? (buyerGSTIN != nil ? String(buyerGSTIN!.prefix(2)) : settings.businessStateCode)
-        ) : false
+        let buyerPOS = try resolveBuyerPlaceOfSupply(
+            isGST: isGST,
+            explicit: buyerStateCode,
+            gstin: buyerGSTIN,
+            shopStateCode: settings.businessStateCode
+        )
+        let isInterState = try gstInterStateOrThrow(
+            isGST: isGST,
+            sellerCode: settings.businessStateCode,
+            buyerCode: buyerPOS
+        )
 
         var txTotalTaxable: Double? = nil
         var txTotalCGST: Double? = nil
@@ -568,8 +621,8 @@ final class DataModel {
             totalAmount: totalRevenue,
             notes: nil,
             buyerGSTIN: isGST ? buyerGSTIN : nil,
-            placeOfSupply: isGST ? (IndianStates.stateByCode(buyerStateCode ?? settings.businessStateCode ?? "")?.name ?? settings.businessState) : nil,
-            placeOfSupplyCode: isGST ? (buyerStateCode ?? settings.businessStateCode) : nil,
+            placeOfSupply: isGST ? (IndianStates.stateByCode(buyerPOS ?? "")?.name ?? settings.businessState) : nil,
+            placeOfSupplyCode: isGST ? buyerPOS : nil,
             isInterState: isGST ? isInterState : nil,
             totalTaxableValue: txTotalTaxable,
             totalCGST: txTotalCGST,
@@ -615,37 +668,34 @@ final class DataModel {
             )
         }
         
-        let updatedBatches = try db.getBatches(for: itemID)
-        let newStock = updatedBatches.reduce(0) { $0 + $1.quantityRemaining }
-        item.currentStock = newStock - quantity  
-        
-        try db.insertTransaction(transaction)
-        try db.insertTransactionItems([txItem])
-        try db.insertSaleItemBatches(saleItemBatches)
-        
-        for batch in batches {
-            try db.updateBatch(batch)
+        try db.performWrite {
+            try db.insertTransaction(transaction)
+            try db.insertTransactionItems([txItem])
+            try db.insertSaleItemBatches(saleItemBatches)
+            for consumption in batchConsumptions {
+                try db.decrementBatchQuantity(id: consumption.batch.id, by: consumption.consumed)
+            }
+            let remainingBatches = try db.getBatches(for: itemID)
+            item.currentStock = remainingBatches.reduce(0) { $0 + $1.quantityRemaining }
+            item.salesCount = (item.salesCount ?? 0) + quantity
+            try db.updateItem(item)
+            try db.updateSettings(settings)
+            let summary = try updatedDailySummary(
+                date: day,
+                revenue: totalRevenue,
+                profit: totalProfit,
+                itemsSold: quantity
+            )
+            try db.upsertDailySummary(summary)
         }
-        
-        try db.updateItem(item)
-        try db.updateSettings(settings) 
-        
-        let summary = try updatedDailySummary(
-            date: day,
-            revenue: totalRevenue,
-            profit: totalProfit,
-            itemsSold: quantity
-        )
-        try db.upsertDailySummary(summary)
-        
-        try updateSalesCountAndTiers(sold: [(itemID: itemID, quantity: quantity)])
     }
     
     func getExpiryAlerts() throws -> [ExpiryAlert] {
         let settings = try db.getSettings()
         let now = Date()
         
-        let items = try getAllItems().filter { $0.isActive }
+        // Exclude services
+        let items = try getAllItems().filter { $0.isActive && !$0.isService }
         
         var alerts: [ExpiryAlert] = []
         
@@ -687,8 +737,9 @@ final class DataModel {
         return alerts.sorted { $0.severity < $1.severity }
     }
     func getLowStockAlerts() throws -> [LowStockAlert] {
+        // Exclude services
         let items = try getAllItems()
-            .filter { $0.isActive && $0.isLowStock }
+            .filter { $0.isActive && !$0.isService && $0.isLowStock }
         
         return items.map { item in
             LowStockAlert(
@@ -730,7 +781,12 @@ final class DataModel {
 
     func reconcileAllStock() {
         do {
-            let items = try db.getAllItems()
+            let items: [Item]
+            if let sqlite = db as? SQLiteDatabase {
+                items = try sqlite.getAllItemsIncludingInactive()
+            } else {
+                items = try db.getAllItems()
+            }
             for var item in items {
                 let batches = try db.getBatches(for: item.id)
                 let trueStock = batches.reduce(0) { $0 + $1.quantityRemaining }
@@ -779,16 +835,24 @@ final class DataModel {
 
         // GST accumulators
         let isGST = settings.isGSTRegistered && settings.gstScheme != "composition"
-        let isInterState = isGST ? GSTEngine.isInterStateSupply(
-            sellerStateCode: settings.businessStateCode,
-            buyerStateCode: buyerStateCode ?? (buyerGSTIN != nil ? String(buyerGSTIN!.prefix(2)) : settings.businessStateCode)
-        ) : false
+        let buyerPOS = try resolveBuyerPlaceOfSupply(
+            isGST: isGST,
+            explicit: buyerStateCode,
+            gstin: buyerGSTIN,
+            shopStateCode: settings.businessStateCode
+        )
+        let isInterState = try gstInterStateOrThrow(
+            isGST: isGST,
+            sellerCode: settings.businessStateCode,
+            buyerCode: buyerPOS
+        )
         var gstItemResults: [(gstRate: Double, result: ItemTaxResult)] = []
         var billTotalTaxable: Double = 0
         var billTotalCGST: Double = 0
         var billTotalSGST: Double = 0
         var billTotalIGST: Double = 0
         var billTotalCess: Double = 0
+        let saleSubtotal = items.reduce(0.0) { $0 + lineRupees(quantity: max(0, $1.quantity), rate: $1.sellingPrice) }
         
 
         var outOfStockItemNames: [String] = []
@@ -796,7 +860,10 @@ final class DataModel {
         
         for saleItem in items {
             guard saleItem.quantity > 0 else { continue }
-            
+
+            // Skip stock pre-check for service items
+            if let item = try db.getItem(id: saleItem.itemID), item.isService { continue }
+
             var batches = try preCheckBatches[saleItem.itemID] ?? db.getBatches(for: saleItem.itemID).filter { $0.quantityRemaining > 0 }
             let totalAvailable = batches.reduce(0) { $0 + $1.quantityRemaining }
             
@@ -831,31 +898,39 @@ final class DataModel {
             } else {
                 throw DataModelError.itemNotFound
             }
-            
-            var batches = try inMemoryBatches[saleItem.itemID] ?? db.getBatches(for: saleItem.itemID)
-                .filter { $0.quantityRemaining > 0 }
-                .sorted { b1, b2 in
-                    if let e1 = b1.expiryDate, let e2 = b2.expiryDate { return e1 < e2 }
-                    if b1.expiryDate == nil && b2.expiryDate == nil { return b1.receivedDate < b2.receivedDate }
-                    return b1.expiryDate != nil
-                }
-            
-            let totalAvailable = batches.reduce(0) { $0 + $1.quantityRemaining }
 
-            
-            var remaining = saleItem.quantity
-            var batchConsumptions: [(batch: ItemBatch, consumed: Double)] = []
+            let itemRevenue = lineRupees(quantity: saleItem.quantity, rate: saleItem.sellingPrice)
             var itemCost: Double = 0
-            for i in batches.indices where remaining > 0 {
-                let consumeQty = min(batches[i].quantityRemaining, remaining)
-                batches[i].quantityRemaining -= consumeQty
-                batchConsumptions.append((batch: batches[i], consumed: consumeQty))
-                itemCost += consumeQty * batches[i].costPrice
-                remaining -= consumeQty
-            }
-            let itemRevenue = saleItem.quantity * saleItem.sellingPrice
-            let avgCostPrice = itemCost / saleItem.quantity
+            var avgCostPrice: Double = item.defaultCostPrice
+            var batchConsumptions: [(batch: ItemBatch, consumed: Double)] = []
             let txItemID = UUID()
+
+            if item.isService {
+                // Services: no FIFO, cost = default cost price
+                itemCost = lineRupees(quantity: saleItem.quantity, rate: item.defaultCostPrice)
+                avgCostPrice = item.defaultCostPrice
+            } else {
+                // Goods: FIFO batch consumption
+                var batches = try inMemoryBatches[saleItem.itemID] ?? db.getBatches(for: saleItem.itemID)
+                    .filter { $0.quantityRemaining > 0 }
+                    .sorted { b1, b2 in
+                        if let e1 = b1.expiryDate, let e2 = b2.expiryDate { return e1 < e2 }
+                        if b1.expiryDate == nil && b2.expiryDate == nil { return b1.receivedDate < b2.receivedDate }
+                        return b1.expiryDate != nil
+                    }
+
+                var remaining = saleItem.quantity
+                for i in batches.indices where remaining > 0 {
+                    let consumeQty = min(batches[i].quantityRemaining, remaining)
+                    batches[i].quantityRemaining -= consumeQty
+                    batchConsumptions.append((batch: batches[i], consumed: consumeQty))
+                    itemCost += lineRupees(quantity: consumeQty, rate: batches[i].costPrice)
+                    remaining -= consumeQty
+                }
+                avgCostPrice = saleItem.quantity > 0 ? itemCost / saleItem.quantity : 0
+                inMemoryBatches[saleItem.itemID] = batches
+            }
+
             var txItem = TransactionItem(
                 id: txItemID,
                 transactionID: transactionID,
@@ -869,9 +944,17 @@ final class DataModel {
             )
 
             // Per-item GST calculation (Regular scheme only)
-            if isGST, let gstRate = item.gstRate {
+            if isGST {
+                guard let gstRate = item.gstRate else {
+                    throw DataModelError.custom("Set a GST rate for \(item.name) before selling on a GST invoice.")
+                }
                 let taxResult = GSTEngine.calculateTax(
-                    price: saleItem.sellingPrice,
+                    price: GSTEngine.discountedUnitPrice(
+                        lineRevenue: lineRupees(quantity: saleItem.quantity, rate: saleItem.sellingPrice),
+                        subtotal: saleSubtotal,
+                        discount: discount,
+                        quantity: saleItem.quantity
+                    ),
                     quantity: saleItem.quantity,
                     gstRate: gstRate,
                     cessRate: item.cessRate ?? 0,
@@ -896,28 +979,44 @@ final class DataModel {
 
             allTxItems.append(txItem)
             
-            for consumption in batchConsumptions {
-                allSaleItemBatches.append(SaleItemBatch(
-                    id: UUID(),
-                    transactionItemID: txItemID,
-                    batchID: consumption.batch.id,
-                    quantityConsumed: consumption.consumed,
-                    costPriceUsed: consumption.batch.costPrice,
-                    sellingPriceUsed: saleItem.sellingPrice,
-                    batchReceivedDate: consumption.batch.receivedDate,
-                    batchExpiryDate: consumption.batch.expiryDate
-                ))
+            // Batch tracking (goods only)
+            if !item.isService {
+                for consumption in batchConsumptions {
+                    allSaleItemBatches.append(SaleItemBatch(
+                        id: UUID(),
+                        transactionItemID: txItemID,
+                        batchID: consumption.batch.id,
+                        quantityConsumed: consumption.consumed,
+                        costPriceUsed: consumption.batch.costPrice,
+                        sellingPriceUsed: saleItem.sellingPrice,
+                        batchReceivedDate: consumption.batch.receivedDate,
+                        batchExpiryDate: consumption.batch.expiryDate
+                    ))
+                }
+                item.currentStock -= saleItem.quantity
             }
-            
-            item.currentStock -= saleItem.quantity
+
+            item.salesCount = (item.salesCount ?? 0) + saleItem.quantity
             inMemoryItems[saleItem.itemID] = item
-            inMemoryBatches[saleItem.itemID] = batches
             
             totalRevenue += itemRevenue
             totalCost += itemCost
         }
-        let grandTotal = totalRevenue - discount + adjustment
-        let totalProfit = totalRevenue - totalCost
+        if isGST && !gstItemResults.isEmpty {
+            let breakup = GSTEngine.generateBreakup(itemResults: gstItemResults)
+            billTotalTaxable = breakup.totalTaxableValue
+            billTotalCGST = breakup.totalCGST
+            billTotalSGST = breakup.totalSGST
+            billTotalIGST = breakup.totalIGST
+            billTotalCess = breakup.totalCess
+        }
+        let grandTotal: Double
+        if isGST && !gstItemResults.isEmpty {
+            grandTotal = rupees(billTotalTaxable + billTotalCGST + billTotalSGST + billTotalIGST + billTotalCess + adjustment)
+        } else {
+            grandTotal = rupees(totalRevenue - discount + adjustment)
+        }
+        let totalProfit = rupees(totalRevenue - totalCost)
         
         let transaction = Transaction(
             id: transactionID,
@@ -930,8 +1029,8 @@ final class DataModel {
             totalAmount: grandTotal,
             notes: nil,
             buyerGSTIN: isGST ? buyerGSTIN : nil,
-            placeOfSupply: isGST ? (IndianStates.stateByCode(buyerStateCode ?? settings.businessStateCode ?? "")?.name ?? settings.businessState) : nil,
-            placeOfSupplyCode: isGST ? (buyerStateCode ?? settings.businessStateCode) : nil,
+            placeOfSupply: isGST ? (IndianStates.stateByCode(buyerPOS ?? "")?.name ?? settings.businessState) : nil,
+            placeOfSupplyCode: isGST ? buyerPOS : nil,
             isInterState: isGST ? isInterState : nil,
             totalTaxableValue: isGST && !gstItemResults.isEmpty ? billTotalTaxable : nil,
             totalCGST: isGST && !gstItemResults.isEmpty ? billTotalCGST : nil,
@@ -941,163 +1040,28 @@ final class DataModel {
             isReverseCharge: false
         )
         
-        try db.insertTransaction(transaction)
-        try db.insertTransactionItems(allTxItems)
-        try db.insertSaleItemBatches(allSaleItemBatches)
-        
-        for batches in inMemoryBatches.values {
-            for batch in batches {
-                try db.updateBatch(batch)
+        try db.performWrite {
+            try db.insertTransaction(transaction)
+            try db.insertTransactionItems(allTxItems)
+            try db.insertSaleItemBatches(allSaleItemBatches)
+            for sib in allSaleItemBatches {
+                try db.decrementBatchQuantity(id: sib.batchID, by: sib.quantityConsumed)
             }
-        }
-        for item in inMemoryItems.values {
-            try db.updateItem(item)
-        }
-        if invoiceNumber == nil {
-            try db.updateSettings(settings)
-        }
-        let summary = try updatedDailySummary(
-            date: day,
-            revenue: grandTotal,
-            profit: totalProfit,
-            itemsSold: Double(totalItemsSold)
-        )
-        try db.upsertDailySummary(summary)
-        let sold = items.map { (itemID: $0.itemID, quantity: $0.quantity) }
-        try updateSalesCountAndTiers(sold: sold)
-        
-        return transaction
-    }
-     func updateSalesCountAndTiers(sold: [(itemID: UUID, quantity: Double)]) throws {
-        for (id, qty) in sold {
-            guard var item = try db.getItem(id: id) else { continue }
-            item.salesCount = (item.salesCount ?? 0) + Int(qty)
-            try db.updateItem(item)
-        }
-        var all = try db.getAllItems()
-        all.sort { ($0.salesCount ?? 0) > ($1.salesCount ?? 0) }
-        let n = all.count
-        let t1 = max(1, n / 10)
-        let t2 = max(0, n * 4 / 10)
-        for (i, var item) in all.enumerated() {
-            if i < t1 { item.salesTier = 1 }
-            else if i < t1 + t2 { item.salesTier = 2 }
-            else { item.salesTier = 3 }
-            try db.updateItem(item)
-        }
-    }
-    func recordSaleWithoutStockCheck(
-        items: [(itemID: UUID, quantity: Double, sellingPrice: Double)],
-        customerName: String?,
-        customerPhone: String?,
-        discount: Double = 0,
-        adjustment: Double = 0,
-        invoiceNumber: String? = nil,
-        buyerGSTIN: String? = nil,
-        buyerStateCode: String? = nil
-    ) throws -> Transaction {
-        guard !items.isEmpty else {
-            throw DataModelError.custom("No items to sell")
-        }
-        let now = Date()
-        let day = calendar.startOfDay(for: now)
-        var settings = try db.getSettings()
-        let transactionID = UUID()
-        var allTxItems: [TransactionItem] = []
-        var totalRevenue: Double = 0
-        let totalItemsSold = Set(items.filter { $0.quantity > 0 }.map { $0.itemID }).count
-
-        // GST accumulators
-        let isGST = settings.isGSTRegistered && settings.gstScheme != "composition"
-        let isInterState = isGST ? GSTEngine.isInterStateSupply(
-            sellerStateCode: settings.businessStateCode,
-            buyerStateCode: buyerStateCode ?? (buyerGSTIN != nil ? String(buyerGSTIN!.prefix(2)) : settings.businessStateCode)
-        ) : false
-        var gstItemResults: [(gstRate: Double, result: ItemTaxResult)] = []
-        var billTotalTaxable: Double = 0
-        var billTotalCGST: Double = 0
-        var billTotalSGST: Double = 0
-        var billTotalIGST: Double = 0
-        var billTotalCess: Double = 0
-
-        for saleItem in items {
-            guard saleItem.quantity > 0 else { continue }
-            let itemOpt = try db.getItem(id: saleItem.itemID)
-            let itemName = itemOpt?.name ?? "Unknown"
-            let itemUnit = itemOpt?.unit ?? "piece"
-            var txItem = TransactionItem(
-                id: UUID(),
-                transactionID: transactionID,
-                itemID: saleItem.itemID,
-                itemName: itemName,
-                unit: itemUnit,
-                quantity: saleItem.quantity,
-                sellingPricePerUnit: saleItem.sellingPrice,
-                costPricePerUnit: nil, // Unknown — no batch consumed
-                createdDate: now
+            for item in inMemoryItems.values {
+                try db.updateItem(item)
+            }
+            if invoiceNumber == nil {
+                try db.updateSettings(settings)
+            }
+            let summary = try updatedDailySummary(
+                date: day,
+                revenue: grandTotal,
+                profit: totalProfit,
+                itemsSold: Double(totalItemsSold)
             )
-
-
-            if isGST, let item = itemOpt, let gstRate = item.gstRate {
-                let taxResult = GSTEngine.calculateTax(
-                    price: saleItem.sellingPrice,
-                    quantity: saleItem.quantity,
-                    gstRate: gstRate,
-                    cessRate: item.cessRate ?? 0,
-                    isInterState: isInterState,
-                    pricesIncludeGST: settings.pricesIncludeGST
-                )
-                txItem.hsnCode = item.hsnCode
-                txItem.gstRate = gstRate
-                txItem.taxableValue = taxResult.taxableValue
-                txItem.cgstAmount = taxResult.cgst
-                txItem.sgstAmount = taxResult.sgst
-                txItem.igstAmount = taxResult.igst
-                txItem.cessAmount = taxResult.cess
-
-                gstItemResults.append((gstRate: gstRate, result: taxResult))
-                billTotalTaxable += taxResult.taxableValue
-                billTotalCGST += taxResult.cgst
-                billTotalSGST += taxResult.sgst
-                billTotalIGST += taxResult.igst
-                billTotalCess += taxResult.cess
-            }
-
-            allTxItems.append(txItem)
-            totalRevenue += saleItem.quantity * saleItem.sellingPrice
+            try db.upsertDailySummary(summary)
         }
-        let grandTotal = totalRevenue - discount + adjustment
-        let transaction = Transaction(
-            id: transactionID,
-            type: .sale,
-            date: now,
-            invoiceNumber: invoiceNumber ?? settings.generateNextInvoice(),
-            customerName: customerName,
-            customerPhone: customerPhone,
-            supplierName: nil,
-            totalAmount: grandTotal,
-            notes: "Recorded with insufficient stock",
-            buyerGSTIN: isGST ? buyerGSTIN : nil,
-            placeOfSupply: isGST ? (IndianStates.stateByCode(buyerStateCode ?? settings.businessStateCode ?? "")?.name ?? settings.businessState) : nil,
-            placeOfSupplyCode: isGST ? (buyerStateCode ?? settings.businessStateCode) : nil,
-            isInterState: isGST ? isInterState : nil,
-            totalTaxableValue: isGST && !gstItemResults.isEmpty ? billTotalTaxable : nil,
-            totalCGST: isGST && !gstItemResults.isEmpty ? billTotalCGST : nil,
-            totalSGST: isGST && !gstItemResults.isEmpty ? billTotalSGST : nil,
-            totalIGST: isGST && !gstItemResults.isEmpty ? billTotalIGST : nil,
-            totalCess: isGST && !gstItemResults.isEmpty ? billTotalCess : nil,
-            isReverseCharge: false
-        )
-        try db.insertTransaction(transaction)
-        try db.insertTransactionItems(allTxItems)
-        if invoiceNumber == nil {
-            try db.updateSettings(settings)
-        }
-        let summary = try updatedDailySummary(
-            date: day, revenue: grandTotal, profit: 0, itemsSold: Double(totalItemsSold)
-        )
-        try db.upsertDailySummary(summary)
-
+        
         return transaction
     }
     
@@ -1125,7 +1089,10 @@ final class DataModel {
                 stats.saleCount += 1
                 let items = (try? db.getTransactionItems(for: tx.id)) ?? []
                 for item in items {
-                    stats.profit += item.quantity * ((item.sellingPricePerUnit ?? 0) - (item.costPricePerUnit ?? 0))
+                    stats.profit += rupees(
+                        lineRupees(quantity: item.quantity, rate: item.sellingPricePerUnit ?? 0)
+                            - lineRupees(quantity: item.quantity, rate: item.costPricePerUnit ?? 0)
+                    )
                     stats.itemsSold += item.quantity
                 }
             case .purchase:
@@ -1184,7 +1151,7 @@ final class DataModel {
     func getTotalInvestment() -> Double {
         guard let items = try? db.getAllItems() else { return 0 }
         var total: Double = 0
-        for item in items {
+        for item in items where !item.isService {
             if let batches = try? db.getBatches(for: item.id) {
                 for batch in batches where batch.quantityRemaining > 0 {
                     total += batch.quantityRemaining * batch.costPrice
@@ -1269,7 +1236,7 @@ extension DataModel {
             customerName: customerName,
             customerPhone: customerPhone,
             supplierName: nil,
-            totalAmount: quantity * sellingPrice,
+            totalAmount: lineRupees(quantity: quantity, rate: sellingPrice),
             notes: "⚠️ Quick sale - item details incomplete"
         )
         
@@ -1311,7 +1278,7 @@ extension DataModel {
         
         let summary = try updatedDailySummary(
             date: day,
-            revenue: quantity * sellingPrice,
+            revenue: lineRupees(quantity: quantity, rate: sellingPrice),
             profit: 0,  // Can't calculate without cost
             itemsSold: quantity
         )
@@ -1366,7 +1333,7 @@ extension DataModel {
             customerName: nil,
             customerPhone: nil,
             supplierName: supplierName,
-            totalAmount: incompleteSale.quantity * costPrice,
+            totalAmount: lineRupees(quantity: incompleteSale.quantity, rate: costPrice),
             notes: "Retroactive purchase for incomplete sale #\(incompleteSale.id)"
         )
         
@@ -1430,7 +1397,10 @@ extension DataModel {
         incompleteSale.expiryDate = expiryDate
         
         let saleDate = calendar.startOfDay(for: incompleteSale.createdAt)
-        let profit = incompleteSale.quantity * (incompleteSale.sellingPricePerUnit - costPrice)
+        let profit = rupees(
+            lineRupees(quantity: incompleteSale.quantity, rate: incompleteSale.sellingPricePerUnit)
+                - lineRupees(quantity: incompleteSale.quantity, rate: costPrice)
+        )
         
         let summary = try updatedDailySummary(
             date: saleDate,

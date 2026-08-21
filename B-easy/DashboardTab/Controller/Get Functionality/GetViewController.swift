@@ -123,7 +123,7 @@ extension GetViewController: EditProfileDelegate {
         var newCustomer = Customer(
             id: UUID(),
             name: name,
-            phone: phone ?? ""
+            phone: UPIWhatsAppShare.indianMobileDigits(phone)
         )
         newCustomer.profileImage = image
         

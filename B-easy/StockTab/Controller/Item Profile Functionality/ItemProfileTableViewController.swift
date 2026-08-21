@@ -26,11 +26,24 @@ class ItemProfileTableViewController: UITableViewController {
     var stockHistory: [StockHistoryEntry] = []
     
     enum RowType {
-        case name, quantity, unit, alternateUnitName, alternateUnitFactor, costPrice, sellingPrice, stockValue, lowStockAlert, barcode, hsn, gst
+        case itemType, name, quantity, unit, alternateUnitName, alternateUnitFactor, costPrice, sellingPrice, stockValue, barcode, hsn, gst, lowStock
     }
     
     var visibleRows: [RowType] {
-        var rows: [RowType] = [.name, .quantity, .unit, .alternateUnitName, .alternateUnitFactor, .costPrice, .sellingPrice, .stockValue, .lowStockAlert, .barcode]
+        let isService = item?.isService ?? false
+        var rows: [RowType] = [.itemType, .name]
+
+        if !isService {
+            rows.append(contentsOf: [.quantity, .lowStock, .unit, .alternateUnitName, .alternateUnitFactor])
+        } else {
+            rows.append(.unit)
+        }
+
+        rows.append(contentsOf: [.costPrice, .sellingPrice])
+
+        if !isService {
+            rows.append(contentsOf: [.stockValue, .barcode])
+        }
         
         let isGST = (try? dm.db.getSettings().isGSTRegistered) ?? false
         if isGST {
@@ -226,7 +239,10 @@ class ItemProfileTableViewController: UITableViewController {
                 for txItem in items where txItem.itemID == itemID {
                     let sell = txItem.sellingPricePerUnit ?? 0
                     let cost = txItem.costPricePerUnit ?? itemDefaultCP
-                    totalProfit += txItem.quantity * (sell - cost)
+                    totalProfit += Money.round2(
+                        Money.line(quantity: txItem.quantity, rate: sell)
+                            - Money.line(quantity: txItem.quantity, rate: cost)
+                    )
                 }
             }
             
@@ -286,12 +302,13 @@ class ItemProfileTableViewController: UITableViewController {
             var runningBalance = 0.0
             let sortedDates = historyDict.keys.sorted()
             
-            stockHistory = sortedDates.map { date in
+            let chronological = sortedDates.map { date -> StockHistoryEntry in
                 let stockIn = historyDict[date]?.stockIn ?? 0
                 let soldOut = historyDict[date]?.soldOut ?? 0
                 runningBalance += stockIn - soldOut
                 return StockHistoryEntry(date: date, stockIn: stockIn, soldOut: soldOut, balance: runningBalance)
             }
+            stockHistory = Array(chronological.reversed())
             
         } catch {
             stockHistory = []
@@ -302,6 +319,21 @@ class ItemProfileTableViewController: UITableViewController {
         _ = sender.date
         
         tableView.reloadSections(IndexSet(integer: 1), with: .automatic)
+    }
+
+    @objc private func lowStockBellTapped(_ sender: UIButton) {
+        guard let row = visibleRows.firstIndex(of: .lowStock),
+              let cell = tableView.cellForRow(at: IndexPath(row: row, section: 0)) as? LabelTextFieldTableViewCell else { return }
+        cell.textField.becomeFirstResponder()
+    }
+
+    @objc private func profileItemTypeChanged(_ sender: UISegmentedControl) {
+        item?.itemType = sender.selectedSegmentIndex == 1 ? .services : .goods
+        if item?.itemType == .services {
+            item?.lowStockThreshold = 0
+            item?.barcode = nil
+        }
+        tableView.reloadSections(IndexSet(integer: 0), with: .automatic)
     }
     
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -383,6 +415,32 @@ class ItemProfileTableViewController: UITableViewController {
             case 0:
                 let rowType = visibleRows[indexPath.row]
                 switch rowType {
+                    case .itemType:
+                        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+                        cell.selectionStyle = .none
+
+                        let titleLabel = UILabel()
+                        titleLabel.text = "Type"
+                        titleLabel.font = .systemFont(ofSize: 17)
+                        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+                        cell.contentView.addSubview(titleLabel)
+
+                        let seg = UISegmentedControl(items: ["Goods", "Service"])
+                        seg.selectedSegmentIndex = (item?.isService == true) ? 1 : 0
+                        seg.translatesAutoresizingMaskIntoConstraints = false
+                        seg.addTarget(self, action: #selector(profileItemTypeChanged(_:)), for: .valueChanged)
+                        cell.contentView.addSubview(seg)
+
+                        NSLayoutConstraint.activate([
+                            titleLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                            titleLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                            seg.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                            seg.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                            seg.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
+                            seg.widthAnchor.constraint(equalToConstant: 160),
+                            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+                        ])
+                        return cell
                     case .name:
                         let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
                         cell.titleLabel.text = "Item Name"
@@ -437,8 +495,31 @@ class ItemProfileTableViewController: UITableViewController {
                         cell.textField.placeholder = "Enter Quantity"
                         cell.textField.text = item?.currentStock.description
                         cell.textField.keyboardType = .numberPad
+                        cell.textField.rightView = nil
+                        cell.textField.rightViewMode = .never
                         cell.onTextChanged = { [weak self] text in
                             self?.item?.currentStock = Double(text) ?? 0
+                        }
+                        return cell
+                    case .lowStock:
+                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+                        cell.titleLabel.text = "Low Stock Alert"
+                        cell.textField.placeholder = "Alert below"
+                        cell.textField.keyboardType = .numberPad
+                        let threshold = item?.lowStockThreshold ?? 0
+                        cell.textField.text = threshold > 0 ? threshold.cleanString : ""
+                        let bell = UIButton(type: .system)
+                        let on = threshold > 0
+                        bell.setImage(UIImage(systemName: on ? "bell.fill" : "bell"), for: .normal)
+                        bell.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
+                        bell.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+                        bell.addTarget(self, action: #selector(lowStockBellTapped(_:)), for: .touchUpInside)
+                        cell.textField.rightView = bell
+                        cell.textField.rightViewMode = .always
+                        cell.onTextChanged = { [weak self] text in
+                            self?.item?.lowStockThreshold = Double(text) ?? 0
+                            let active = (self?.item?.lowStockThreshold ?? 0) > 0
+                            bell.setImage(UIImage(systemName: active ? "bell.fill" : "bell"), for: .normal)
                         }
                         return cell
                     case .unit:
@@ -509,28 +590,6 @@ class ItemProfileTableViewController: UITableViewController {
                         }
                         cell.textField.isEnabled = false
                         return cell
-                    case .lowStockAlert:
-                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-                        cell.titleLabel.text = "Low Stock Alert"
-                        cell.textField.placeholder = "Set threshold (0 = off)"
-                        cell.textField.keyboardType = .decimalPad
-                        let threshold = item?.lowStockThreshold ?? 0
-                        cell.textField.text = threshold > 0 ? threshold.cleanString : ""
-                        if threshold > 0 {
-                            cell.titleLabel.textColor = .systemOrange
-                        }
-                        // Add a reset button as right accessory
-                        let resetBtn = UIButton(type: .system)
-                        resetBtn.setImage(UIImage(systemName: threshold > 0 ? "bell.fill" : "bell.slash"), for: .normal)
-                        resetBtn.tintColor = threshold > 0 ? .systemOrange : .systemGray3
-                        resetBtn.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
-                        resetBtn.addTarget(self, action: #selector(resetLowStockAlertTapped), for: .touchUpInside)
-                        cell.textField.rightView = resetBtn
-                        cell.textField.rightViewMode = .always
-                        cell.onTextChanged = { [weak self] text in
-                            self?.item?.lowStockThreshold = Double(text) ?? 0
-                        }
-                        return cell
                     case .barcode:
                         let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
                         cell.titleLabel.text = "Barcode"
@@ -539,6 +598,7 @@ class ItemProfileTableViewController: UITableViewController {
                         cell.textField.keyboardType = .default
                         let scanBtn = UIButton(type: .system)
                         scanBtn.setImage(UIImage(systemName: "barcode.viewfinder"), for: .normal)
+                        scanBtn.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
                         scanBtn.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
                         scanBtn.addTarget(self, action: #selector(scanBarcodeTapped), for: .touchUpInside)
                         cell.textField.rightView = scanBtn
@@ -546,8 +606,9 @@ class ItemProfileTableViewController: UITableViewController {
                         return cell
                     case .hsn:
                         let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-                        cell.titleLabel.text = "HSN Code"
-                        cell.textField.placeholder = "e.g. 1902"
+                        let isService = item?.isService ?? false
+                        cell.titleLabel.text = isService ? "SAC Code" : "HSN Code"
+                        cell.textField.placeholder = isService ? "e.g. 9983" : "e.g. 1902"
                         cell.textField.text = item?.hsnCode
                         cell.textField.keyboardType = .numberPad
                         
@@ -659,15 +720,6 @@ class ItemProfileTableViewController: UITableViewController {
     
     }
 
-    // MARK: - Low Stock Alert
-
-    @objc func resetLowStockAlertTapped() {
-        item?.lowStockThreshold = 0
-        if let rowIdx = visibleRows.firstIndex(of: .lowStockAlert) {
-            tableView.reloadRows(at: [IndexPath(row: rowIdx, section: 0)], with: .none)
-        }
-    }
-
     // MARK: - Barcode Scan
 
     @objc func scanBarcodeTapped() {
@@ -686,9 +738,11 @@ class ItemProfileTableViewController: UITableViewController {
         scanVC.onBarcodeScanned = { [weak self] barcode in
             guard let self = self else { return }
             // Populate the barcode text field
-            if let cell = self.tableView.cellForRow(at: IndexPath(row: 7, section: 0)) as? LabelTextFieldTableViewCell {
+            if let row = self.visibleRows.firstIndex(of: .barcode),
+               let cell = self.tableView.cellForRow(at: IndexPath(row: row, section: 0)) as? LabelTextFieldTableViewCell {
                 cell.textField.text = barcode
             }
+            self.item?.barcode = barcode
         }
         let nav = UINavigationController(rootViewController: scanVC)
         present(nav, animated: true)

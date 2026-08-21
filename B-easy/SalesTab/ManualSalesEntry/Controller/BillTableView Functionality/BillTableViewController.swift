@@ -17,10 +17,13 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
     }
     var rows: [Row] = []
 
-    private let sheetView = UIView()
+    private let billCardOuterInset: CGFloat = 16
+    private let billCardInnerInset: CGFloat = 24
     var details: BillingDetails?
     private let bottomBar = UIView()
     var isReadOnly = false
+    private var saveButton: UIButton?
+    private var saveSpinnerOverlay: UIView?
 
 
     private enum Section: Int, CaseIterable {
@@ -68,6 +71,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         let shareButton = makeActionButton(title: "Share", action: #selector(didTapShare))
         let saveButton  = makeActionButton(title: "Save", action: #selector(didTapSave))
         saveButton.isHidden = isReadOnly
+        self.saveButton = saveButton
 
         let stack = UIStackView(arrangedSubviews: [printButton, shareButton, saveButton])
         stack.axis = .horizontal
@@ -94,7 +98,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
     private func makeActionButton(title: String, action: Selector) -> UIButton {
         let button = UIButton(type: .system)
         button.setTitle(title, for: .normal)
-        button.setTitleColor(.systemBlue, for: .normal)
+        button.setTitleColor(UIColor(named: "Lime Moss") ?? .systemGreen, for: .normal)
         button.backgroundColor = .systemGray5
         button.layer.cornerRadius = 20
         button.titleLabel?.font = .systemFont(ofSize: 17, weight: .regular)
@@ -152,8 +156,8 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             NSLayoutConstraint.activate([
                 bgView.topAnchor.constraint(equalTo: cell.topAnchor),
                 bgView.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
-                bgView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 16),
-                bgView.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -16)
+                bgView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: billCardOuterInset),
+                bgView.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -billCardOuterInset)
             ])
         }
         
@@ -190,8 +194,8 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             separator.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(separator)
             NSLayoutConstraint.activate([
-                separator.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 32),
-                separator.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -32),
+                separator.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: billCardOuterInset + billCardInnerInset),
+                separator.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -(billCardOuterInset + billCardInnerInset)),
                 separator.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
                 separator.heightAnchor.constraint(equalToConstant: 0.5)
             ])
@@ -247,7 +251,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 let item = details.items[index]
                 let isPurchase = details.transactionType == .purchase
                 let rate = isPurchase ? (item.costPricePerUnit ?? 0) : (item.sellingPricePerUnit ?? 0)
-                let totalPrice = item.quantity * rate
+                let totalPrice = Money.line(quantity: item.quantity, rate: rate)
                 
                 cell.titleLabel.text = item.itemName
                 cell.priceLabel.text = String(format: "₹ %.2f", totalPrice)
@@ -265,7 +269,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 cell.selectionStyle = .none
 
                 let isPurchase = details.transactionType == .purchase
-                let subTotal = details.items.reduce(0.0) { $0 + (isPurchase ? $1.totalCost : $1.totalRevenue) }
+                let subTotal = Money.round2(details.items.reduce(0.0) { $0 + (isPurchase ? $1.totalCost : $1.totalRevenue) })
                 let grand = subTotal - details.discount + details.adjustment
                 
                 cell.titleLabel.text = "Total"
@@ -320,7 +324,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
     @objc private func didTapSave() {
         guard let details = details else { return }
 
-
+        // ── Read-only mode: export bill as PDF to Files ──
         if isReadOnly {
             let pdfData = renderBillAsPDF()
             let fileName = "Invoice_\(details.invoiceNumber).pdf"
@@ -335,26 +339,25 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
 
         let dm = AppDataModel.shared.dataModel
         let db = dm.db
+        let capturedDetails = details
 
+        setSaveInProgress(true)
 
-        var saleItems: [(itemID: UUID, quantity: Double, sellingPrice: Double)] = []
-
-        do {
-
+        LedgerIO.run({
+            var saleItems: [(itemID: UUID, quantity: Double, sellingPrice: Double)] = []
             let existingItems = try db.getAllItems()
             var nameToItem: [String: Item] = [:]
             for item in existingItems {
                 nameToItem[item.name.lowercased()] = item
             }
-            
 
             let now = Date()
-            
-            for txItem in details.items {
+
+            for txItem in capturedDetails.items {
                 let key = txItem.itemName.lowercased()
                 let quantity = txItem.quantity
                 let sellingPrice = txItem.sellingPricePerUnit ?? 0
-                
+
                 if let matched = nameToItem[key] {
                     saleItems.append((itemID: matched.id, quantity: quantity, sellingPrice: sellingPrice))
                 } else {
@@ -369,85 +372,130 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                         currentStock: 0,
                         createdDate: now,
                         lastRestockDate: nil,
-                        isActive: true
+                        isActive: true,
+                        itemType: txItem.itemType ?? .goods
                     )
-                    
+
                     try db.insertItem(newItem)
                     nameToItem[key] = newItem
                     saleItems.append((itemID: newItem.id, quantity: quantity, sellingPrice: sellingPrice))
                 }
             }
-            
-            // 3) Persist the multi-item sale using resolved item IDs
-            let stateCode = IndianStates.stateByName(details.buyerState ?? "")?.code
-            
-            if !details.customerName.isEmpty {
-                CreditStore.shared.ensureCustomer(named: details.customerName, defaultName: "Customer", gstin: details.buyerGSTIN)
+
+            let stateCode = IndianStates.stateByName(capturedDetails.buyerState ?? "")?.code
+
+            if !capturedDetails.customerName.isEmpty {
+                CreditStore.shared.ensureCustomer(
+                    named: capturedDetails.customerName,
+                    defaultName: "Customer",
+                    gstin: capturedDetails.buyerGSTIN,
+                    phone: capturedDetails.customerPhone
+                )
             }
-            
-            _ = try dm.addMultiItemSale(
-                items: saleItems,
-                customerName: details.customerName.isEmpty ? nil : details.customerName,
-                customerPhone: nil,
-                discount: details.discount,
-                adjustment: details.adjustment,
-                invoiceNumber: details.invoiceNumber,
-                buyerGSTIN: details.buyerGSTIN,
-                buyerStateCode: stateCode
-            )
 
-            recordCreditSaleIfNeeded(for: details)
-            
-            // 4) Dismiss the bill sheet after saving
-            dismiss(animated: true)
-            navigationController?.popViewController(animated: true)
-            delegate?.save(isSaved: true)
-        }
-        
-        catch DataModelError.insufficientStockMulti(let items) {
+            let recordCreditIfNeeded: (UUID) -> Void = { transactionID in
+                guard capturedDetails.isCreditSale else { return }
+                let totalAmount = capturedDetails.items.reduce(0.0) { $0 + $1.totalRevenue } - capturedDetails.discount + capturedDetails.adjustment
+                guard totalAmount > 0 else { return }
+                let rawName = capturedDetails.customerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let resolvedName = rawName.isEmpty ? "Customer" : rawName
+                CreditStore.shared.addCreditSale(
+                    amount: totalAmount,
+                    customerName: resolvedName,
+                    phone: capturedDetails.customerPhone,
+                    note: "Credit sale \(capturedDetails.invoiceNumber)",
+                    transactionID: transactionID
+                )
+            }
 
-            let stateCode = IndianStates.stateByName(details.buyerState ?? "")?.code
             do {
-                _ = try dm.recordSaleWithoutStockCheck(
+                let saved = try dm.addMultiItemSale(
                     items: saleItems,
-                    customerName: details.customerName.isEmpty ? nil : details.customerName,
-                    customerPhone: nil,
-                    discount: details.discount,
-                    adjustment: details.adjustment,
-                    invoiceNumber: details.invoiceNumber,
-                    buyerGSTIN: details.buyerGSTIN,
+                    customerName: capturedDetails.customerName.isEmpty ? nil : capturedDetails.customerName,
+                    customerPhone: capturedDetails.customerPhone,
+                    discount: capturedDetails.discount,
+                    adjustment: capturedDetails.adjustment,
+                    invoiceNumber: capturedDetails.invoiceNumber,
+                    buyerGSTIN: capturedDetails.buyerGSTIN,
                     buyerStateCode: stateCode
                 )
-                recordCreditSaleIfNeeded(for: details)
-            } catch {
+                recordCreditIfNeeded(saved.id)
+                return BillSaveOutcome.saved
+            } catch DataModelError.insufficientStockMulti(let items) {
+                return BillSaveOutcome.insufficientStock(items)
             }
-
-            let alert = UIAlertController(
-                title: "Insufficient Stock",
-                message: "Sale recorded, but stock is insufficient for: \(items.joined(separator: ", ")).\n\nPlease go to Stock tab to purchase more inventory.",
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
-                self?.dismiss(animated: true)
-            })
-            alert.addAction(UIAlertAction(title: "Go to Stock", style: .default) { [weak self] _ in
-                self?.dismiss(animated: true) {
-                    if let tabBarController = UIApplication.shared.keyWindow?.rootViewController as? UITabBarController {
-                        tabBarController.selectedIndex = 2
-                    }
+        }) { [weak self] result in
+            guard let self else { return }
+            self.setSaveInProgress(false)
+            switch result {
+            case .success(.saved):
+                CloudBackupService.shared.uploadAfterSale()
+                self.offerWhatsAppIfCreditThen {
+                    self.dismiss(animated: true)
+                    self.navigationController?.popViewController(animated: true)
+                    self.delegate?.save(isSaved: true)
                 }
-            })
-            present(alert, animated: true)
-        } catch {
-            let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
-                self?.dismiss(animated: true)
-            })
-            present(alert, animated: true)
+            case .success(.insufficientStock(let items)):
+                let alert = UIAlertController(
+                    title: "Insufficient Stock",
+                    message: "Sale was not saved. Not enough stock for: \(items.joined(separator: ", ")). Add a purchase first.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                alert.addAction(UIAlertAction(title: "Go to Stock", style: .default) { [weak self] _ in
+                    self?.dismiss(animated: true) {
+                        if let tabBarController = UIApplication.shared.connectedScenes
+                            .compactMap({ $0 as? UIWindowScene })
+                            .flatMap(\.windows)
+                            .first(where: \.isKeyWindow)?
+                            .rootViewController as? UITabBarController {
+                            tabBarController.selectedIndex = 2
+                        }
+                    }
+                })
+                self.present(alert, animated: true)
+            case .failure(let error):
+                let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+                    self?.dismiss(animated: true)
+                })
+                self.present(alert, animated: true)
+            }
         }
     }
 
-    private func recordCreditSaleIfNeeded(for details: BillingDetails) {
+    private enum BillSaveOutcome {
+        case saved
+        case insufficientStock([String])
+    }
+
+    private func setSaveInProgress(_ saving: Bool) {
+        saveButton?.isEnabled = !saving
+        view.isUserInteractionEnabled = !saving
+        if saving {
+            if saveSpinnerOverlay == nil {
+                let overlay = UIView(frame: view.bounds)
+                overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                overlay.backgroundColor = UIColor.black.withAlphaComponent(0.25)
+                let spinner = UIActivityIndicatorView(style: .large)
+                spinner.translatesAutoresizingMaskIntoConstraints = false
+                spinner.startAnimating()
+                overlay.addSubview(spinner)
+                NSLayoutConstraint.activate([
+                    spinner.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+                    spinner.centerYAnchor.constraint(equalTo: overlay.centerYAnchor)
+                ])
+                view.addSubview(overlay)
+                saveSpinnerOverlay = overlay
+            }
+            saveSpinnerOverlay?.isHidden = false
+        } else {
+            saveSpinnerOverlay?.removeFromSuperview()
+            saveSpinnerOverlay = nil
+        }
+    }
+
+    private func recordCreditSaleIfNeeded(for details: BillingDetails, transactionID: UUID) {
         guard details.isCreditSale else { return }
 
         let totalAmount = details.items.reduce(0.0) { $0 + $1.totalRevenue } - details.discount + details.adjustment
@@ -459,7 +507,27 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         CreditStore.shared.addCreditSale(
             amount: totalAmount,
             customerName: resolvedName,
-            note: "Credit sale \(details.invoiceNumber)"
+            phone: details.customerPhone,
+            note: "Credit sale \(details.invoiceNumber)",
+            transactionID: transactionID
+        )
+    }
+
+    private func offerWhatsAppIfCreditThen(_ done: @escaping () -> Void) {
+        guard let details, details.isCreditSale else {
+            done()
+            return
+        }
+        let totalAmount = details.items.reduce(0.0) { $0 + $1.totalRevenue } - details.discount + details.adjustment
+        guard totalAmount > 0 else {
+            done()
+            return
+        }
+        UPIWhatsAppShare.offerAfterCreditSale(
+            from: self,
+            amount: totalAmount,
+            customerPhone: details.customerPhone,
+            completion: done
         )
     }
 
@@ -518,7 +586,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 y += 16
             }
 
-
+            // ═══════════════════════════════════════════
+            // TITLE
+            // ═══════════════════════════════════════════
             let isPurchase = details.transactionType == .purchase
 
             if isGST || isComposition {
@@ -538,16 +608,16 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y += 4
             drawLine(at: y, weight: 1.0); y += 10
 
-
+            // ═══════════════════════════════════════════
             // SELLER + INVOICE INFO (side by side)
-
+            // ═══════════════════════════════════════════
             let halfW = contentWidth * 0.5
             let leftX = margin
             let rightX = margin + halfW + 8
             let rhW = halfW - 8
             let blockTop = y
 
-            // Seller info
+            // Left: Seller info
             let settings = try? AppDataModel.shared.dataModel.db.getSettings()
             let bizName = settings?.businessName ?? "My Business"
             drawText(bizName, font: headingFont, rect: CGRect(x: leftX, y: y, width: halfW, height: 14))
@@ -570,7 +640,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             }
             let leftBottom = y
 
-            // Invoice details
+            // Right: Invoice details
             var ry = blockTop
             drawText("Invoice #: \(details.invoiceNumber)", font: boldBody, rect: CGRect(x: rightX, y: ry, width: rhW, height: 14))
             ry += 14
@@ -589,9 +659,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y = max(leftBottom, ry) + 6
             drawLine(at: y); y += 8
 
-
+            // ═══════════════════════════════════════════
             // BUYER INFO
-
+            // ═══════════════════════════════════════════
             let partyLabel = isPurchase ? "Supplier" : "Buyer"
             drawText("\(partyLabel): \(details.customerName)", font: headingFont,
                      rect: CGRect(x: margin, y: y, width: contentWidth, height: 14))
@@ -603,9 +673,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y += 4
             drawLine(at: y); y += 6
 
-
+            // ═══════════════════════════════════════════
             // ITEM TABLE
-
+            // ═══════════════════════════════════════════
             if isGST {
                 // GST table: # | Item | HSN | Qty | Rate | Taxable | Tax | Amount
                 let itemColumnWidth = contentWidth * 0.25
@@ -630,7 +700,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 for (idx, item) in details.items.enumerated() {
                     ensureSpace(18)
                     let rate = isPurchase ? (item.costPricePerUnit ?? 0) : (item.sellingPricePerUnit ?? 0)
-                    let amount = item.quantity * rate
+                    let amount = Money.line(quantity: item.quantity, rate: rate)
                     let taxable = item.taxableValue ?? amount
                     let hsn = item.hsnCode ?? "—"
                     let gstRate = item.gstRate
@@ -676,7 +746,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 for item in details.items {
                     ensureSpace(18)
                     let rate = isPurchase ? (item.costPricePerUnit ?? 0) : (item.sellingPricePerUnit ?? 0)
-                    let amount = item.quantity * rate
+                    let amount = Money.line(quantity: item.quantity, rate: rate)
                     drawText(item.itemName, font: bodyFont, rect: CGRect(x: margin, y: y, width: contentWidth * 0.5, height: 14))
                     drawText(item.quantity.cleanString, font: bodyFont, rect: CGRect(x: margin + contentWidth * 0.5, y: y, width: contentWidth * 0.15, height: 14), alignment: .center)
                     drawText(String(format: "₹%.2f", rate), font: bodyFont, rect: CGRect(x: margin + contentWidth * 0.65, y: y, width: contentWidth * 0.15, height: 14), alignment: .right)
@@ -687,9 +757,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
 
             y += 4; drawLine(at: y, weight: 1.0); y += 8
 
-
+            // ═══════════════════════════════════════════
             // TOTALS
-            let subTotal = details.items.reduce(0.0) { $0 + (isPurchase ? $1.totalCost : $1.totalRevenue) }
+            let subTotal = Money.round2(details.items.reduce(0.0) { $0 + (isPurchase ? $1.totalCost : $1.totalRevenue) })
 
             if details.discount != 0 {
                 drawRow(label: "Discount:", value: String(format: "- ₹%.2f", details.discount))
@@ -698,9 +768,9 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 drawRow(label: "Adjustment:", value: String(format: "₹%.2f", details.adjustment))
             }
 
-
+            // ═══════════════════════════════════════════
             // RATE-WISE TAX BREAKUP TABLE (GST only)
-
+            // ═══════════════════════════════════════════
             if let taxBreakup = details.taxBreakup, !taxBreakup.rateWiseSummary.isEmpty {
                 ensureSpace(60)
                 y += 4
@@ -752,27 +822,26 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 if taxBreakup.totalCess > 0 { drawRow(label: "Total Cess:", value: String(format: "₹%.2f", taxBreakup.totalCess)) }
             }
 
-
+            // ═══════════════════════════════════════════
             // GRAND TOTAL
-
+            // ═══════════════════════════════════════════
             ensureSpace(30)
             drawLine(at: y, weight: 1.0); y += 8
             let grandTotal = subTotal - details.discount + details.adjustment
-            let roundedTotal = round(grandTotal)
             drawText("GRAND TOTAL", font: totalFont, rect: CGRect(x: margin, y: y, width: contentWidth * 0.7, height: 20), alignment: .right)
-            drawText(String(format: "₹%.2f", roundedTotal), font: totalFont, rect: CGRect(x: margin + contentWidth * 0.7, y: y, width: contentWidth * 0.3, height: 20), alignment: .right)
+            drawText(String(format: "₹%.2f", grandTotal), font: totalFont, rect: CGRect(x: margin + contentWidth * 0.7, y: y, width: contentWidth * 0.3, height: 20), alignment: .right)
             y += 24
 
             // Amount in words
             ensureSpace(20)
-            let words = NumberToWords.convert(roundedTotal)
+            let words = NumberToWords.convert(grandTotal)
             drawText("Amount in words: \(words)", font: smallFont, color: .darkGray,
                      rect: CGRect(x: margin, y: y, width: contentWidth, height: 14))
             y += 20
 
-
+            // ═══════════════════════════════════════════
             // FOOTER
-
+            // ═══════════════════════════════════════════
             if isComposition {
                 ensureSpace(30)
                 drawLine(at: y); y += 8

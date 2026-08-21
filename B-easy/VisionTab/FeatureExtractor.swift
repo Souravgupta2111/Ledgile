@@ -108,26 +108,10 @@ final class CLIPFeatureExtractor: FeatureVectorExtractor {
         }
     }
 
-    // MARK: - Global mean embedding for centering
-   
-     static let globalMean: [Float] = {
-        guard let url = Bundle.main.url(forResource: "clip_mean_embedding", withExtension: "bin"),
-              let data = try? Data(contentsOf: url) else {
-            return []
-        }
-        let count = data.count / MemoryLayout<Float>.size
-        return data.withUnsafeBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr.bindMemory(to: Float.self).baseAddress!, count: count))
-        }
-    }()
+    // MARK: - Post-processing
 
-   
     static func postProcess(_ vec: inout [Float]) {
-        // Dataset-level mean-centering
-
-        if globalMean.count == vec.count {
-            vDSP_vsub(globalMean, 1, vec, 1, &vec, 1, vDSP_Length(vec.count))
-        }
+        // L2-normalize only. clip_mean_embedding.bin was incompatible with this model export.
         var sumSq: Float = 0
         vDSP_dotpr(vec, 1, vec, 1, &sumSq, vDSP_Length(vec.count))
         var norm = sqrtf(sumSq)
@@ -327,6 +311,7 @@ final class CLIPFeatureExtractor: FeatureVectorExtractor {
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
 
         // CLIP/MobileCLIP normalization: ImageNet mean/std
+        // CoreML exports do NOT bake this in — we must apply it.
         let mean: [Float] = [0.48145466, 0.4578275, 0.40821073]
         let std: [Float]  = [0.26862954, 0.26130258, 0.27577711]
 

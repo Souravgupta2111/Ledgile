@@ -57,14 +57,14 @@ class DashboardTopTileTableViewCell: UITableViewCell {
     @IBOutlet var lowStockButton: UIButton!
     @IBOutlet var expiryAlertButton: UIButton!
     
-    // Left side 
+    // Left side (Revenue text or Revenue pill)
     private var leftPillButton: UIButton!
     private var leftTitleLabel: UILabel!
     private var leftChevron: UIButton!
     private var leftSubtitleLabel: UILabel!
     private var leftAmountLabel: UILabel!
     
-    // Right side 
+    // Right side (Investment text or Investment pill)
     private var rightPillButton: UIButton!
     private var rightTitleLabel: UILabel!
     private var rightChevron: UIButton!
@@ -83,25 +83,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         selectionStyle = .none
         backgroundColor = .clear
         buildCardViews()
-        
-        // entire cards tappable
-        lowStockButton.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleLowStockTap)))
-        lowStockButton.superview?.isUserInteractionEnabled = true
-        
-        expiryAlertButton.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleExpiryTap)))
-        expiryAlertButton.superview?.isUserInteractionEnabled = true
-        
-        youWillGetLabel.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleYouWillGetTap)))
-        youWillGetLabel.superview?.isUserInteractionEnabled = true
-        
-        youWillPayLabel.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleYouWillPayTap)))
-        youWillPayLabel.superview?.isUserInteractionEnabled = true
     }
-
-    @objc private func handleLowStockTap() { lowStockTapped?() }
-    @objc private func handleExpiryTap() { expiryTapped?() }
-    @objc private func handleYouWillGetTap() { getTapped?() }
-    @objc private func handleYouWillPayTap() { payTapped?() }
 
     override func setSelected(_ selected: Bool, animated: Bool) {
         super.setSelected(selected, animated: animated)
@@ -142,7 +124,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         rightPillButton.addTarget(self, action: #selector(switchTabTapped), for: .touchUpInside)
         card.addSubview(rightPillButton)
         
-
+        // --- Left Text Group (Revenue) ---
         leftTitleLabel = UILabel()
         leftTitleLabel.text = "Revenue"
         leftTitleLabel.textColor = ws
@@ -152,7 +134,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         leftTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(leftTitleLabel)
         
-
+        // Chevrons removed — tapping the card (outside chart) opens the detail view
         leftChevron = UIButton(type: .system)
         leftChevron.isHidden = true
         leftChevron.translatesAutoresizingMaskIntoConstraints = false
@@ -171,7 +153,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         leftAmountLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(leftAmountLabel)
         
-
+        // --- Right Text Group (Investment) ---
         rightTitleLabel = UILabel()
         rightTitleLabel.text = "Investment"
         rightTitleLabel.textColor = onyx

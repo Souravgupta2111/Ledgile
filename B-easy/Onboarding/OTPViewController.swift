@@ -43,6 +43,9 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
     private func styleUI() {
         verifyButton.layer.cornerRadius = 20
         verifyButton.clipsToBounds = true
+        verifyButton.backgroundColor = .black
+        verifyButton.setTitleColor(.white, for: .normal)
+        verifyButton.setTitleColor(.lightGray, for: .disabled)
     }
 
     
@@ -192,23 +195,28 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
     private func navigateToMainApp() {
 
         UserDefaults.standard.set(true, forKey: "userDidCompleteOnboarding")
+        if AuthNavigationHelper.isLocalProfileComplete() {
+            UserDefaults.standard.set(true, forKey: AuthNavigationHelper.profileCompleteKey)
+        }
 
         setLoading(true)
         syncUserProfile { [weak self] in
             self?.setLoading(false)
-            let alert = UIAlertController(title: "Success", message: "OTP verified successfully!", preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
-                let storyboard = UIStoryboard(name: "Main", bundle: nil)
-                let mainTabBarController = storyboard.instantiateViewController(withIdentifier: "MainTabBarController")
-                
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = windowScene.windows.first {
-                    window.rootViewController = mainTabBarController
-                    UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve, animations: nil, completion: nil)
-                }
-            })
-            
-            self?.navigationController?.present(alert, animated: true)
+            if AuthNavigationHelper.isLocalProfileComplete() {
+                AuthNavigationHelper.continueAfterAccountReady()
+                return
+            }
+            let settings = try? AppDataModel.shared.dataModel.db.getSettings()
+            let completeVC = AuthNavigationHelper.makeCompleteProfileController(
+                name: settings?.ownerName ?? settings?.profileName,
+                shopName: settings?.businessName,
+                phone: self?.phoneNumber ?? settings?.businessPhone
+            )
+            if let nav = self?.navigationController {
+                nav.pushViewController(completeVC, animated: true)
+            } else {
+                AuthNavigationHelper.continueAfterAccountReady()
+            }
         }
     }
 
@@ -232,6 +240,11 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
                         }
                         settings.businessPhone = self.phoneNumber
                         try? AppDataModel.shared.dataModel.db.updateSettings(settings)
+                    }
+                    
+                    // Restore email from Supabase if available
+                    if let email = profile["email"] as? String, !email.isEmpty {
+                        AuthManager.shared.saveAppleEmail(email)
                     }
                 } else {
 

@@ -46,24 +46,7 @@ class TopTileTableViewCell: UITableViewCell {
     override func awakeFromNib() {
         super.awakeFromNib()
         selectionStyle = .none
-        
-        investmentChevron.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleInvestmentTap)))
-        investmentChevron.superview?.isUserInteractionEnabled = true
-        
-        purchaseChevron.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handlePurchaseTap)))
-        purchaseChevron.superview?.isUserInteractionEnabled = true
-        
-        lowStockButton.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleLowStockTap)))
-        lowStockButton.superview?.isUserInteractionEnabled = true
-        
-        expiryLabel.superview?.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleExpiryTap)))
-        expiryLabel.superview?.isUserInteractionEnabled = true
     }
-
-    @objc private func handleInvestmentTap() { delegate?.topTileCellDidTapInvestment(self) }
-    @objc private func handlePurchaseTap() { delegate?.topTileCellDidTapPurchase(self) }
-    @objc private func handleLowStockTap() { delegate?.topTileCellDidTapLowStock(self) }
-    @objc private func handleExpiryTap() { delegate?.topTileCellDidTapExpiring(self) }
     override func setSelected(_ selected: Bool, animated: Bool) {
         super.setSelected(selected, animated: animated)
     }

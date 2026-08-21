@@ -194,8 +194,6 @@
                 <outlet property="itemsSoldCount" destination="t1v-KI-6H6" id="mqa-2S-TO9"/>
                 <outlet property="lineChartView" destination="9PK-Ln-leD" id="eea-Nf-zu6"/>
                 <outlet property="topItemLabel" destination="BB4-AA-UzW" id="IG3-85-Zwf"/>
-                <outlet property="itemsSoldSubtitleLabel" destination="630-hj-qhr" id="xy2-AB-CD3"/>
-                <outlet property="topItemSubtitleLabel" destination="ZzF-j2-8ae" id="xy3-AB-CD4"/>
             </connections>
             <point key="canvasLocation" x="18.320610687022899" y="319.01408450704224"/>
         </tableViewCell>

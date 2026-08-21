@@ -2,6 +2,7 @@ import Foundation
 
 struct BillingDetails: Codable {
     var customerName: String
+    var customerPhone: String? = nil
     var items: [TransactionItem]
     var discount: Double
     var adjustment: Double

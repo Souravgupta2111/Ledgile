@@ -10,7 +10,6 @@ class SalesChartViewController: UIViewController {
     let provider = ChartDataProvider.shared
     var chartPoints: [ChartDataProvider.ChartPoint] = []
     var salesItems: [ChartDataProvider.ProfitItem] = []
-    var selectedBarIndex: Int? = nil
     
     @IBAction func downloadButtonTapped(_ sender: UIButton) {
         
@@ -38,7 +37,6 @@ class SalesChartViewController: UIViewController {
     }
     
     @objc func segmentChanged(_ sender: UISegmentedControl) {
-        selectedBarIndex = nil
         switch sender.selectedSegmentIndex {
         case 0: selectedPeriod = .daily
         case 1: selectedPeriod = .monthly
@@ -106,8 +104,6 @@ extension SalesChartViewController: UITableViewDataSource, UITableViewDelegate {
             ) as? SalesByItemTopTileTableViewCell else {
                 return UITableViewCell()
             }
-            
-            cell.delegate = self
 
             let totalAmount = chartPoints.reduce(0) { $0 + $1.value }
             let growthText = provider.periodGrowth(for: selectedPeriod, metric: .revenue)
@@ -116,35 +112,19 @@ extension SalesChartViewController: UITableViewDataSource, UITableViewDelegate {
             let barLabels = chartPoints.map { $0.label }
             let barValues = chartPoints.map { $0.value }
 
-            let items: [ChartDataProvider.ProfitItem]
-            let subtitle: String
-            
-            if let index = selectedBarIndex {
-                items = provider.getSalesItems(for: selectedPeriod, atIndex: index, totalBars: chartPoints.count)
-                subtitle = chartPoints[index].label
-            } else {
-                items = provider.getSalesItems(period: selectedPeriod)
-                switch selectedPeriod {
-                case .daily: subtitle = "This Week"
-                case .monthly: subtitle = "Last 12 Months"
-                case .quarterly: subtitle = "This Year"
-                case .yearly: subtitle = "Last 5 Years"
-                }
-            }
+            // Items Sold & Top Item follow the selected period
+            let itemsSold = Int(salesItems.reduce(0) { $0 + $1.quantity })
+            let topItem = salesItems.max(by: { ($0.sellingPrice * $0.quantity) < ($1.sellingPrice * $1.quantity) })?.name ?? " "
 
-            let currentItemsSold = items.count
-            let currentTopItem = items.max(by: { ($0.sellingPrice * $0.quantity) < ($1.sellingPrice * $1.quantity) })?.name ?? "-"
-
-            let bottomChartData = provider.getItemsSoldChartData(period: .daily)
-            let bottomBarLabels = bottomChartData.map { $0.label }
-            let bottomBarValues = bottomChartData.map { $0.value }
+            let itemsChartData = provider.getItemsSoldChartData(period: selectedPeriod)
+            let bottomBarLabels = itemsChartData.map { $0.label }
+            let bottomBarValues = itemsChartData.map { $0.value }
 
             cell.configure(
                 totalAmount: totalAmount,
                 growthText: "\(growthText)  \(periodLabel)",
-                itemsSold: currentItemsSold,
-                topItem: currentTopItem,
-                subtitle: subtitle,
+                itemsSold: itemsSold,
+                topItem: topItem,
                 lineChartPoints: chartPoints,
                 barChartValues: bottomBarValues,
                 barChartLabels: bottomBarLabels,
@@ -163,8 +143,8 @@ extension SalesChartViewController: UITableViewDataSource, UITableViewDelegate {
             let item = salesItems[indexPath.row]
             cell.itemNameLabel.text = item.name
             cell.quantityLabel.text = "Sold: \(item.quantity) | Cost: ₹\(Int(item.costPrice))"
-            let total = item.quantity * item.sellingPrice
-            cell.priceLabel.text = "₹\(Int(total))"
+            let total = Money.line(quantity: item.quantity, rate: item.sellingPrice)
+            cell.priceLabel.text = String(format: "₹%.2f", total)
                     
             return cell
         }
@@ -208,38 +188,5 @@ extension SalesChartViewController: UITableViewDataSource, UITableViewDelegate {
         tableView.deselectRow(at: indexPath, animated: true)
         let item = salesItems[indexPath.row]
         performSegue(withIdentifier: "item_profile", sender: item)
-    }
-}
-
-extension SalesChartViewController: SalesByItemTopTileDelegate {
-    func didSelectChartBar(at index: Int) {
-        selectedBarIndex = index
-        let items = provider.getSalesItems(for: selectedPeriod, atIndex: index, totalBars: chartPoints.count)
-        let subtitle = chartPoints[index].label
-        let currentItemsSold = items.count
-        let currentTopItem = items.max(by: { ($0.sellingPrice * $0.quantity) < ($1.sellingPrice * $1.quantity) })?.name ?? "-"
-        
-        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? SalesByItemTopTileTableViewCell {
-            cell.updateTopItemDetails(itemsSold: currentItemsSold, topItemName: currentTopItem, subtitle: subtitle)
-        }
-    }
-    
-    func didDeselectChartBar() {
-        selectedBarIndex = nil
-        let items = provider.getSalesItems(period: selectedPeriod)
-        let subtitle: String
-        switch selectedPeriod {
-        case .daily: subtitle = "This Week"
-        case .monthly: subtitle = "Last 12 Months"
-        case .quarterly: subtitle = "This Year"
-        case .yearly: subtitle = "Last 5 Years"
-        }
-        
-        let currentItemsSold = items.count
-        let currentTopItem = items.max(by: { ($0.sellingPrice * $0.quantity) < ($1.sellingPrice * $1.quantity) })?.name ?? "-"
-        
-        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? SalesByItemTopTileTableViewCell {
-            cell.updateTopItemDetails(itemsSold: currentItemsSold, topItemName: currentTopItem, subtitle: subtitle)
-        }
     }
 }

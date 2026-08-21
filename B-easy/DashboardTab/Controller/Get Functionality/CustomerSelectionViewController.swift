@@ -1,7 +1,7 @@
 import UIKit
 
 protocol CustomerSelectionDelegate: AnyObject {
-    func didSelectCustomer(name: String)
+    func didSelectCustomer(name: String, phone: String?)
 }
 
 class CustomerSelectionViewController: UIViewController,
@@ -18,13 +18,12 @@ class CustomerSelectionViewController: UIViewController,
 
     @IBAction func doneTapped(_ sender: UIBarButtonItem) {
         let text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        if !text.isEmpty {
-            delegate?.didSelectCustomer(name: text)
+        guard !text.isEmpty else {
+            searchBar.resignFirstResponder()
+            navigationController?.popViewController(animated: true)
+            return
         }
-
-        searchBar.resignFirstResponder()
-        navigationController?.popViewController(animated: true)
+        finishSelecting(name: text)
     }
     
     override func viewDidLoad() {
@@ -69,6 +68,50 @@ class CustomerSelectionViewController: UIViewController,
         tableView.reloadData()
     }
 
+    private func finishSelecting(name: String) {
+        searchBar.resignFirstResponder()
+        if let existing = allCustomers.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            if UPIWhatsAppShare.indianMobileDigits(existing.phone) == nil {
+                promptForPhone(name: existing.name, existingPhone: existing.phone)
+            } else {
+                delegate?.didSelectCustomer(name: existing.name, phone: existing.phone)
+                navigationController?.popViewController(animated: true)
+            }
+            return
+        }
+        promptForPhone(name: name, existingPhone: nil)
+    }
+
+    private func promptForPhone(name: String, existingPhone: String?) {
+        let alert = UIAlertController(
+            title: "Mobile number",
+            message: "Required for WhatsApp udhaar. 10 digits.",
+            preferredStyle: .alert
+        )
+        alert.addTextField { field in
+            field.placeholder = "98XXXXXXXX"
+            field.keyboardType = .phonePad
+            field.text = existingPhone
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            guard let self else { return }
+            let raw = alert.textFields?.first?.text
+            guard let digits = UPIWhatsAppShare.indianMobileDigits(raw) else {
+                let retry = UIAlertController(title: "Invalid number", message: "Enter a 10-digit Indian mobile.", preferredStyle: .alert)
+                retry.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                    self.promptForPhone(name: name, existingPhone: raw)
+                })
+                self.present(retry, animated: true)
+                return
+            }
+            CreditStore.shared.ensureCustomer(named: name, phone: digits)
+            self.delegate?.didSelectCustomer(name: name, phone: digits)
+            self.navigationController?.popViewController(animated: true)
+        })
+        present(alert, animated: true)
+    }
+
 
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
 
@@ -97,9 +140,7 @@ class CustomerSelectionViewController: UIViewController,
             return
         }
 
-        delegate?.didSelectCustomer(name: text)
-        searchBar.resignFirstResponder()
-        navigationController?.popViewController(animated: true)
+        finishSelecting(name: text)
     }
 
 
@@ -156,7 +197,6 @@ class CustomerSelectionViewController: UIViewController,
 
         let customer = filteredCustomers[indexPath.row]
 
-        delegate?.didSelectCustomer(name: customer.name)
-        navigationController?.popViewController(animated: true)
+        finishSelecting(name: customer.name)
     }
 }

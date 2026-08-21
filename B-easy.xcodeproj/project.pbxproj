@@ -11,7 +11,18 @@
 		3A9F041F2F4050DF00A12DFB /* SwiftWhisper in Frameworks */ = {isa = PBXBuildFile; productRef = 3A9F041E2F4050DF00A12DFB /* SwiftWhisper */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A11E000B2F3B0CE300C3EA11 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D647A8F72F3B0CE300C3EA11 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D647A8FE2F3B0CE300C3EA11;
+			remoteInfo = "B-easy";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		A11E00012F3B0CE300C3EA11 /* B-easyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "B-easyTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C63B19542FA71E5500A147AA /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		D64E2C9E2F7E313E00B00D49 /* B-easy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "B-easy.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -27,6 +38,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A11E00022F3B0CE300C3EA11 /* B-easyTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "B-easyTests";
+			sourceTree = "<group>";
+		};
 		D647A9012F3B0CE300C3EA11 /* B-easy */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -38,6 +54,11 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A11E00052F3B0CE300C3EA11 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 		D647A8FC2F3B0CE300C3EA11 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -52,7 +73,9 @@
 			isa = PBXGroup;
 			children = (
 				D647A9012F3B0CE300C3EA11 /* B-easy */,
+				A11E00022F3B0CE300C3EA11 /* B-easyTests */,
 				D64E2C9E2F7E313E00B00D49 /* B-easy.app */,
+				A11E00012F3B0CE300C3EA11 /* B-easyTests.xctest */,
 				C63B19542FA71E5500A147AA /* Secrets.xcconfig */,
 			);
 			sourceTree = "<group>";
@@ -60,6 +83,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A11E00032F3B0CE300C3EA11 /* B-easyTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A11E00082F3B0CE300C3EA11 /* Build configuration list for PBXNativeTarget "B-easyTests" */;
+			buildPhases = (
+				A11E00042F3B0CE300C3EA11 /* Sources */,
+				A11E00052F3B0CE300C3EA11 /* Frameworks */,
+				A11E00062F3B0CE300C3EA11 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A11E000A2F3B0CE300C3EA11 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A11E00022F3B0CE300C3EA11 /* B-easyTests */,
+			);
+			name = "B-easyTests";
+			productName = "B-easyTests";
+			productReference = A11E00012F3B0CE300C3EA11 /* B-easyTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		D647A8FE2F3B0CE300C3EA11 /* B-easy */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D647A9122F3B0CE400C3EA11 /* Build configuration list for PBXNativeTarget "B-easy" */;
@@ -92,6 +136,10 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					A11E00032F3B0CE300C3EA11 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = D647A8FE2F3B0CE300C3EA11;
+					};
 					D647A8FE2F3B0CE300C3EA11 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -116,11 +164,17 @@
 			projectRoot = "";
 			targets = (
 				D647A8FE2F3B0CE300C3EA11 /* B-easy */,
+				A11E00032F3B0CE300C3EA11 /* B-easyTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A11E00062F3B0CE300C3EA11 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 		D647A8FD2F3B0CE300C3EA11 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -129,6 +183,11 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A11E00042F3B0CE300C3EA11 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 		D647A8FB2F3B0CE300C3EA11 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
@@ -136,17 +195,68 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A11E000A2F3B0CE300C3EA11 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D647A8FE2F3B0CE300C3EA11 /* B-easy */;
+			targetProxy = A11E000B2F3B0CE300C3EA11 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		A11E00072F3B0CE300C3EA11 /* Debug configuration for PBXNativeTarget "B-easyTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = A92V46D8LJ;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyyy.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/B-easy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/B-easy";
+			};
+			name = Debug;
+		};
+		A11E00092F3B0CE300C3EA11 /* Release configuration for PBXNativeTarget "B-easyTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = A92V46D8LJ;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyyy.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/B-easy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/B-easy";
+			};
+			name = Release;
+		};
 		D647A9132F3B0CE400C3EA11 /* Debug configuration for PBXNativeTarget "B-easy" */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = C63B19542FA71E5500A147AA /* Secrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "B-easy/B-easy.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = BL4G455K39;
+				DEVELOPMENT_TEAM = A92V46D8LJ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "B-easy/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "B-easy";
@@ -155,7 +265,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture product photos for bills and object detection.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Please allow microphone access for entering sales by voice.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save bills and reports to your photo library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Add product photos for object detection during sale.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Add product photos and your PhonePe, Paytm, or GPay UPI QR.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Using speech for sales and purchase entry";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -173,8 +283,10 @@
 					"-all_load",
 					"-framework",
 					CoreLocation,
+					"-weak_framework",
+					FoundationModels,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyyy;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -197,10 +309,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "B-easy/B-easy.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = BL4G455K39;
+				DEVELOPMENT_TEAM = A92V46D8LJ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "B-easy/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "B-easy";
@@ -209,7 +322,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture product photos for bills and object detection.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Please allow microphone access for entering sales by voice.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save bills and reports to your photo library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Add product photos for object detection during sale.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Add product photos and your PhonePe, Paytm, or GPay UPI QR.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Using speech for sales and purchase entry";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -227,8 +340,10 @@
 					"-all_load",
 					"-framework",
 					CoreLocation,
+					"-weak_framework",
+					FoundationModels,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyyy;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -297,7 +412,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -354,7 +469,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -367,6 +482,14 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A11E00082F3B0CE300C3EA11 /* Build configuration list for PBXNativeTarget "B-easyTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A11E00072F3B0CE300C3EA11 /* Debug configuration for PBXNativeTarget "B-easyTests" */,
+				A11E00092F3B0CE300C3EA11 /* Release configuration for PBXNativeTarget "B-easyTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
 		D647A8FA2F3B0CE300C3EA11 /* Build configuration list for PBXProject "B-easy" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -30,11 +30,12 @@ class ItemInformationTableViewController: UITableViewController {
     private var selectedUnit: String?
     private var typedItemName: String?
 
+    var selectedItemType: ItemType = .goods
     private var selectedItem: Item?
     private var quantity: Double = 0
     private var sellingPrice: Double = 0
     
-    private var total: Double { quantity * sellingPrice }
+    private var total: Double { Money.line(quantity: quantity, rate: sellingPrice) }
     weak var delegate: ItemInformationDelegate?
     
     override func viewDidLoad() {
@@ -61,6 +62,10 @@ class ItemInformationTableViewController: UITableViewController {
         } else {
             sellingPrice = 0
         }
+    }
+
+    @objc private func typeChanged(_ sender: UISegmentedControl) {
+        selectedItemType = (sender.selectedSegmentIndex == 1) ? .services : .goods
     }
     
     func didEnterUnknownItem(name: String) {
@@ -103,7 +108,8 @@ class ItemInformationTableViewController: UITableViewController {
                 costPricePerUnit: nil,
                 supplierName: nil,
                 expiryDate: nil,
-                createdAt: Date()
+                createdAt: Date(),
+                itemType: selectedItemType
             )
                 // You MUST add this delegate method
                 delegate?.incompleteItemEntered(self, item: incomplete)
@@ -120,7 +126,7 @@ extension ItemInformationTableViewController {
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 4
+        return 5
     }
 
 
@@ -130,6 +136,39 @@ extension ItemInformationTableViewController {
         
         switch indexPath.row {
             case 0:
+                let cell: UITableViewCell
+                if let dequeued = tableView.dequeueReusableCell(withIdentifier: "typeCell") {
+                    cell = dequeued
+                } else {
+                    cell = UITableViewCell(style: .default, reuseIdentifier: "typeCell")
+                    let segmented = UISegmentedControl(items: ["Goods", "Service"])
+                    segmented.translatesAutoresizingMaskIntoConstraints = false
+                    segmented.addTarget(self, action: #selector(typeChanged(_:)), for: .valueChanged)
+                    cell.contentView.addSubview(segmented)
+                    NSLayoutConstraint.activate([
+                        segmented.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+                        segmented.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+                        segmented.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor)
+                    ])
+                    cell.tag = 100 // Just to identify if needed
+                }
+                
+                cell.selectionStyle = .none
+                cell.backgroundColor = .cell
+                cell.contentView.backgroundColor = .cell
+                
+                if let segmented = cell.contentView.subviews.compactMap({ $0 as? UISegmentedControl }).first {
+                    segmented.isEnabled = (entryMode == .incompleteItem)
+                    
+                    if entryMode == .existingItem, let item = selectedItem {
+                        segmented.selectedSegmentIndex = (item.itemType == .services) ? 1 : 0
+                    } else {
+                        segmented.selectedSegmentIndex = (selectedItemType == .services) ? 1 : 0
+                    }
+                }
+                return cell
+
+            case 1:
                 let cell: UITableViewCell
                 if let dequeued = tableView.dequeueReusableCell(withIdentifier: "rightDetail") {
                     cell = dequeued
@@ -151,7 +190,7 @@ extension ItemInformationTableViewController {
                 cell.contentView.backgroundColor = .cell
                 cell.accessoryType = .disclosureIndicator
                 return cell
-            case 1:
+            case 2:
                 let cell: UITableViewCell
                 if let dequeued = tableView.dequeueReusableCell(withIdentifier: "rightDetail") {
                     cell = dequeued
@@ -175,7 +214,7 @@ extension ItemInformationTableViewController {
                 cell.accessoryType = .disclosureIndicator
                 return cell
 
-            case 2:
+            case 3:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
                 cell.titleLabel.text = "Quantity"
                 cell.titleLabel.textColor = .systemRed
@@ -186,7 +225,7 @@ extension ItemInformationTableViewController {
                 cell.textField.keyboardType = .decimalPad
 
                 return cell
-            case 3:
+            case 4:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
                 cell.titleLabel.text = "Rate"
                 cell.textField.placeholder = "Rs 0"
@@ -202,10 +241,10 @@ extension ItemInformationTableViewController {
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        if indexPath.row == 0 {
+        if indexPath.row == 1 {
             performSegue(withIdentifier: "item_selection", sender: nil)
         }
-        else if indexPath.row == 1 && entryMode == .incompleteItem {
+        else if indexPath.row == 2 && entryMode == .incompleteItem {
             performSegue(withIdentifier: "unit_selection", sender: nil)
         }
     }
@@ -232,13 +271,15 @@ extension ItemInformationTableViewController: ItemSelectionDelegate {
         sellingPrice = item.defaultSellingPrice
         
         // Reload affected rows
-        let indexPathItem = IndexPath(row: 0, section: 0)
-        let indexPathUnit = IndexPath(row: 1, section: 0)
-        let indexPathRate = IndexPath(row: 3, section: 0)
+        let indexPathType = IndexPath(row: 0, section: 0)
+        let indexPathItem = IndexPath(row: 1, section: 0)
+        let indexPathUnit = IndexPath(row: 2, section: 0)
+        let indexPathRate = IndexPath(row: 4, section: 0)
 
         if let visible = tableView.indexPathsForVisibleRows {
             var toReload: [IndexPath] = []
 
+            if visible.contains(indexPathType) { toReload.append(indexPathType) }
             if visible.contains(indexPathItem) { toReload.append(indexPathItem) }
             if visible.contains(indexPathUnit) { toReload.append(indexPathUnit) }
             if visible.contains(indexPathRate) { toReload.append(indexPathRate) }
@@ -251,9 +292,18 @@ extension ItemInformationTableViewController: ItemSelectionDelegate {
     func itemSelection(_ controller: ItemSelectionTableViewController, didEnterUnknownItemName name: String) {
         entryMode = .incompleteItem
         typedItemName = name
-        let indexPathItem = IndexPath(row: 0, section: 0)
+        let indexPathType = IndexPath(row: 0, section: 0)
+        let indexPathItem = IndexPath(row: 1, section: 0)
+        
+        var toReload: [IndexPath] = []
+        if tableView.indexPathsForVisibleRows?.contains(indexPathType) == true {
+            toReload.append(indexPathType)
+        }
         if tableView.indexPathsForVisibleRows?.contains(indexPathItem) == true {
-            tableView.reloadRows(at: [indexPathItem], with: .automatic)
+            toReload.append(indexPathItem)
+        }
+        if !toReload.isEmpty {
+            tableView.reloadRows(at: toReload, with: .automatic)
         } else {
             tableView.reloadData()
         }
@@ -263,8 +313,10 @@ extension ItemInformationTableViewController: UnitSelectionDelegate {
     func unitSelection(_ controller: UnitSelectionTableViewController, unit: String) {
         guard entryMode == .incompleteItem else { return }
         selectedUnit = unit
-        let indexPathUnit = IndexPath(row: 1, section: 0)
+        let indexPathUnit = IndexPath(row: 2, section: 0)
         tableView.reloadRows(at: [indexPathUnit], with: .automatic)
     }
+    
+
 }
 

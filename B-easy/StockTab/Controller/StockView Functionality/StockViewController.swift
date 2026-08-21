@@ -17,6 +17,7 @@ class StockViewController: UIViewController {
             
             tableView.dataSource = self
             tableView.delegate = self
+            HomeTabSpacing.apply(to: tableView)
             
             tableView.register(UINib(nibName: "TopTileTableViewCell", bundle: nil),
                            forCellReuseIdentifier: "TopTileTableViewCell")
@@ -115,7 +116,7 @@ class StockViewController: UIViewController {
     }
 
     private func reloadItems() {
-        items = ((try? dm.getAllItems()) ?? []).sorted {
+        items = ((try? dm.getAllItems()) ?? []).filter(\.isActive).sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
         tableView.reloadData()
@@ -176,7 +177,7 @@ class StockViewController: UIViewController {
                     var totalCost: Double = 0
                     var totalPotentialRevenue: Double = 0
                     if let allItems = try? dm.db.getAllItems() {
-                        for item in allItems {
+                        for item in allItems where !item.isService {
                             if let batches = try? dm.db.getBatches(for: item.id) {
                                 for batch in batches where batch.quantityRemaining > 0 {
                                     totalCost += Double(batch.quantityRemaining) * batch.costPrice
@@ -227,34 +228,36 @@ class StockViewController: UIViewController {
                 cell.configure(
                     itemName: item.name,
                     qty: qtyText,
-                    price: priceText
+                    price: priceText,
+                    isService: item.isService
                 )
-                cell.itemNameLabel.textColor = item.isLowStock ? .systemRed : .label
+                cell.itemNameLabel.textColor = item.isLowStock && !item.isService ? .systemRed : .label
                 return cell
             }
             return UITableViewCell()
         }
         
         func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-            if section == 1 { return 30 }
+            if section == 1 { return 44 }
             return 0
         }
         
         func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+            guard section == 1 else { return nil }
+
             let view = UIView()
-            
-            if section == 1 {
-                let label = UILabel()
-                label.text = "Items"
-                label.font = .systemFont(ofSize: 20, weight: .bold)
-                label.textColor = .label
-                label.translatesAutoresizingMaskIntoConstraints = false
-                view.addSubview(label)
-                NSLayoutConstraint.activate([
-                    label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-                    label.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10)
-                ])
-            }
+            let label = UILabel()
+            label.text = "Items"
+            label.font = .systemFont(ofSize: 20, weight: .bold)
+            label.textColor = .label
+            label.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+                label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+                label.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+                label.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
+            ])
             return view
         }
 

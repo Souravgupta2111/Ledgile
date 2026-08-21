@@ -141,25 +141,25 @@ final class GSTReturnExporter {
 
         // Input tax credit (purchases)
         let purchases = allTransactions.filter { $0.type == .purchase && $0.date >= startDate && $0.date <= endDate }
-        var inputTaxable: Double = 0, inputCGST: Double = 0, inputSGST: Double = 0
+        var inputCGST: Double = 0, inputSGST: Double = 0
         var inputIGST: Double = 0, inputCess: Double = 0
 
         for tx in purchases {
-            inputTaxable += tx.totalTaxableValue ?? 0
             inputCGST += tx.totalCGST ?? 0
             inputSGST += tx.totalSGST ?? 0
             inputIGST += tx.totalIGST ?? 0
             inputCess += tx.totalCess ?? 0
         }
 
-        let netCGST = max(0, outputCGST - inputCGST)
-        let netSGST = max(0, outputSGST - inputSGST)
-        let netIGST = max(0, outputIGST - inputIGST)
-        let netCess = max(0, outputCess - inputCess)
+        let net = gstCashAfterITC(
+            outputIGST: outputIGST, outputCGST: outputCGST, outputSGST: outputSGST, outputCess: outputCess,
+            itcIGST: inputIGST, itcCGST: inputCGST, itcSGST: inputSGST, itcCess: inputCess
+        )
 
         let gstr3b: [String: Any] = [
             "gstin": settings.gstNumber ?? "",
             "ret_period": formatPeriod(startDate),
+            "_note": "Working papers for 3.1 / 4 / 6.1. Not a GSTN filing JSON. Review before upload.",
             "sup_details": [
                 "osup_det": [
                     "txval": round2(outputTaxable),
@@ -167,30 +167,108 @@ final class GSTReturnExporter {
                     "samt": round2(outputSGST),
                     "iamt": round2(outputIGST),
                     "csamt": round2(outputCess)
-                ]
+                ],
+                "osup_zero": emptyTax(),
+                "osup_nil_exmp": emptyTax(),
+                "osup_nongst": emptyTax(),
+                "isup_rev": emptyTax()
             ],
             "itc_elg": [
                 "itc_avl": [
+                    taxRow("IMPG"),
+                    taxRow("IMPS"),
+                    taxRow("ISRC"),
+                    taxRow("ISD"),
                     [
-                        "ty": "IMPG",
-                        "txval": round2(inputTaxable),
+                        "ty": "OTH",
+                        "iamt": round2(inputIGST),
                         "camt": round2(inputCGST),
                         "samt": round2(inputSGST),
-                        "iamt": round2(inputIGST),
                         "csamt": round2(inputCess)
                     ]
-                ]
+                ],
+                "itc_rev": [taxRow("RUL"), taxRow("OTH")],
+                "itc_net": [
+                    "iamt": round2(inputIGST),
+                    "camt": round2(inputCGST),
+                    "samt": round2(inputSGST),
+                    "csamt": round2(inputCess)
+                ],
+                "itc_inelg": [taxRow("RUL"), taxRow("OTH")]
             ],
-            "tax_payable": [
-                "cgst": round2(netCGST),
-                "sgst": round2(netSGST),
-                "igst": round2(netIGST),
-                "cess": round2(netCess),
-                "total": round2(netCGST + netSGST + netIGST + netCess)
+            "tx_pmt": [
+                "pditc": [
+                    "iamt": round2(net.itcUsedIGST),
+                    "camt": round2(net.itcUsedCGST),
+                    "samt": round2(net.itcUsedSGST),
+                    "csamt": round2(net.itcUsedCess)
+                ],
+                "tx_py": [
+                    [
+                        "trans_typ": "Cash",
+                        "igst": ["tx": round2(net.cashIGST)],
+                        "cgst": ["tx": round2(net.cashCGST)],
+                        "sgst": ["tx": round2(net.cashSGST)],
+                        "cess": ["tx": round2(net.cashCess)]
+                    ]
+                ]
             ]
         ]
 
         return try JSONSerialization.data(withJSONObject: gstr3b, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    private func emptyTax() -> [String: Double] {
+        ["txval": 0, "iamt": 0, "camt": 0, "samt": 0, "csamt": 0]
+    }
+
+    private func taxRow(_ ty: String) -> [String: Any] {
+        ["ty": ty, "iamt": 0, "camt": 0, "samt": 0, "csamt": 0]
+    }
+
+    private func gstCashAfterITC(
+        outputIGST: Double, outputCGST: Double, outputSGST: Double, outputCess: Double,
+        itcIGST: Double, itcCGST: Double, itcSGST: Double, itcCess: Double
+    ) -> (cashIGST: Double, cashCGST: Double, cashSGST: Double, cashCess: Double,
+          itcUsedIGST: Double, itcUsedCGST: Double, itcUsedSGST: Double, itcUsedCess: Double) {
+        var igstITC = itcIGST, cgstITC = itcCGST, sgstITC = itcSGST, cessITC = itcCess
+        var igstLiab = outputIGST, cgstLiab = outputCGST, sgstLiab = outputSGST, cessLiab = outputCess
+
+        let igstFromIGST = min(igstLiab, igstITC)
+        igstLiab -= igstFromIGST
+        igstITC -= igstFromIGST
+        let igstFromCGST = min(igstLiab, cgstITC)
+        igstLiab -= igstFromCGST
+        cgstITC -= igstFromCGST
+        let igstFromSGST = min(igstLiab, sgstITC)
+        igstLiab -= igstFromSGST
+        sgstITC -= igstFromSGST
+
+        let cgstFromCGST = min(cgstLiab, cgstITC)
+        cgstLiab -= cgstFromCGST
+        cgstITC -= cgstFromCGST
+        let cgstFromIGST = min(cgstLiab, igstITC)
+        cgstLiab -= cgstFromIGST
+        igstITC -= cgstFromIGST
+
+        let sgstFromSGST = min(sgstLiab, sgstITC)
+        sgstLiab -= sgstFromSGST
+        sgstITC -= sgstFromSGST
+        let sgstFromIGST = min(sgstLiab, igstITC)
+        sgstLiab -= sgstFromIGST
+        igstITC -= sgstFromIGST
+
+        let cessFromCess = min(cessLiab, cessITC)
+        cessLiab -= cessFromCess
+        cessITC -= cessFromCess
+
+        return (
+            cashIGST: igstLiab, cashCGST: cgstLiab, cashSGST: sgstLiab, cashCess: cessLiab,
+            itcUsedIGST: itcIGST - igstITC,
+            itcUsedCGST: itcCGST - cgstITC,
+            itcUsedSGST: itcSGST - sgstITC,
+            itcUsedCess: itcCess - cessITC
+        )
     }
 
     // MARK: - HSN Summary Builder
@@ -241,7 +319,7 @@ final class GSTReturnExporter {
     }
 
     private func round2(_ value: Double) -> Double {
-        (value * 100).rounded() / 100
+        Money.round2(value)
     }
 }
 

@@ -1,29 +1,26 @@
-
 import UIKit
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Kick off any one-time embedding rebuild early so scan flows don't hit stale vectors.
+        CrashLog.install()
         ProductFingerprintManager.shared.prepareEmbeddingsForCurrentExtractor()
-        
-        // Reconcile stock counters with batch data (runs synchronously — fast, avoids race conditions)
-        AppDataModel.shared.dataModel.reconcileAllStock()
-        
+        Task { @MainActor in
+            ProStore.shared.start()
+        }
+        LedgerIO.queue.async {
+            let items = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
+            InventoryMatcher.shared.indexInventory(items)
+            AppDataModel.shared.dataModel.reconcileAllStock()
+        }
         return true
     }
 
-    // MARK: UISceneSession Lifecycle
-
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
-        // Called when a new scene session is being created.
         return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
     }
 
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {
-        // Called when the user discards a scene session.
-        // If any sessions were discarded while the application was not running, this will be called shortly after application:didFinishLaunchingWithOptions.
     }
-
 }

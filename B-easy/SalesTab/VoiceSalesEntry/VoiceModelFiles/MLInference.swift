@@ -36,6 +36,8 @@ struct ParsedResult {
     let isReference: Bool
     let productItemIDs: [UUID]?
     let productConfidences: [String]?
+    var printedGrandTotal: String? = nil
+    var printedTotalMismatch: Bool = false
     
     var formattedText: String {
         var result = ""

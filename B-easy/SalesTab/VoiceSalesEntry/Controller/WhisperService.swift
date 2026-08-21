@@ -1,6 +1,7 @@
 import Foundation
 import SwiftWhisper
 import AVFoundation
+import whisper_cpp
 
 final class WhisperService {
     
@@ -311,7 +312,7 @@ final class WhisperService {
 
         params.logprob_thold = -1.0          
 
-        params.single_segment = true
+        params.single_segment = false
 
         params.no_speech_thold = 0.6         
         
