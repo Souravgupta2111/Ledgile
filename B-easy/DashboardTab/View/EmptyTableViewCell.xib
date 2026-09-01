@@ -37,7 +37,7 @@
                 <constraints>
                     <constraint firstItem="vLA-Al-RoK" firstAttribute="top" secondItem="H2p-sc-9uM" secondAttribute="top" id="7p5-nz-gDP"/>
                     <constraint firstAttribute="trailing" secondItem="vLA-Al-RoK" secondAttribute="trailing" constant="18" id="8V0-JK-SRJ"/>
-                    <constraint firstAttribute="bottom" secondItem="vLA-Al-RoK" secondAttribute="bottom" id="G4d-gG-6Tg"/>
+                    <constraint firstAttribute="bottom" secondItem="vLA-Al-RoK" secondAttribute="bottom" id="G4d-gG-6Tg" priority="999"/>
                     <constraint firstItem="vLA-Al-RoK" firstAttribute="leading" secondItem="H2p-sc-9uM" secondAttribute="leading" constant="18" id="mRh-D3-A8r"/>
                 </constraints>
             </tableViewCellContentView>

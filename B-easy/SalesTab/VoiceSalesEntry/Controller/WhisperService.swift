@@ -77,11 +77,16 @@ final class WhisperService {
         print("\n[WhisperService] ═══════════════════════════════════════")
         print("[WhisperService] 🎙️ transcribe() called | inputFrames=\(audioFrames.count) | duration=\(String(format: "%.2f", Double(audioFrames.count) / 16000.0))s")
         
-        let trimmedFrames = Self.trimSilence(from: audioFrames, threshold: 0.03) 
+        let rawMaxAmp = audioFrames.map { abs($0) }.max() ?? 0
+        // A much more robust threshold: 12% of the max peak, min 0.04.
+        // Using windowSize = 4000 (0.25s) to perfectly smooth out short clicks/breaths.
+        let dynamicThreshold = max(0.04, rawMaxAmp * 0.12)
+        let trimmedFrames = Self.trimSilence(from: audioFrames, threshold: dynamicThreshold, windowSize: 4000) 
         
         let durationSecs = Double(trimmedFrames.count) / 16000.0
         let maxAmplitude = trimmedFrames.map { abs($0) }.max() ?? 0
         let avgAmplitude = trimmedFrames.isEmpty ? 0 : trimmedFrames.map { abs($0) }.reduce(0, +) / Float(trimmedFrames.count)
+        print("[WhisperService] ✂️ Dynamic Trim: rawMax=\(String(format: "%.4f", rawMaxAmp)), threshold=\(String(format: "%.4f", dynamicThreshold))")
         print("[WhisperService] 📊 After trim: frames=\(trimmedFrames.count) | duration=\(String(format: "%.2f", durationSecs))s | maxAmp=\(String(format: "%.4f", maxAmplitude)) | avgAmp=\(String(format: "%.4f", avgAmplitude))")
         
      
@@ -129,15 +134,22 @@ final class WhisperService {
             let totalTime = CFAbsoluteTimeGetCurrent() - totalStart
             
             print("[WhisperService] ⏱️ Inference: \(String(format: "%.2f", inferenceTime))s | Total: \(String(format: "%.2f", totalTime))s | Segments: \(segments.count)")
+            var validSegments: [String] = []
             for (idx, segment) in segments.enumerated() {
-                print("[WhisperService]   Segment[\(idx)]: '\(segment.text)'")
+                let segText = segment.text
+                if isGarbageTranscription(segText, duration: durationSecs) {
+                    print("[WhisperService]   Segment[\(idx)]: '\(segText)' 🗑️ (Garbage Dropped)")
+                } else {
+                    print("[WhisperService]   Segment[\(idx)]: '\(segText)'")
+                    validSegments.append(segText)
+                }
             }
             
-            var fullText = segments.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            var fullText = validSegments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             print("[WhisperService] 📝 Full transcription: '\(fullText)'")
             
-            if isGarbageTranscription(fullText, duration: durationSecs) {
-                print("[WhisperService] 🗑️ Detected garbage/hallucination — returning nil")
+            if fullText.isEmpty && !segments.isEmpty {
+                print("[WhisperService] 🗑️ All segments were garbage — returning nil")
                 print("[WhisperService] ═══════════════════════════════════════\n")
                 return nil
             }
@@ -207,7 +219,7 @@ final class WhisperService {
         let foreignScripts = try? NSRegularExpression(pattern: "[\\p{Katakana}\\p{Hiragana}\\p{Han}\\p{Hangul}]", options: [])
         if let regex = foreignScripts {
             let matches = regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
-            if matches > 2 {
+            if matches > 0 {
                 return true
             }
         }
@@ -295,7 +307,7 @@ final class WhisperService {
      static func makeWhisperParams() -> WhisperParams {
         let params = WhisperParams(strategy: .greedy)
        
-        params.language = .english
+        params.language = .auto
         
         params.n_threads = 4
         params.translate = false
@@ -308,13 +320,17 @@ final class WhisperService {
 
         params.suppress_non_speech_tokens = true
       
-        params.entropy_thold = 2.4           
+        // STRICTION: Abort hallucination loops faster (lower entropy = stricter)
+        params.entropy_thold = 2.2           
 
-        params.logprob_thold = -1.0          
+        // STRICTION: Higher confidence required
+        params.logprob_thold = -0.8          
 
         params.single_segment = false
 
-        params.no_speech_thold = 0.6         
+        // STRICTION: If even 30% chance of being background noise/silence, abort immediately.
+        // This prevents the massive 18s CPU spikes on silence.
+        params.no_speech_thold = 0.3         
         
 
         let prompt = """
@@ -341,8 +357,9 @@ final class WhisperService {
         var startIndex = 0
         for i in stride(from: 0, to: frames.count - windowSize, by: windowSize / 2) {
             let end = min(i + windowSize, frames.count)
-            let windowMax = frames[i..<end].map { abs($0) }.max() ?? 0
-            if windowMax > threshold {
+            let sumSq = frames[i..<end].reduce(0) { $0 + ($1 * $1) }
+            let windowRMS = sqrt(sumSq / Float(end - i))
+            if windowRMS > threshold {
                 startIndex = max(0, i - windowSize) 
                 break
             }
@@ -353,8 +370,9 @@ final class WhisperService {
         for i in stride(from: frames.count - windowSize, through: 0, by: -(windowSize / 2)) {
             let start = max(0, i)
             let end = min(start + windowSize, frames.count)
-            let windowMax = frames[start..<end].map { abs($0) }.max() ?? 0
-            if windowMax > threshold {
+            let sumSq = frames[start..<end].reduce(0) { $0 + ($1 * $1) }
+            let windowRMS = sqrt(sumSq / Float(end - i))
+            if windowRMS > threshold {
                 endIndex = min(frames.count, end + windowSize) 
                 break
             }

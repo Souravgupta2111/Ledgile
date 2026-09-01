@@ -53,7 +53,7 @@
                 <constraints>
                     <constraint firstItem="A4w-Ya-nvB" firstAttribute="top" secondItem="qSc-8W-g9g" secondAttribute="top" id="BUN-JL-JCh"/>
                     <constraint firstItem="A4w-Ya-nvB" firstAttribute="leading" secondItem="qSc-8W-g9g" secondAttribute="leading" id="XWW-2U-CJB"/>
-                    <constraint firstAttribute="bottom" secondItem="A4w-Ya-nvB" secondAttribute="bottom" id="a3g-2A-Q9D"/>
+                    <constraint firstAttribute="bottom" secondItem="A4w-Ya-nvB" secondAttribute="bottom" id="a3g-2A-Q9D" priority="999"/>
                     <constraint firstAttribute="trailing" secondItem="A4w-Ya-nvB" secondAttribute="trailing" id="t0O-yN-UZO"/>
                 </constraints>
             </tableViewCellContentView>

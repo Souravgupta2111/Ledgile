@@ -338,19 +338,33 @@ nonisolated class AuthManager: @unchecked Sendable {
         }
 
         session.dataTask(with: request) { [weak self] data, response, error in
-            guard let self = self,
-                  error == nil,
-                  let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode),
-                  let data = data else {
-                print("[AuthManager] Token refresh failed.")
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("[AuthManager] Token refresh network error: \(error)")
                 completion?(false)
                 return
             }
-
-            self.parseAndSaveSession(data: data)
-            print("[AuthManager] Token refreshed successfully.")
-            completion?(true)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  let data = data else {
+                print("[AuthManager] Token refresh failed: invalid response.")
+                completion?(false)
+                return
+            }
+            
+            if (200...299).contains(httpResponse.statusCode) {
+                self.parseAndSaveSession(data: data)
+                print("[AuthManager] Token refreshed successfully.")
+                completion?(true)
+            } else {
+                print("[AuthManager] Token refresh failed with status \(httpResponse.statusCode).")
+                if (400...499).contains(httpResponse.statusCode) {
+                    print("[AuthManager] Refresh token invalid/expired, logging out.")
+                    self.logOut()
+                }
+                completion?(false)
+            }
         }.resume()
     }
 

@@ -30,7 +30,13 @@ nonisolated final class CloudBackupService: @unchecked Sendable {
             case .notSignedIn: return "Sign in to upload a cloud backup."
             case .notConfigured: return "Cloud backup is not configured."
             case .localCopyFailed: return "Could not create a local copy of the ledger."
-            case .http(let code, let body): return "Cloud upload failed (HTTP \(code)): \(body)"
+            case .http(let code, let body):
+                if let data = body.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let msg = json["message"] as? String ?? json["error_description"] as? String ?? json["error"] as? String ?? body
+                    return "Cloud upload failed (HTTP \(code)): \(msg)"
+                }
+                return "Cloud upload failed (HTTP \(code)): \(body)"
             case .emptyFile: return "No cloud backup file was found."
             }
         }
@@ -81,7 +87,7 @@ nonisolated final class CloudBackupService: @unchecked Sendable {
         startUpload()
     }
 
-    private func startUpload() {
+    private func startUpload(isTokenRefreshRetry: Bool = false) {
         let auth = AuthManager.shared
         guard auth.isConfigured else {
             finish(.failure(BackupError.notConfigured), allowRetry: false)
@@ -104,11 +110,28 @@ nonisolated final class CloudBackupService: @unchecked Sendable {
                 let data = try Data(contentsOf: localURL)
                 try? FileManager.default.removeItem(at: localURL)
                 self.putObject(data: data, userId: userId, token: token, anonKey: anonKey, baseURL: baseURL) { result in
-                    if case .success = result {
+                    switch result {
+                    case .success:
                         UserDefaults.standard.set(Self.dayStamp(Date()), forKey: self.lastDailyKey)
                         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: self.lastSuccessKey)
+                        self.finish(result)
+                    case .failure(let error):
+                        if !isTokenRefreshRetry, let backupError = error as? BackupError, case .http(_, let body) = backupError, body.contains("\"exp\" claim") || body.contains("AccessDenied") {
+                            AuthManager.shared.refreshSessionIfNeeded { success in
+                                if success {
+                                    self.startUpload(isTokenRefreshRetry: true)
+                                } else {
+                                    if !AuthManager.shared.isLoggedIn {
+                                        self.finish(.failure(BackupError.notSignedIn))
+                                    } else {
+                                        self.finish(result)
+                                    }
+                                }
+                            }
+                        } else {
+                            self.finish(result)
+                        }
                     }
-                    self.finish(result)
                 }
             } catch {
                 self.finish(.failure(error))
@@ -137,7 +160,7 @@ nonisolated final class CloudBackupService: @unchecked Sendable {
         }
     }
 
-    func downloadLedger(completion: @escaping (Result<URL, Error>) -> Void) {
+    func downloadLedger(isTokenRefreshRetry: Bool = false, completion: @escaping (Result<URL, Error>) -> Void) {
         let auth = AuthManager.shared
         guard auth.isConfigured else {
             DispatchQueue.main.async { completion(.failure(BackupError.notConfigured)) }
@@ -170,7 +193,21 @@ nonisolated final class CloudBackupService: @unchecked Sendable {
             let code = http?.statusCode ?? 0
             guard (200...299).contains(code), let data, !data.isEmpty else {
                 let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
-                DispatchQueue.main.async { completion(.failure(BackupError.http(code, body))) }
+                if !isTokenRefreshRetry, body.contains("\"exp\" claim") || body.contains("AccessDenied") {
+                    AuthManager.shared.refreshSessionIfNeeded { success in
+                        if success {
+                            self.downloadLedger(isTokenRefreshRetry: true, completion: completion)
+                        } else {
+                            if !AuthManager.shared.isLoggedIn {
+                                DispatchQueue.main.async { completion(.failure(BackupError.notSignedIn)) }
+                            } else {
+                                DispatchQueue.main.async { completion(.failure(BackupError.http(code, body))) }
+                            }
+                        }
+                    }
+                } else {
+                    DispatchQueue.main.async { completion(.failure(BackupError.http(code, body))) }
+                }
                 return
             }
             let dest = FileManager.default.temporaryDirectory.appendingPathComponent("ledgile-cloud-restore.sqlite")

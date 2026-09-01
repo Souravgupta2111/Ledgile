@@ -34,8 +34,10 @@ class VoicePurchaseEntryViewController: UIViewController {
 
     private var lastSFSpeechText: String = ""
     private var sfSpeechPartialCount: Int = 0
-
-
+    
+    // MARK: - Whisper Streaming State
+    private var whisperTimer: Timer?
+    private var isWhisperTranscribing = false
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -92,6 +94,7 @@ class VoicePurchaseEntryViewController: UIViewController {
         lastSpeechActivity = 0
         hasHeardSpeech = false
         startSilenceTimer()
+        startWhisperStreamingTimer()
 
 
         let audioSession = AVAudioSession.sharedInstance()
@@ -127,9 +130,9 @@ class VoicePurchaseEntryViewController: UIViewController {
                 self.hasHeardSpeech = true
                 
                 // Real-time update from SFSpeech (live visual feedback)
-                DispatchQueue.main.async {
-                    self.resultLabel.text = spokenText
-                }
+                // DispatchQueue.main.async {
+                //     self.resultLabel.text = spokenText
+                // }
                 
                 if self.sfSpeechPartialCount % 5 == 0 || result.isFinal {
                     let elapsed = CFAbsoluteTimeGetCurrent() - self.recordingStartTime
@@ -229,6 +232,8 @@ class VoicePurchaseEntryViewController: UIViewController {
         recognitionRequest = nil
         recognitionTask = nil
         
+        stopWhisperStreamingTimer()
+        
         let audioSession = AVAudioSession.sharedInstance()
         try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
         
@@ -289,6 +294,11 @@ class VoicePurchaseEntryViewController: UIViewController {
         
 
         Task {
+            // Wait for any pending background Whisper transcription to finish
+            while self.isWhisperTranscribing {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            }
+            
             let whisperStart = CFAbsoluteTimeGetCurrent()
             let whisperResult = await WhisperService.shared.transcribe(audioFrames: audioFrames)
             let whisperTime = CFAbsoluteTimeGetCurrent() - whisperStart
@@ -568,6 +578,48 @@ class VoicePurchaseEntryViewController: UIViewController {
             if absSample > peak { peak = absSample }
         }
         return (sqrt(sumSquares / Float(frames.count)), peak)
+    }
+    
+    // MARK: - Whisper Streaming
+
+    private func startWhisperStreamingTimer() {
+        whisperTimer?.invalidate()
+        isWhisperTranscribing = false
+        whisperTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.processWhisperPartial()
+        }
+    }
+
+    private func stopWhisperStreamingTimer() {
+        whisperTimer?.invalidate()
+        whisperTimer = nil
+    }
+
+    private func processWhisperPartial() {
+        guard !isWhisperTranscribing else { return }
+        
+        whisperLock.lock()
+        let audioFrames = whisperAudioFrames
+        whisperLock.unlock()
+
+        let whisperAudioDuration = Double(audioFrames.count) / 16000.0
+        guard whisperAudioDuration >= 0.3 else { return }
+
+        isWhisperTranscribing = true
+        
+        Task {
+            let result = await WhisperService.shared.transcribe(audioFrames: audioFrames)
+            await MainActor.run {
+                self.isWhisperTranscribing = false
+                if let text = result, !text.isEmpty {
+                    // Update UI with Whisper partials if it's not hallucination
+                    if !WhisperService.shared.isGarbageTranscription(text, duration: whisperAudioDuration) {
+                        // We use Whisper's highly accurate text for the UI to prevent chopped words
+                        self.resultLabel.text = text
+                    }
+                }
+            }
+        }
     }
 }
 

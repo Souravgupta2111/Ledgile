@@ -69,7 +69,7 @@
                     </view>
                 </subviews>
                 <constraints>
-                    <constraint firstAttribute="bottom" secondItem="K7K-gt-xDi" secondAttribute="bottom" id="KTx-3B-fx4"/>
+                    <constraint firstAttribute="bottom" secondItem="K7K-gt-xDi" secondAttribute="bottom" id="KTx-3B-fx4" priority="999"/>
                     <constraint firstItem="K7K-gt-xDi" firstAttribute="top" secondItem="dZt-dB-0xZ" secondAttribute="top" id="VIR-v2-keD"/>
                     <constraint firstItem="K7K-gt-xDi" firstAttribute="leading" secondItem="dZt-dB-0xZ" secondAttribute="leading" constant="16" id="c7F-Sk-s8c"/>
                     <constraint firstAttribute="trailing" secondItem="K7K-gt-xDi" secondAttribute="trailing" constant="16" id="i4Q-Vq-hLA"/>

@@ -48,7 +48,7 @@
                 </subviews>
                 <constraints>
                     <constraint firstAttribute="trailing" secondItem="mn0-Ea-UeD" secondAttribute="trailing" id="h7r-gV-pty"/>
-                    <constraint firstAttribute="bottom" secondItem="mn0-Ea-UeD" secondAttribute="bottom" id="jlv-kp-2RR"/>
+                    <constraint firstAttribute="bottom" secondItem="mn0-Ea-UeD" secondAttribute="bottom" id="jlv-kp-2RR" priority="999"/>
                     <constraint firstItem="mn0-Ea-UeD" firstAttribute="top" secondItem="H2p-sc-9uM" secondAttribute="top" id="jzB-CT-ar7"/>
                     <constraint firstItem="mn0-Ea-UeD" firstAttribute="leading" secondItem="H2p-sc-9uM" secondAttribute="leading" id="w1Q-vY-pQd"/>
                 </constraints>

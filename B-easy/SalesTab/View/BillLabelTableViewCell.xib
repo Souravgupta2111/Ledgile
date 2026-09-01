@@ -51,7 +51,7 @@
                     <constraint firstAttribute="trailing" secondItem="Eqs-xX-Qi7" secondAttribute="trailing" id="LaE-RK-L8Z"/>
                     <constraint firstItem="Eqs-xX-Qi7" firstAttribute="leading" secondItem="spX-SK-mzC" secondAttribute="leading" id="X2T-DJ-8zb"/>
                     <constraint firstItem="Eqs-xX-Qi7" firstAttribute="top" secondItem="spX-SK-mzC" secondAttribute="top" id="fFe-fx-CIj"/>
-                    <constraint firstAttribute="bottom" secondItem="Eqs-xX-Qi7" secondAttribute="bottom" id="qpJ-24-EiK"/>
+                    <constraint firstAttribute="bottom" secondItem="Eqs-xX-Qi7" secondAttribute="bottom" id="qpJ-24-EiK" priority="999"/>
                 </constraints>
             </tableViewCellContentView>
             <viewLayoutGuide key="safeArea" id="v6A-P0-dkh"/>

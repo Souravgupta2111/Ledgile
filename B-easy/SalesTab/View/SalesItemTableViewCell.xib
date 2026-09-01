@@ -54,7 +54,7 @@
                 </subviews>
                 <constraints>
                     <constraint firstItem="psf-4D-EO1" firstAttribute="leading" secondItem="H2p-sc-9uM" secondAttribute="leading" id="9hI-p3-OgU"/>
-                    <constraint firstAttribute="bottom" secondItem="psf-4D-EO1" secondAttribute="bottom" id="T1X-bi-gFo"/>
+                    <constraint firstAttribute="bottom" secondItem="psf-4D-EO1" secondAttribute="bottom" id="T1X-bi-gFo" priority="999"/>
                     <constraint firstItem="psf-4D-EO1" firstAttribute="top" secondItem="H2p-sc-9uM" secondAttribute="top" id="be6-rP-sj7"/>
                     <constraint firstAttribute="trailing" secondItem="psf-4D-EO1" secondAttribute="trailing" id="eLM-Ul-YRq"/>
                 </constraints>
