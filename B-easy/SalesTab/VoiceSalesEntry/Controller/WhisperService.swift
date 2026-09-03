@@ -304,10 +304,10 @@ final class WhisperService {
     }
     
     
-     static func makeWhisperParams() -> WhisperParams {
+    static func makeWhisperParams() -> WhisperParams {
         let params = WhisperParams(strategy: .greedy)
        
-        params.language = .auto
+        params.language = .english
         
         params.n_threads = 4
         params.translate = false
