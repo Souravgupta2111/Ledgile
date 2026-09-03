@@ -633,7 +633,7 @@ class ChartDataProvider {
 
         switch period {
         case .daily:
-            return today
+            return calendar.date(byAdding: .day, value: -6, to: today) ?? today
         case .monthly:
             let elevenMonthsAgo = calendar.date(byAdding: .month, value: -11, to: today) ?? today
             var comps = calendar.dateComponents([.year, .month], from: elevenMonthsAgo)

@@ -31,7 +31,7 @@ class ItemProfileTableViewController: UITableViewController {
     
     var visibleRows: [RowType] {
         let isService = item?.isService ?? false
-        var rows: [RowType] = [.itemType, .name]
+        var rows: [RowType] = [.name, .itemType]
 
         if !isService {
             rows.append(contentsOf: [.quantity, .lowStock, .unit, .alternateUnitName, .alternateUnitFactor])
@@ -416,30 +416,25 @@ class ItemProfileTableViewController: UITableViewController {
                 let rowType = visibleRows[indexPath.row]
                 switch rowType {
                     case .itemType:
-                        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-                        cell.selectionStyle = .none
-
-                        let titleLabel = UILabel()
-                        titleLabel.text = "Type"
-                        titleLabel.font = .systemFont(ofSize: 17)
-                        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-                        cell.contentView.addSubview(titleLabel)
-
+                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+                        cell.titleLabel.text = "Type"
+                        cell.textField.isHidden = true
+                        
                         let seg = UISegmentedControl(items: ["Goods", "Service"])
                         seg.selectedSegmentIndex = (item?.isService == true) ? 1 : 0
                         seg.translatesAutoresizingMaskIntoConstraints = false
                         seg.addTarget(self, action: #selector(profileItemTypeChanged(_:)), for: .valueChanged)
-                        cell.contentView.addSubview(seg)
-
-                        NSLayoutConstraint.activate([
-                            titleLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-                            titleLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                            seg.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
-                            seg.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                            seg.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
-                            seg.widthAnchor.constraint(equalToConstant: 160),
-                            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
-                        ])
+                        seg.tag = 999
+                        
+                        if let container = cell.textField.superview {
+                            container.addSubview(seg)
+                            NSLayoutConstraint.activate([
+                                seg.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+                                seg.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                                seg.widthAnchor.constraint(equalToConstant: 160)
+                            ])
+                        }
+                        
                         return cell
                     case .name:
                         let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell

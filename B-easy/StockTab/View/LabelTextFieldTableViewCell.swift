@@ -27,7 +27,11 @@ class LabelTextFieldTableViewCell: UITableViewCell {
         accessoryType = .none
         textField.isUserInteractionEnabled = true
         textField.keyboardType = .default
+        textField.isHidden = false
         onTextChanged = nil
+        if let container = textField.superview {
+            container.viewWithTag(999)?.removeFromSuperview()
+        }
     }
 
     @objc private func textChanged() {
