@@ -13,9 +13,8 @@ class BillLabelTableViewCell: UITableViewCell {
     @IBOutlet var dateLabel: UILabel!
     override func awakeFromNib() {
         super.awakeFromNib()
-        let onyx = UIColor(named: "Onyx") ?? .black
-        titleLabel.textColor = onyx
-        dateLabel.textColor = onyx.withAlphaComponent(0.7)
+        titleLabel.textColor = .label
+        dateLabel.textColor = .secondaryLabel
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

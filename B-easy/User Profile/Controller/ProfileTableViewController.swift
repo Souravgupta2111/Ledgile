@@ -42,16 +42,10 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
         case cloudBackup
         case importBackup
         case restoreCloudBackup
-        case mobileSAM
     }
 
-    /// Visible preferences rows (mobileSAM only shows when model files exist on disk)
     private var currentPreferencesRows: [PreferencesRow] {
-        var rows: [PreferencesRow] = [.appAppearance, .dataBackup, .cloudBackup, .importBackup, .restoreCloudBackup]
-        if MobileSAMService.modelsExistOnDisk {
-            rows.append(.mobileSAM)
-        }
-        return rows
+        return [.appAppearance, .dataBackup, .cloudBackup, .importBackup, .restoreCloudBackup]
     }
 
     private enum LegalRow: Int, CaseIterable {
@@ -323,17 +317,6 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
                     title: "Restore Cloud Backup",
                     accessoryStyle: .chevron
                 )
-            case .mobileSAM:
-                let isOn = UserDefaults.standard.bool(forKey: MobileSAMService.enabledKey)
-                cell.configure(
-                    icon: UIImage(systemName: "cpu"),
-                    title: "MobileSAM Segmentation",
-                    accessoryStyle: .toggle(isOn: isOn)
-                )
-                cell.onToggleChanged = { newValue in
-                    UserDefaults.standard.set(newValue, forKey: MobileSAMService.enabledKey)
-                    print("[Settings] MobileSAM toggled \(newValue ? "ON" : "OFF")")
-                }
             }
             return cell
 
@@ -453,8 +436,6 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
                 importDataBackup()
             case .restoreCloudBackup:
                 restoreCloudBackupTapped()
-            case .mobileSAM:
-                break // Handled by toggle switch
             }
 
         case .legal:

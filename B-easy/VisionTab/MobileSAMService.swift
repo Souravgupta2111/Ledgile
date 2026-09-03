@@ -48,9 +48,8 @@ final class MobileSAMService {
 
     static let enabledKey = "vision.useMobileSAM"
 
-    /// Toggle on and model files present. Does not compile/load Core ML.
     static var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: enabledKey) && modelsExistOnDisk
+        return false
     }
 
     private init?() {

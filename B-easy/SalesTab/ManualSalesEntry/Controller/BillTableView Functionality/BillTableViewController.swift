@@ -161,7 +161,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             ])
         }
         
-        bgView.backgroundColor = UIColor(named: "Beige") ?? .systemGray5
+        bgView.backgroundColor = .clear
         
         bgView.layer.cornerRadius = 16
         if isFirst && isLast {
@@ -190,7 +190,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         if addSeparator {
             let separator = UIView()
             separator.tag = 999
-            separator.backgroundColor = UIColor.black.withAlphaComponent(0.12)
+            separator.backgroundColor = UIColor.separator
             separator.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(separator)
             NSLayoutConstraint.activate([

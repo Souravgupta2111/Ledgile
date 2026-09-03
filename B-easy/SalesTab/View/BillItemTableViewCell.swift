@@ -15,10 +15,9 @@ class BillItemTableViewCell: UITableViewCell {
     
     override func awakeFromNib() {
         super.awakeFromNib()
-        let onyx = UIColor(named: "Onyx") ?? .black
-        titleLabel.textColor = onyx
-        priceLabel.textColor = onyx
-        detailLabel.textColor = onyx.withAlphaComponent(0.6)
+        titleLabel.textColor = .label
+        priceLabel.textColor = .label
+        detailLabel.textColor = .secondaryLabel
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

@@ -13,9 +13,8 @@ class TwoLabelsTableViewCell: UITableViewCell {
     
     override func awakeFromNib() {
         super.awakeFromNib()
-        let onyx = UIColor(named: "Onyx") ?? .black
-        titleLabel.textColor = onyx
-        detailLabel?.textColor = onyx
+        titleLabel.textColor = .label
+        detailLabel?.textColor = .label
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

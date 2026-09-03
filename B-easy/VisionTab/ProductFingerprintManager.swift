@@ -793,12 +793,20 @@ final class ProductFingerprintManager {
         }
     }
 
-     func cropImage(image: CGImage, to rect: CGRect) -> CGImage? {
+    func cropImage(image: CGImage, to rect: CGRect) -> CGImage? {
         let x = max(0, Int(rect.origin.x))
         let y = max(0, Int(rect.origin.y))
         let w = min(image.width - x, max(1, Int(rect.width)))
         let h = min(image.height - y, max(1, Int(rect.height)))
-        return image.cropping(to: CGRect(x: x, y: y, width: w, height: h))
+        let validRect = CGRect(x: x, y: y, width: w, height: h)
+        
+        let uiImage = UIImage(cgImage: image)
+        UIGraphicsBeginImageContextWithOptions(validRect.size, true, 1.0)
+        uiImage.draw(at: CGPoint(x: -validRect.minX, y: -validRect.minY))
+        let cropped = UIGraphicsGetImageFromCurrentImageContext()?.cgImage
+        UIGraphicsEndImageContext()
+        
+        return cropped
     }
 
 
@@ -873,46 +881,7 @@ final class ProductFingerprintManager {
         previousRect: CGRect?,
         completion: @escaping (_ crop: CGImage?, _ rect: CGRect?, _ detections: [(rect: CGRect, hasMask: Bool)]) -> Void
     ) {
-        ObjectDetectionService.shared.detectObjects(in: image) { [weak self] boxes in
-            guard let self else {
-                completion(nil, nil, [])
-                return
-            }
-
-            var enriched = boxes
-            var encoding: SAMImageEncoding?
-            if MobileSAMService.isEnabled, let sam = MobileSAMService.shared {
-                encoding = sam.encodeImage(image)
-                if let encoding {
-                    enriched = sam.generateMasks(encoding: encoding, boxes: boxes)
-                }
-            }
-
-            var chosen = self.pickIsolationBox(
-                boxes: enriched,
-                imageSize: CGSize(width: image.width, height: image.height),
-                tapInImage: tapInImage,
-                previousRect: previousRect
-            )
-
-            if chosen == nil, let tap = tapInImage {
-                let side = min(CGFloat(image.width), CGFloat(image.height)) * 0.32
-                let seed = CGRect(x: tap.x - side / 2, y: tap.y - side / 2, width: side, height: side)
-                    .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
-                var box = DetectedObjectBox(rect: seed, confidence: 1, mask: nil)
-                if let encoding, let sam = MobileSAMService.shared {
-                    box = sam.generateMasks(encoding: encoding, boxes: [box]).first ?? box
-                }
-                chosen = box
-            }
-
-            let detections = enriched.map { (rect: $0.rect, hasMask: $0.mask != nil) }
-            guard let chosen else {
-                completion(nil, nil, detections)
-                return
-            }
-            completion(self.makeFocusedCrop(from: image, box: chosen), chosen.rect, detections)
-        }
+        completion(image, nil, [])
     }
 
     private func pickIsolationBox(
@@ -957,38 +926,50 @@ final class ProductFingerprintManager {
 
         let rect = box.rect.integral.standardized
         let clamped = rect.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        guard !clamped.isNull, clamped.width > 1, clamped.height > 1,
-              let crop = image.cropping(to: clamped) else { return nil }
+        guard !clamped.isNull, clamped.width > 1, clamped.height > 1 else { return nil }
 
-        let width = crop.width
-        let height = crop.height
-        let bytesPerRow = width * 4
-        var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+        let uiImage = UIImage(cgImage: image)
+        UIGraphicsBeginImageContextWithOptions(clamped.size, true, 1.0)
+        uiImage.draw(at: CGPoint(x: -clamped.minX, y: -clamped.minY))
+        let cleanCrop = UIGraphicsGetImageFromCurrentImageContext()?.cgImage
+        UIGraphicsEndImageContext()
+        
+        guard let clean = cleanCrop else { return nil }
+
+        let width = clean.width
+        let height = clean.height
 
         guard let context = CGContext(
-            data: &pixels,
+            data: nil,
             width: width,
             height: height,
             bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
+            bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return crop }
+        ) else { return clean }
 
-        context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1.0, y: -1.0)
+        context.draw(clean, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let dataPtr = context.data else { return context.makeImage() ?? clean }
+        let actualBytesPerRow = context.bytesPerRow
+        let pixels = dataPtr.bindMemory(to: UInt8.self, capacity: height * actualBytesPerRow)
 
         let scaleX = CGFloat(mask.width) / CGFloat(image.width)
         let scaleY = CGFloat(mask.height) / CGFloat(image.height)
 
-        for y in 0..<height {
-            for x in 0..<width {
-                let globalX = clamped.minX + CGFloat(x)
-                let globalY = clamped.minY + CGFloat(y)
+        for currY in 0..<height {
+            for currX in 0..<width {
+                let globalX = clamped.minX + CGFloat(currX)
+                let globalY = clamped.minY + CGFloat(currY)
+                
                 let mx = min(mask.width - 1, max(0, Int(globalX * scaleX)))
                 let my = min(mask.height - 1, max(0, Int(globalY * scaleY)))
                 let maskValue = mask.floats[my * mask.width + mx]
                 if maskValue < 0.5 {
-                    let idx = y * bytesPerRow + x * 4
+                    let idx = currY * actualBytesPerRow + currX * 4
                     pixels[idx] = 0
                     pixels[idx + 1] = 0
                     pixels[idx + 2] = 0
@@ -996,6 +977,6 @@ final class ProductFingerprintManager {
             }
         }
 
-        return context.makeImage() ?? crop
+        return context.makeImage() ?? clean
     }
 }
