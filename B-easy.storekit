@@ -1,0 +1,68 @@
+{
+  "_applicationInternalID" : "com.sourav.beasyyyy",
+  "_developerTeamID" : "A92V46D8LJ",
+  "_lastSynchronizedDate" : 780000000,
+  "version" : {
+    "majorVersion" : 2,
+    "minorVersion" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "B-easy Pro",
+      "localizations" : [
+        {
+          "description" : "Unlock Pro AI scans and cloud backup.",
+          "displayName" : "B-easy Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "199",
+          "groupNumber" : 1,
+          "internalID" : "monthly-internal",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "300 voice, 100 photo scans daily + backup",
+              "displayName" : "B-easy Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.sourav.beasyyyy.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "subscriptionGroupID" : "B-easy Pro",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "1999",
+          "groupNumber" : 2,
+          "internalID" : "yearly-internal",
+          "localizations" : [
+            {
+              "description" : "Save 16% - 300 voice, 100 photo daily",
+              "displayName" : "B-easy Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.sourav.beasyyyy.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "subscriptionGroupID" : "B-easy Pro",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ]
+}

@@ -13,8 +13,7 @@ final class GSTReturnExporter {
 
     // MARK: - GSTR-1 Export
 
-    /// Generate GSTR-1 JSON for a given period
-    /// GSTR-1 includes: B2B invoices, B2CS (consumer) summary, HSN summary
+   
     func generateGSTR1(from startDate: Date, to endDate: Date) throws -> Data {
         let settings = try db.getSettings()
         guard settings.isGSTRegistered, settings.gstScheme == "regular" else {
@@ -30,7 +29,7 @@ final class GSTReturnExporter {
         let b2bTransactions = salesInPeriod.filter { $0.buyerGSTIN != nil && !($0.buyerGSTIN?.isEmpty ?? true) }
         let b2csTransactions = salesInPeriod.filter { $0.buyerGSTIN == nil || $0.buyerGSTIN?.isEmpty == true }
 
-        // Build B2B section
+        
         var b2bInvoices: [[String: Any]] = []
         for tx in b2bTransactions {
             let items = (try? db.getTransactionItems(for: tx.id)) ?? []
@@ -66,7 +65,7 @@ final class GSTReturnExporter {
             b2bInvoices.append(invoice)
         }
 
-        // Build B2CS section (consumer sales summary, grouped by rate + place of supply)
+       
         var b2csSummary: [[String: Any]] = []
         var b2csGrouped: [String: (taxable: Double, cgst: Double, sgst: Double, igst: Double, cess: Double)] = [:]
 
@@ -100,10 +99,10 @@ final class GSTReturnExporter {
             ] as [String : Any])
         }
 
-        // Build HSN Summary
+        
         let hsnSummary = try buildHSNSummary(transactions: salesInPeriod)
 
-        // Assemble GSTR-1
+        
         let gstr1: [String: Any] = [
             "gstin": settings.gstNumber ?? "",
             "fp": formatPeriod(startDate),
@@ -117,7 +116,7 @@ final class GSTReturnExporter {
 
     // MARK: - GSTR-3B Summary
 
-    /// Generate GSTR-3B summary for a given period
+  
     func generateGSTR3B(from startDate: Date, to endDate: Date) throws -> Data {
         let settings = try db.getSettings()
         guard settings.isGSTRegistered, settings.gstScheme == "regular" else {
@@ -271,7 +270,7 @@ final class GSTReturnExporter {
         )
     }
 
-    // MARK: - HSN Summary Builder
+    // MARK: - HSN Summary
 
     private func buildHSNSummary(transactions: [Transaction]) throws -> [[String: Any]] {
         var hsnMap: [String: (qty: Double, taxable: Double, cgst: Double, sgst: Double, igst: Double, cess: Double)] = [:]

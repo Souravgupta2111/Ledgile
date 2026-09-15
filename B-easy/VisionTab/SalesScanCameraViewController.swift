@@ -48,6 +48,7 @@ class SalesScanCameraViewController: UIViewController {
      var barcodePickerShowing = false
      var barcodePendingCode: String?
      var barcodeFilteredItems: [Item] = []
+     var barcodeInFlightLookups: Set<String> = []
 
     // MARK: - Barcode UI (overlaid on same screen)
      var barcodeToastView: UIVisualEffectView?
@@ -586,10 +587,7 @@ extension SalesScanCameraViewController: AVCaptureVideoDataOutputSampleBufferDel
                 return
             }
 
-            // Run all three detection strategies in parallel on this frame:
-            //   1. CLIP matching (product recognition via trained embeddings)
-            //   2. Barcode scanning (instant match if barcode found in inventory)
-            //   3. OCR label reading (extract weight, variant from packaging text)
+
             let group = DispatchGroup()
 
             var clipOutcome = ProductScanOutcome(matches: [], overlays: [], ambiguous: [], allDetections: [])
@@ -689,6 +687,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
 
         barcodeScannedItems = []
         barcodeSeenCodes = []
+        barcodeInFlightLookups = []
         isBarcodeScanning = true
 
         updateShutterButton(symbolName: "stop.fill", color: .systemRed)
@@ -702,6 +701,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
 
      func stopBarcodeScanning() {
         isBarcodeScanning = false
+        barcodeInFlightLookups.removeAll()
         updateShutterButton(symbolName: "camera.fill", color: UIColor(named: "Lime Moss") ?? .systemGreen)
         updateStatusLabel()
 
@@ -1134,7 +1134,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                 }
             }
         }
-        // Also catch standalone ₹ followed by number (e.g., "₹20" without MRP prefix)
+
         let standalonePrice = #"₹\s*(\d+\.?\d*)"#
         if let regex = try? NSRegularExpression(pattern: standalonePrice, options: []) {
             let matches = regex.matches(in: allText, range: NSRange(allText.startIndex..., in: allText))
@@ -1148,7 +1148,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             }
         }
 
-        // ── Step 3: Match OCR text against inventory with variant awareness ──
+
         let allItems = barcodeAllItems.isEmpty
             ? ((try? AppDataModel.shared.dataModel.db.getAllItems()) ?? [])
             : barcodeAllItems
@@ -1162,7 +1162,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             let itemName = item.name.lowercased()
             let words = itemName.split(separator: " ").map(String.init)
 
-            // Check how many product name words appear in OCR text
+
             let matchingWords = words.filter { word in
                 word.count >= 4 && allText.contains(word)
             }
@@ -1170,10 +1170,10 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
 
             guard nameScore >= 0.4 && matchingWords.count >= 1 else { continue }
 
-            // Check if item name contains a weight that matches OCR weight
+
             var weightMatch = false
             if !detectedWeights.isEmpty {
-                // Extract weight from item name (e.g., "Lays Classic 52g" → "52g")
+
                 if let weightRegex = try? NSRegularExpression(pattern: weightPattern, options: .caseInsensitive) {
                     let nameMatches = weightRegex.matches(in: itemName, range: NSRange(itemName.startIndex..., in: itemName))
                     for nm in nameMatches {
@@ -1196,7 +1196,6 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                 }
             }
 
-            // Check if OCR price matches item's selling price (±2 tolerance for rounding)
             var priceMatch = false
             if !detectedPrices.isEmpty {
                 let itemPrice = item.defaultSellingPrice
@@ -1212,8 +1211,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             candidateMatches.append((item: item, nameScore: nameScore, weightMatch: weightMatch, priceMatch: priceMatch))
         }
 
-        // ── Step 4: Resolve variants ──
-        // Priority: weight+price match > weight only > price only > name score
+
         let sorted = candidateMatches.sorted { a, b in
             // Both weight and price match is strongest
             let aStrength = (a.weightMatch ? 2 : 0) + (a.priceMatch ? 1 : 0)
@@ -1227,7 +1225,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
             let item = match.item
             guard !confirmedInThisPass.contains(item.id) else { continue }
 
-            // Strong match: weight OR price match (or both), plus reasonable name score
+
             let isStrongMatch = match.weightMatch && match.nameScore >= 0.4
 
             if isStrongMatch {
@@ -1322,32 +1320,106 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
     }
 
      func handleBarcodeDetected(_ payload: String) {
-        if barcodeSeenCodes.contains(payload) { return }
-        if barcodePickerShowing { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.barcodeSeenCodes.contains(payload) { return }
+            if self.barcodePickerShowing { return }
+            if self.barcodeInFlightLookups.contains(payload) { return }
 
-        let now = CACurrentMediaTime()
-        guard now - barcodeLastScanTime > barcodeScanCooldown else { return }
-        barcodeLastScanTime = now
+            let now = CACurrentMediaTime()
+            guard now - self.barcodeLastScanTime > self.barcodeScanCooldown else { return }
+            self.barcodeLastScanTime = now
 
-        if let item = barcodeItemLookup[payload] {
-            barcodeSeenCodes.insert(payload)
-            if let idx = barcodeScannedItems.firstIndex(where: { $0.item.id == item.id }) {
-                barcodeScannedItems[idx].quantity += 1
-            } else {
-                barcodeScannedItems.append((item: item, quantity: 1))
-            }
+            // 1. Direct match in local indexed inventory
+            if let item = self.barcodeItemLookup[payload] {
+                self.barcodeSeenCodes.insert(payload)
+                if let idx = self.barcodeScannedItems.firstIndex(where: { $0.item.id == item.id }) {
+                    self.barcodeScannedItems[idx].quantity += 1
+                } else {
+                    self.barcodeScannedItems.append((item: item, quantity: 1))
+                }
 
-            DispatchQueue.main.async {
                 self.showBarcodeToast(
                     "\(item.name) — ₹\(String(format: "%.0f", item.defaultSellingPrice))",
                     isError: false
                 )
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
+                return
             }
-        } else {
-            DispatchQueue.main.async {
-                UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                self.showBarcodeItemPicker(for: payload)
+
+            // 2. Unknown barcode -> lookup in Open Food Facts catalog
+            self.barcodeInFlightLookups.insert(payload)
+            OpenFoodFactsService.shared.lookupBarcode(payload) { [weak self] productInfo in
+                guard let self = self else { return }
+                self.barcodeInFlightLookups.remove(payload)
+
+                if let info = productInfo {
+                    // Check if it matches an existing item in local inventory
+                    let matches = BarcodeMatcher.shared.findMatches(for: info.displayName, in: self.barcodeAllItems)
+                    if let bestMatch = matches.first, bestMatch.confidence >= 0.70 {
+                        self.linkBarcode(payload, toItem: bestMatch.item)
+                        return
+                    }
+
+                    // Otherwise create a new item autofilled from Open Food Facts & HSN database
+                    var newItem = Item(
+                        id: UUID(),
+                        name: info.displayName,
+                        unit: info.inferredUnit,
+                        barcode: payload,
+                        defaultCostPrice: 0,
+                        defaultSellingPrice: 0,
+                        defaultPriceUpdatedAt: Date(),
+                        lowStockThreshold: 10,
+                        currentStock: 0,
+                        createdDate: Date(),
+                        lastRestockDate: nil,
+                        isActive: true
+                    )
+                    if let hsnMatch = HSNDatabase.shared.searchByName(query: info.displayName) {
+                        newItem.hsnCode = hsnMatch.code
+                        newItem.gstRate = hsnMatch.gstRate
+                    }
+                    newItem.itemType = .goods
+
+                    // Save to database & update lookup
+                    try? AppDataModel.shared.dataModel.db.insertItem(newItem)
+                    self.barcodeAllItems.append(newItem)
+                    self.barcodeItemLookup[payload] = newItem
+                    self.barcodeSeenCodes.insert(payload)
+
+                    if let idx = self.barcodeScannedItems.firstIndex(where: { $0.item.id == newItem.id }) {
+                        self.barcodeScannedItems[idx].quantity += 1
+                    } else {
+                        self.barcodeScannedItems.append((item: newItem, quantity: 1))
+                    }
+
+                    self.showBarcodeToast("📦 \(newItem.name)", isError: false)
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+                    // Background price lookup from global catalog
+                    GlobalCatalogService.shared.search(query: info.displayName, limit: 1) { [weak self] catalogProducts in
+                        guard let self = self, let first = catalogProducts.first else { return }
+                        var updated = newItem
+                        var changed = false
+                        if let cp = first.defaultCostPrice, cp > 0 { updated.defaultCostPrice = cp; changed = true }
+                        if let sp = first.defaultSellingPrice, sp > 0 { updated.defaultSellingPrice = sp; changed = true }
+                        if changed {
+                            try? AppDataModel.shared.dataModel.db.updateItem(updated)
+                            if let idx = self.barcodeAllItems.firstIndex(where: { $0.id == updated.id }) {
+                                self.barcodeAllItems[idx] = updated
+                            }
+                            self.barcodeItemLookup[payload] = updated
+                            if let idx = self.barcodeScannedItems.firstIndex(where: { $0.item.id == updated.id }) {
+                                self.barcodeScannedItems[idx].item = updated
+                            }
+                        }
+                    }
+                } else {
+                    // Unknown to Open Food Facts -> fall back to manual linking picker
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    self.showBarcodeItemPicker(for: payload)
+                }
             }
         }
     }

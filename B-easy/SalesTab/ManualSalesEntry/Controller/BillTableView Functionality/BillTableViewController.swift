@@ -586,9 +586,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 y += 16
             }
 
-            // ═══════════════════════════════════════════
-            // TITLE
-            // ═══════════════════════════════════════════
+
             let isPurchase = details.transactionType == .purchase
 
             if isGST || isComposition {
@@ -608,9 +606,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y += 4
             drawLine(at: y, weight: 1.0); y += 10
 
-            // ═══════════════════════════════════════════
-            // SELLER + INVOICE INFO (side by side)
-            // ═══════════════════════════════════════════
+
             let halfW = contentWidth * 0.5
             let leftX = margin
             let rightX = margin + halfW + 8
@@ -659,9 +655,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y = max(leftBottom, ry) + 6
             drawLine(at: y); y += 8
 
-            // ═══════════════════════════════════════════
-            // BUYER INFO
-            // ═══════════════════════════════════════════
+
             let partyLabel = isPurchase ? "Supplier" : "Buyer"
             drawText("\(partyLabel): \(details.customerName)", font: headingFont,
                      rect: CGRect(x: margin, y: y, width: contentWidth, height: 14))
@@ -673,9 +667,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             y += 4
             drawLine(at: y); y += 6
 
-            // ═══════════════════════════════════════════
-            // ITEM TABLE
-            // ═══════════════════════════════════════════
+
             if isGST {
                 // GST table: # | Item | HSN | Qty | Rate | Taxable | Tax | Amount
                 let itemColumnWidth = contentWidth * 0.25
@@ -757,8 +749,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
 
             y += 4; drawLine(at: y, weight: 1.0); y += 8
 
-            // ═══════════════════════════════════════════
-            // TOTALS
+
             let subTotal = Money.round2(details.items.reduce(0.0) { $0 + (isPurchase ? $1.totalCost : $1.totalRevenue) })
 
             if details.discount != 0 {
@@ -768,9 +759,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 drawRow(label: "Adjustment:", value: String(format: "₹%.2f", details.adjustment))
             }
 
-            // ═══════════════════════════════════════════
-            // RATE-WISE TAX BREAKUP TABLE (GST only)
-            // ═══════════════════════════════════════════
+
             if let taxBreakup = details.taxBreakup, !taxBreakup.rateWiseSummary.isEmpty {
                 ensureSpace(60)
                 y += 4
@@ -822,9 +811,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 if taxBreakup.totalCess > 0 { drawRow(label: "Total Cess:", value: String(format: "₹%.2f", taxBreakup.totalCess)) }
             }
 
-            // ═══════════════════════════════════════════
-            // GRAND TOTAL
-            // ═══════════════════════════════════════════
+
             ensureSpace(30)
             drawLine(at: y, weight: 1.0); y += 8
             let grandTotal = subTotal - details.discount + details.adjustment
@@ -839,9 +826,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                      rect: CGRect(x: margin, y: y, width: contentWidth, height: 14))
             y += 20
 
-            // ═══════════════════════════════════════════
-            // FOOTER
-            // ═══════════════════════════════════════════
+
             if isComposition {
                 ensureSpace(30)
                 drawLine(at: y); y += 8

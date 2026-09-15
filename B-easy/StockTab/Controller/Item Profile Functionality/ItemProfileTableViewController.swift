@@ -738,6 +738,51 @@ class ItemProfileTableViewController: UITableViewController {
                 cell.textField.text = barcode
             }
             self.item?.barcode = barcode
+
+            // Lookup OpenFoodFacts for product details
+            OpenFoodFactsService.shared.lookupBarcode(barcode) { [weak self] productInfo in
+                guard let self = self, let info = productInfo else { return }
+
+                // Map product display name if currently empty or default
+                let currentName = (self.item?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if currentName.isEmpty || currentName.lowercased() == "item" || currentName.lowercased() == "new item" {
+                    self.item?.name = info.displayName
+                }
+
+                // Map unit if currently empty or default "pcs"
+                let currentUnit = (self.item?.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if currentUnit.isEmpty || currentUnit.lowercased() == "pcs" {
+                    self.item?.unit = info.inferredUnit
+                }
+
+                // Map HSN / GST from HSNDatabase
+                if self.item?.hsnCode == nil || self.item?.gstRate == nil {
+                    if let hsnMatch = HSNDatabase.shared.searchByName(query: info.displayName) {
+                        if self.item?.hsnCode == nil { self.item?.hsnCode = hsnMatch.code }
+                        if self.item?.gstRate == nil { self.item?.gstRate = hsnMatch.gstRate }
+                    }
+                }
+
+                // Check Global Catalog for default price
+                if (self.item?.defaultCostPrice ?? 0) <= 0 || (self.item?.defaultSellingPrice ?? 0) <= 0 {
+                    GlobalCatalogService.shared.search(query: info.displayName, limit: 1) { [weak self] catalogProducts in
+                        guard let self = self, let first = catalogProducts.first else { return }
+                        if (self.item?.defaultCostPrice ?? 0) <= 0, let cp = first.defaultCostPrice, cp > 0 {
+                            self.item?.defaultCostPrice = cp
+                        }
+                        if (self.item?.defaultSellingPrice ?? 0) <= 0, let sp = first.defaultSellingPrice, sp > 0 {
+                            self.item?.defaultSellingPrice = sp
+                        }
+                        DispatchQueue.main.async {
+                            self.tableView.reloadData()
+                        }
+                    }
+                }
+
+                DispatchQueue.main.async {
+                    self.tableView.reloadData()
+                }
+            }
         }
         let nav = UINavigationController(rootViewController: scanVC)
         present(nav, animated: true)
@@ -821,6 +866,7 @@ class QuickBarcodeScanViewController: UIViewController, AVCaptureVideoDataOutput
         if let payload = (request.results as? [VNBarcodeObservation])?.first?.payloadStringValue, !payload.isEmpty {
             hasScanned = true
             DispatchQueue.main.async {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 self.onBarcodeScanned?(payload)
                 self.dismiss(animated: true)
             }

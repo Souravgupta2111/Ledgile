@@ -78,10 +78,10 @@ final class WhisperService {
         print("[WhisperService] 🎙️ transcribe() called | inputFrames=\(audioFrames.count) | duration=\(String(format: "%.2f", Double(audioFrames.count) / 16000.0))s")
         
         let rawMaxAmp = audioFrames.map { abs($0) }.max() ?? 0
-        // A much more robust threshold: 12% of the max peak, min 0.04.
-        // Using windowSize = 4000 (0.25s) to perfectly smooth out short clicks/breaths.
-        let dynamicThreshold = max(0.04, rawMaxAmp * 0.12)
-        let trimmedFrames = Self.trimSilence(from: audioFrames, threshold: dynamicThreshold, windowSize: 4000) 
+        // Balanced dynamic threshold: sensitive enough to capture soft consonants,
+        // while trimming dead silence with generous padding to prevent clipped words.
+        let dynamicThreshold = max(0.012, min(0.035, rawMaxAmp * 0.10))
+        let trimmedFrames = Self.trimSilence(from: audioFrames, threshold: dynamicThreshold, windowSize: 3200) 
         
         let durationSecs = Double(trimmedFrames.count) / 16000.0
         let maxAmplitude = trimmedFrames.map { abs($0) }.max() ?? 0
@@ -321,16 +321,15 @@ final class WhisperService {
         params.suppress_non_speech_tokens = true
       
         // STRICTION: Abort hallucination loops faster (lower entropy = stricter)
-        params.entropy_thold = 2.2           
+        params.entropy_thold = 2.4           
 
-        // STRICTION: Higher confidence required
-        params.logprob_thold = -0.8          
+        // Confidence threshold
+        params.logprob_thold = -1.0          
 
         params.single_segment = false
 
-        // STRICTION: If even 30% chance of being background noise/silence, abort immediately.
-        // This prevents the massive 18s CPU spikes on silence.
-        params.no_speech_thold = 0.3         
+        // Filter silence without dropping real speech pauses
+        params.no_speech_thold = 0.5         
         
 
         let prompt = """
@@ -360,7 +359,7 @@ final class WhisperService {
             let sumSq = frames[i..<end].reduce(0) { $0 + ($1 * $1) }
             let windowRMS = sqrt(sumSq / Float(end - i))
             if windowRMS > threshold {
-                startIndex = max(0, i - windowSize) 
+                startIndex = max(0, i - (windowSize * 2)) 
                 break
             }
         }
@@ -373,7 +372,7 @@ final class WhisperService {
             let sumSq = frames[start..<end].reduce(0) { $0 + ($1 * $1) }
             let windowRMS = sqrt(sumSq / Float(end - i))
             if windowRMS > threshold {
-                endIndex = min(frames.count, end + windowSize) 
+                endIndex = min(frames.count, end + (windowSize * 2)) 
                 break
             }
         }

@@ -5,16 +5,7 @@ import Foundation
 
 enum GSTEngine {
 
-    // MARK: - Tax Calculation
 
-    /// Calculate tax for a single item
-    /// - Parameters:
-    ///   - price: The price per unit (MRP or exclusive depending on `pricesIncludeGST`)
-    ///   - quantity: Number of units
-    ///   - gstRate: GST rate as percentage (e.g. 18.0 for 18%)
-    ///   - cessRate: Additional cess rate as percentage (e.g. 12.0)
-    ///   - isInterState: If true → IGST; if false → CGST+SGST
-    ///   - pricesIncludeGST: If true, price is MRP (tax-inclusive), reverse calculate
     static func paise(_ value: Double) -> Int64 {
         Int64((value * 100.0).rounded())
     }
@@ -86,7 +77,6 @@ enum GSTEngine {
 
     // MARK: - Bill-Level Breakup
 
-    /// Generate a complete GST breakup from an array of per-item tax results with their rates
     static func generateBreakup(
         itemResults: [(gstRate: Double, result: ItemTaxResult)]
     ) -> GSTBreakup {
@@ -163,17 +153,13 @@ enum GSTEngine {
         return seller != buyer
     }
 
-    // MARK: - Composition Scheme
-
-    /// Calculate composition scheme tax (flat rate on total turnover)
-    /// This is NOT charged per-invoice; it's for quarterly filing calculation
     static func compositionTax(totalTurnover: Double, compositionRate: Double) -> Double {
         return round2(totalTurnover * (compositionRate / 100.0))
     }
 
     // MARK: - GSTIN Validation
 
-    /// Basic GSTIN format validation (15 characters, alphanumeric pattern)
+   
     static func isValidGSTIN(_ gstin: String) -> Bool {
         let trimmed = gstin.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard trimmed.count == 15 else { return false }
@@ -194,15 +180,14 @@ enum GSTEngine {
         return charset[check]
     }
 
-    // MARK: - Taxable Value from MRP
-
+   
     /// Reverse calculate taxable value from MRP (inclusive price)
     static func taxableValueFromMRP(mrp: Double, gstRate: Double, cessRate: Double = 0) -> Double {
         let totalRate = (gstRate + cessRate) / 100.0
         return round2(mrp / (1.0 + totalRate))
     }
 
-    // MARK: - Helpers
+   
 
     private static func round2(_ value: Double) -> Double {
         Money.round2(value)

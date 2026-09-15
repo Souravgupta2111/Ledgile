@@ -25,7 +25,7 @@ extension UIViewController {
         
         NSLayoutConstraint.activate([
             button.trailingAnchor.constraint(equalTo: navigationBar.trailingAnchor, constant: -16),
-            // Move higher up, closer to the center of the total bar height
+
             button.bottomAnchor.constraint(equalTo: navigationBar.bottomAnchor, constant: -8),
             button.widthAnchor.constraint(equalToConstant: 44),
             button.heightAnchor.constraint(equalToConstant: 44)
