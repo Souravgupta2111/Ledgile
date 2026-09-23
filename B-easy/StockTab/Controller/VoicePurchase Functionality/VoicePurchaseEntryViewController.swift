@@ -35,9 +35,6 @@ class VoicePurchaseEntryViewController: UIViewController {
     private var lastSFSpeechText: String = ""
     private var sfSpeechPartialCount: Int = 0
     
-    // MARK: - Whisper Streaming State
-    private var whisperTimer: Timer?
-    private var isWhisperTranscribing = false
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -92,10 +89,7 @@ class VoicePurchaseEntryViewController: UIViewController {
         lastSFSpeechText = ""
         recordingStartTime = CFAbsoluteTimeGetCurrent()
         lastSpeechActivity = 0
-        hasHeardSpeech = false
         startSilenceTimer()
-        startWhisperStreamingTimer()
-
 
         let audioSession = AVAudioSession.sharedInstance()
         do {
@@ -232,8 +226,6 @@ class VoicePurchaseEntryViewController: UIViewController {
         recognitionRequest = nil
         recognitionTask = nil
         
-        stopWhisperStreamingTimer()
-        
         let audioSession = AVAudioSession.sharedInstance()
         try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
         
@@ -258,7 +250,6 @@ class VoicePurchaseEntryViewController: UIViewController {
         
         let whisperAudioDuration = Double(audioFrames.count) / 16000.0
         
-
         let (rmsEnergy, peakEnergy) = Self.audioEnergy(audioFrames)
         let hasRecognizedSpeech = Self.isUsableRecognizedText(sfSpeechText)
         let isMostlySilence = !hasRecognizedSpeech && (audioFrames.isEmpty || (rmsEnergy < 0.0006 && peakEnergy < 0.015))
@@ -273,16 +264,17 @@ class VoicePurchaseEntryViewController: UIViewController {
         
         // Show processing indicator
         DispatchQueue.main.async {
-            self.resultLabel.text = "Processing..."
+            self.resultLabel.text = "Understanding..."
             self.micButton?.isEnabled = false
+            self.tapToSpeakLabel?.text = "Understanding..."
         }
         
-
         if isMostlySilence {
             print("[VoicePurchase] ⏭️ Audio is mostly silence — skipping Whisper")
             DispatchQueue.main.async {
                 self.micButton?.isEnabled = true
-                if !sfSpeechText.isEmpty && sfSpeechText != "Listening..." && sfSpeechText != "Processing..." {
+                self.tapToSpeakLabel?.text = "Tap to Speak"
+                if Self.isUsableRecognizedText(sfSpeechText) {
                     self.resultLabel.text = sfSpeechText
                     self.processFinalTextAndNavigate(sfSpeechText)
                 } else {
@@ -292,13 +284,7 @@ class VoicePurchaseEntryViewController: UIViewController {
             return
         }
         
-
         Task {
-            // Wait for any pending background Whisper transcription to finish
-            while self.isWhisperTranscribing {
-                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-            }
-            
             let whisperStart = CFAbsoluteTimeGetCurrent()
             let whisperResult = await WhisperService.shared.transcribe(audioFrames: audioFrames)
             let whisperTime = CFAbsoluteTimeGetCurrent() - whisperStart
@@ -306,6 +292,7 @@ class VoicePurchaseEntryViewController: UIViewController {
             
             await MainActor.run {
                 self.micButton?.isEnabled = true
+                self.tapToSpeakLabel?.text = "Tap to Speak"
                 
                 var useWhisper = true
 
@@ -326,8 +313,9 @@ class VoicePurchaseEntryViewController: UIViewController {
                     let parseTime = CFAbsoluteTimeGetCurrent() - parseStart
                     
                     let totalTime = CFAbsoluteTimeGetCurrent() - stopTime
+                    print("[VoicePurchase] Total processing completed in \(String(format: "%.2f", totalTime))s (parse=\(String(format: "%.2f", parseTime))s)")
                     
-                } else if !sfSpeechText.isEmpty && sfSpeechText != "Listening..." && sfSpeechText != "Processing..." {
+                } else if Self.isUsableRecognizedText(sfSpeechText) {
                     print("[VoicePurchase] 🔀 USING SFSPEECH FALLBACK: '\(sfSpeechText)'")
                     self.resultLabel.text = sfSpeechText
                     
@@ -336,6 +324,7 @@ class VoicePurchaseEntryViewController: UIViewController {
                     let parseTime = CFAbsoluteTimeGetCurrent() - parseStart
                     
                     let totalTime = CFAbsoluteTimeGetCurrent() - stopTime
+                    print("[VoicePurchase] Total processing completed in \(String(format: "%.2f", totalTime))s (parse=\(String(format: "%.2f", parseTime))s)")
                     
                 } else {
                     print("[VoicePurchase] ❌ Both Whisper and SFSpeech failed — no usable text")
@@ -350,7 +339,7 @@ class VoicePurchaseEntryViewController: UIViewController {
     
 
     private func processFinalTextAndNavigate(_ text: String) {
-        guard !text.isEmpty, text != "Listening...", text != "Say customer, items, quantity or price to add sale" else {
+        guard Self.isUsableRecognizedText(text) else {
             return
         }
         
@@ -563,9 +552,10 @@ class VoicePurchaseEntryViewController: UIViewController {
     private static func isUsableRecognizedText(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty
-            && trimmed != "Listening..."
-            && trimmed != "Processing..."
-            && trimmed != " Processing ..."
+            && !trimmed.hasPrefix("Listening")
+            && !trimmed.hasPrefix("Understanding")
+            && !trimmed.hasPrefix("Processing")
+            && trimmed != "Say customer, items, quantity or price to add sale"
     }
 
     private static func audioEnergy(_ frames: [Float]) -> (rms: Float, peak: Float) {
@@ -578,48 +568,6 @@ class VoicePurchaseEntryViewController: UIViewController {
             if absSample > peak { peak = absSample }
         }
         return (sqrt(sumSquares / Float(frames.count)), peak)
-    }
-    
-    // MARK: - Whisper Streaming
-
-    private func startWhisperStreamingTimer() {
-        whisperTimer?.invalidate()
-        isWhisperTranscribing = false
-        whisperTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.processWhisperPartial()
-        }
-    }
-
-    private func stopWhisperStreamingTimer() {
-        whisperTimer?.invalidate()
-        whisperTimer = nil
-    }
-
-    private func processWhisperPartial() {
-        guard !isWhisperTranscribing else { return }
-        
-        whisperLock.lock()
-        let audioFrames = whisperAudioFrames
-        whisperLock.unlock()
-
-        let whisperAudioDuration = Double(audioFrames.count) / 16000.0
-        guard whisperAudioDuration >= 0.3 else { return }
-
-        isWhisperTranscribing = true
-        
-        Task {
-            let result = await WhisperService.shared.transcribe(audioFrames: audioFrames)
-            await MainActor.run {
-                self.isWhisperTranscribing = false
-                if let text = result, !text.isEmpty {
-                    // Update UI with Whisper partials if it's not hallucination
-                    if !WhisperService.shared.isGarbageTranscription(text, duration: whisperAudioDuration) {
-                        // We use Whisper's highly accurate text for the UI to prevent chopped words
-                        self.resultLabel.text = text
-                    }
-                }
-            }
-        }
     }
 }
 

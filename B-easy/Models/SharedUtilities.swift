@@ -45,16 +45,6 @@ extension Double {
     }
 }
 
-/// Rupees stored and shown to 2 decimals. Quantity (0.23 kg) stays full Double.
-enum Money {
-    static func round2(_ value: Double) -> Double {
-        (value * 100).rounded() / 100
-    }
-
-    static func line(quantity: Double, rate: Double) -> Double {
-        round2(quantity * rate)
-    }
-}
 
 /// Large-title home tabs (Dashboard / Stock / Sales).
 enum HomeTabSpacing {

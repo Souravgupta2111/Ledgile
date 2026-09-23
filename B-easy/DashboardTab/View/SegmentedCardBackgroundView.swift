@@ -56,19 +56,19 @@ class SegmentedCardBackgroundView: UIView {
             controlPoint2: CGPoint(x: w - cw - 12, y: ch)
         )
         
-        // Lower lip top edge
+
         path.addLine(to: CGPoint(x: w - r, y: ch))
-        // Top-right outer corner
+
         path.addArc(withCenter: CGPoint(x: w - r, y: ch + r), radius: r, startAngle: -.pi/2, endAngle: 0, clockwise: true)
         
-        // Right edge
+
         path.addLine(to: CGPoint(x: w, y: h - r))
-        // Bottom-right corner
+
         path.addArc(withCenter: CGPoint(x: w - r, y: h - r), radius: r, startAngle: 0, endAngle: .pi/2, clockwise: true)
         
-        // Bottom edge
+
         path.addLine(to: CGPoint(x: r, y: h))
-        // Bottom-left corner
+
         path.addArc(withCenter: CGPoint(x: r, y: h - r), radius: r, startAngle: .pi/2, endAngle: .pi, clockwise: true)
         path.close()
         
@@ -85,11 +85,11 @@ class SegmentedCardBackgroundView: UIView {
         let path = UIBezierPath()
         let slantOffset: CGFloat = 34
         
-        // Start at the lower lip's top-left corner
+
         path.move(to: CGPoint(x: 0, y: ch + r))
         path.addArc(withCenter: CGPoint(x: r, y: ch + r), radius: r, startAngle: .pi, endAngle: -.pi/2, clockwise: true)
         
-        // Lower lip top edge
+
         path.addLine(to: CGPoint(x: cw, y: ch))
         
         // Smooth slanted S-curve UP to the top lip
@@ -99,19 +99,19 @@ class SegmentedCardBackgroundView: UIView {
             controlPoint2: CGPoint(x: cw + slantOffset - 12, y: 0)
         )
         
-        // Top edge
+
         path.addLine(to: CGPoint(x: w - r, y: 0))
         // Top-right corner
         path.addArc(withCenter: CGPoint(x: w - r, y: r), radius: r, startAngle: -.pi/2, endAngle: 0, clockwise: true)
         
         // Right edge
         path.addLine(to: CGPoint(x: w, y: h - r))
-        // Bottom-right corner
+
         path.addArc(withCenter: CGPoint(x: w - r, y: h - r), radius: r, startAngle: 0, endAngle: .pi/2, clockwise: true)
         
-        // Bottom edge
+
         path.addLine(to: CGPoint(x: r, y: h))
-        // Bottom-left corner
+
         path.addArc(withCenter: CGPoint(x: r, y: h - r), radius: r, startAngle: .pi/2, endAngle: .pi, clockwise: true)
         path.close()
         

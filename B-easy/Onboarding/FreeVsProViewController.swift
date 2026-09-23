@@ -7,12 +7,23 @@ final class FreeVsProViewController: UIViewController {
     private let beige = UIColor(named: "Beige") ?? UIColor(red: 0.91, green: 0.90, blue: 0.76, alpha: 1)
     private let onyx = UIColor(named: "Onyx") ?? UIColor(red: 0.05, green: 0.07, blue: 0, alpha: 1)
 
+    private enum Tier { case free, pro }
+    private var selectedTier: Tier = .pro
+
+    private let freeCard = UIView()
+    private let proCard = UIView()
+    private let freePriceLabel = UILabel()
+    private let proPriceLabel = UILabel()
+    private let freeButton = UIButton(type: .system)
+    private let proButton = UIButton(type: .system)
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = beige
         navigationItem.largeTitleDisplayMode = .never
         navigationController?.setNavigationBarHidden(true, animated: false)
         build()
+        updateCardStyles(animated: false)
     }
 
     private func build() {
@@ -30,30 +41,36 @@ final class FreeVsProViewController: UIViewController {
         sub.textColor = UIColor.black.withAlphaComponent(0.45)
         sub.numberOfLines = 0
 
-        let freeCard = choiceCard(
+        setupChoiceCard(
+            card: freeCard,
             title: "Free",
             price: "₹0",
+            priceLabel: freePriceLabel,
             points: [
                 "Full sales, stock, GST, and UPI",
                 "\(UsageTracker.freeGeminiLimit) voice & photo scans, lifetime",
                 "Then on-device voice and bill scanner"
             ],
-            emphasized: false,
+            button: freeButton,
             actionTitle: "Continue with Free",
-            action: #selector(continueFree)
+            action: #selector(continueFree),
+            cardTapAction: #selector(freeCardTapped)
         )
 
-        let proCard = choiceCard(
+        setupChoiceCard(
+            card: proCard,
             title: "Pro",
             price: "From ₹\(UsageTracker.monthlyPriceINR)/mo",
+            priceLabel: proPriceLabel,
             points: [
                 "\(UsageTracker.proVoiceScansPerDay) voice scans every day",
                 "\(UsageTracker.proCameraScansPerDay) photo scans every day",
                 "Then on-device until tomorrow"
             ],
-            emphasized: true,
+            button: proButton,
             actionTitle: "See Pro plans",
-            action: #selector(seeProPlans)
+            action: #selector(seeProPlans),
+            cardTapAction: #selector(proCardTapped)
         )
 
         let stack = UIStackView(arrangedSubviews: [freeCard, proCard])
@@ -80,20 +97,24 @@ final class FreeVsProViewController: UIViewController {
         ])
     }
 
-    private func choiceCard(
+    private func setupChoiceCard(
+        card: UIView,
         title: String,
         price: String,
+        priceLabel: UILabel,
         points: [String],
-        emphasized: Bool,
+        button: UIButton,
         actionTitle: String,
-        action: Selector
-    ) -> UIView {
-        let card = UIView()
+        action: Selector,
+        cardTapAction: Selector
+    ) {
         card.translatesAutoresizingMaskIntoConstraints = false
         card.backgroundColor = .white
         card.layer.cornerRadius = 24
-        card.layer.borderWidth = emphasized ? 3 : 0
-        card.layer.borderColor = emphasized ? lime.cgColor : UIColor.clear.cgColor
+        card.isUserInteractionEnabled = true
+
+        let tapGesture = UITapGestureRecognizer(target: self, action: cardTapAction)
+        card.addGestureRecognizer(tapGesture)
 
         let titleLabel = UILabel()
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -101,11 +122,9 @@ final class FreeVsProViewController: UIViewController {
         titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
         titleLabel.textColor = onyx
 
-        let priceLabel = UILabel()
         priceLabel.translatesAutoresizingMaskIntoConstraints = false
         priceLabel.text = price
         priceLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        priceLabel.textColor = emphasized ? lime : UIColor.black.withAlphaComponent(0.45)
 
         let pointsStack = UIStackView()
         pointsStack.translatesAutoresizingMaskIntoConstraints = false
@@ -120,19 +139,11 @@ final class FreeVsProViewController: UIViewController {
             pointsStack.addArrangedSubview(row)
         }
 
-        let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setTitle(actionTitle, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
         button.layer.cornerRadius = 18
         button.addTarget(self, action: action, for: .touchUpInside)
-        if emphasized {
-            button.backgroundColor = onyx
-            button.setTitleColor(.white, for: .normal)
-        } else {
-            button.backgroundColor = beige
-            button.setTitleColor(onyx, for: .normal)
-        }
 
         card.addSubview(titleLabel)
         card.addSubview(priceLabel)
@@ -153,14 +164,54 @@ final class FreeVsProViewController: UIViewController {
             button.heightAnchor.constraint(equalToConstant: 48),
             button.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18)
         ])
-        return card
+    }
+
+    private func updateCardStyles(animated: Bool) {
+        let update = {
+            let isFree = self.selectedTier == .free
+
+            self.freeCard.layer.borderWidth = isFree ? 3 : 0
+            self.freeCard.layer.borderColor = isFree ? self.lime.cgColor : UIColor.clear.cgColor
+            self.freePriceLabel.textColor = isFree ? self.lime : UIColor.black.withAlphaComponent(0.45)
+            self.freeButton.backgroundColor = isFree ? self.onyx : self.beige
+            self.freeButton.setTitleColor(isFree ? .white : self.onyx, for: .normal)
+
+            self.proCard.layer.borderWidth = !isFree ? 3 : 0
+            self.proCard.layer.borderColor = !isFree ? self.lime.cgColor : UIColor.clear.cgColor
+            self.proPriceLabel.textColor = !isFree ? self.lime : UIColor.black.withAlphaComponent(0.45)
+            self.proButton.backgroundColor = !isFree ? self.onyx : self.beige
+            self.proButton.setTitleColor(!isFree ? .white : self.onyx, for: .normal)
+        }
+
+        if animated {
+            UIView.animate(withDuration: 0.25, animations: update)
+        } else {
+            update()
+        }
+    }
+
+    @objc private func freeCardTapped() {
+        selectTier(.free)
+    }
+
+    @objc private func proCardTapped() {
+        selectTier(.pro)
+    }
+
+    private func selectTier(_ tier: Tier) {
+        guard selectedTier != tier else { return }
+        selectedTier = tier
+        UISelectionFeedbackGenerator().selectionChanged()
+        updateCardStyles(animated: true)
     }
 
     @objc private func continueFree() {
+        selectTier(.free)
         AuthNavigationHelper.finishLaunchPlanAndGoToApp()
     }
 
     @objc private func seeProPlans() {
+        selectTier(.pro)
         let vc = ProPlanViewController()
         vc.isOnboarding = true
         navigationController?.pushViewController(vc, animated: true)

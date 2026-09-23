@@ -25,7 +25,7 @@ struct Item: Identifiable, Codable, Equatable {
     var defaultSellingPrice: Double
     var defaultPriceUpdatedAt: Date
 
-    // Inventory helpers
+   
     var lowStockThreshold: Double
     var currentStock: Double
  
@@ -35,16 +35,16 @@ struct Item: Identifiable, Codable, Equatable {
     var salesCount: Double? = nil
     var salesTier: Int? = nil
 
-    // Alternate custom unit (e.g., 1 Katta = 50 kg)
+   
     var alternateUnitName: String? = nil
     var alternateUnitFactor: Double? = nil
 
-    // GST fields (all optional — no impact on existing items)
-    var hsnCode: String? = nil       // e.g., "19021100" for goods, SAC code for services
-    var gstRate: Double? = nil       // e.g., 18.0 (percent)
-    var cessRate: Double? = nil      // e.g., 12.0 (for tobacco, aerated drinks)
+   
+    var hsnCode: String? = nil       
+    var gstRate: Double? = nil    
+    var cessRate: Double? = nil     
 
-    // Product type — goods (physical inventory) or services (no stock tracking)
+   
     var itemType: ItemType = .goods
 
     var effectiveSalesTier: Int { salesTier ?? 2 }
@@ -107,8 +107,7 @@ struct SaleItemBatch: Identifiable, Codable, Equatable {
     let batchReceivedDate: Date
     let batchExpiryDate: Date?
     
-    // MARK: - Computed
-    
+   
     var profit: Double {
         quantityConsumed * (sellingPriceUsed - costPriceUsed)
     }
@@ -135,10 +134,10 @@ struct Transaction: Identifiable, Codable, Equatable {
     let totalAmount: Double
     var notes: String?
 
-    // GST fields (all optional)
+ 
     var buyerGSTIN: String? = nil
-    var placeOfSupply: String? = nil         // "Maharashtra"
-    var placeOfSupplyCode: String? = nil     // "27"
+    var placeOfSupply: String? = nil         
+    var placeOfSupplyCode: String? = nil   
     var isInterState: Bool? = nil
     var totalTaxableValue: Double? = nil
     var totalCGST: Double? = nil
@@ -317,20 +316,20 @@ struct AppSettings: Codable {
     var businessAddress: String?
     var gstNumber: String?
     
-    var expiryNoticeDays: Int       // 14 days
-    var expiryWarningDays: Int      // 7 days
-    var expiryCriticalDays: Int     // 3 days
+    var expiryNoticeDays: Int       
+    var expiryWarningDays: Int      
+    var expiryCriticalDays: Int     
 
     // GST configuration fields
-    var isGSTRegistered: Bool = false          // MASTER TOGGLE
-    var gstScheme: String? = nil               // "regular" or "composition"
-    var businessState: String? = nil           // "Maharashtra"
-    var businessStateCode: String? = nil       // "27"
-    var pricesIncludeGST: Bool = true          // Default: MRP inclusive
-    var defaultGSTRate: Double? = nil          // Most used rate (e.g., 18.0)
-    var compositionRate: Double? = nil         // 1.0% for manufacturers, 5.0% for restaurants
+    var isGSTRegistered: Bool = false          
+    var gstScheme: String? = nil              
+    var businessState: String? = nil           
+    var businessStateCode: String? = nil       
+    var pricesIncludeGST: Bool = true         
+    var defaultGSTRate: Double? = nil         
+    var compositionRate: Double? = nil         
 
-    /// Personal PhonePe / Paytm / GPay UPI ID (VPA). No payment gateway.
+    
     var upiVPA: String? = nil
     var upiQRImageData: Data? = nil
 
@@ -415,7 +414,7 @@ struct GSTBreakup: Codable {
 }
 
 struct RateWiseEntry: Codable {
-    let gstRate: Double          // e.g., 18.0
+    let gstRate: Double         
     let taxableValue: Double
     let cgst: Double
     let sgst: Double

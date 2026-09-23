@@ -100,7 +100,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         let limeMoss = UIColor(named: "Lime Moss") ?? .systemGreen
         let beige = UIColor(named: "Beige") ?? .systemGray5
         
-        // --- Left Pill (Revenue Pill) ---
+        
         leftPillButton = UIButton(type: .system)
         leftPillButton.setTitle("Revenue", for: .normal)
         leftPillButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -112,9 +112,9 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         leftPillButton.addTarget(self, action: #selector(switchTabTapped), for: .touchUpInside)
         card.addSubview(leftPillButton)
         
-        // --- Right Pill (Investment Pill) ---
+
         rightPillButton = UIButton(type: .system)
-        rightPillButton.setTitle("Investment", for: .normal)
+        rightPillButton.setTitle("Inventory", for: .normal)
         rightPillButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
         rightPillButton.backgroundColor = beige
         rightPillButton.setTitleColor(onyx, for: .normal)
@@ -124,7 +124,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         rightPillButton.addTarget(self, action: #selector(switchTabTapped), for: .touchUpInside)
         card.addSubview(rightPillButton)
         
-        // --- Left Text Group (Revenue) ---
+
         leftTitleLabel = UILabel()
         leftTitleLabel.text = "Revenue"
         leftTitleLabel.textColor = ws
@@ -134,7 +134,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         leftTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(leftTitleLabel)
         
-        // Chevrons removed — tapping the card (outside chart) opens the detail view
+
         leftChevron = UIButton(type: .system)
         leftChevron.isHidden = true
         leftChevron.translatesAutoresizingMaskIntoConstraints = false
@@ -153,9 +153,9 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         leftAmountLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(leftAmountLabel)
         
-        // --- Right Text Group (Investment) ---
+
         rightTitleLabel = UILabel()
-        rightTitleLabel.text = "Investment"
+        rightTitleLabel.text = "Inventory"
         rightTitleLabel.textColor = onyx
         rightTitleLabel.font = .systemFont(ofSize: 19, weight: .bold)
         rightTitleLabel.isUserInteractionEnabled = true
@@ -191,19 +191,19 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         
         // Constraints
         NSLayoutConstraint.activate([
-            // Left Pill
+
             leftPillButton.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 8),
             leftPillButton.topAnchor.constraint(equalTo: card.topAnchor, constant: 2),
             leftPillButton.widthAnchor.constraint(equalToConstant: 134),
             leftPillButton.heightAnchor.constraint(equalToConstant: 36),
             
-            // Right Pill
+
             rightPillButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -8),
             rightPillButton.topAnchor.constraint(equalTo: card.topAnchor, constant: 2),
             rightPillButton.widthAnchor.constraint(equalToConstant: 134),
             rightPillButton.heightAnchor.constraint(equalToConstant: 36),
             
-            // Left Text Group
+
             leftTitleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
             leftTitleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
             leftTitleLabel.heightAnchor.constraint(equalToConstant: 24),
@@ -218,7 +218,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
             leftAmountLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
             leftAmountLabel.topAnchor.constraint(equalTo: leftSubtitleLabel.bottomAnchor, constant: 2),
             
-            // Right Text Group
+
             rightTitleLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -20),
             rightTitleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
             rightTitleLabel.heightAnchor.constraint(equalToConstant: 24),
@@ -236,11 +236,11 @@ class DashboardTopTileTableViewCell: UITableViewCell {
             // Chart
             chartView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 8),
             chartView.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -8),
-            chartView.topAnchor.constraint(equalTo: leftAmountLabel.bottomAnchor, constant: 4), // Tighten chart gap to offset the whole text block drop
+            chartView.topAnchor.constraint(equalTo: leftAmountLabel.bottomAnchor, constant: 4),
             chartView.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -2),
         ])
         
-        // Add a tap overlay on the title+amount area (above the chart) for navigation
+
         let tapOverlay = UIView()
         tapOverlay.translatesAutoresizingMaskIntoConstraints = false
         tapOverlay.backgroundColor = .clear
@@ -255,7 +255,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
             tapOverlay.bottomAnchor.constraint(equalTo: chartView.topAnchor),
         ])
         
-        // Bring pill buttons above the overlay so they stay tappable
+
         card.bringSubviewToFront(leftPillButton)
         card.bringSubviewToFront(rightPillButton)
         
@@ -296,7 +296,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
                 self.segmentedCardBackground.fillColor = limeMoss
                 self.segmentedCardBackground.cutoutOnRight = true
                 
-                // Show left text, hide right text
+
                 self.leftTitleLabel.alpha = 1
                 self.leftChevron.alpha = 1
                 self.leftSubtitleLabel.alpha = 1
@@ -308,7 +308,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
                 self.rightSubtitleLabel.alpha = 0
                 self.rightAmountLabel.alpha = 0
                 
-                // Show right pill, hide left pill
+
                 self.leftPillButton.alpha = 0
                 self.rightPillButton.alpha = 1
                 
@@ -318,11 +318,11 @@ class DashboardTopTileTableViewCell: UITableViewCell {
                 self.chartView.leftAxis.gridColor = ws.withAlphaComponent(0.2)
                 
             } else {
-                // Card Shape
+
                 self.segmentedCardBackground.fillColor = beige
                 self.segmentedCardBackground.cutoutOnRight = false
                 
-                // Hide left text, show right text
+
                 self.leftTitleLabel.alpha = 0
                 self.leftChevron.alpha = 0
                 self.leftSubtitleLabel.alpha = 0
@@ -334,7 +334,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
                 self.rightAmountLabel.alpha = 1
                 self.rightAmountLabel.text = self.storedInvestmentAmount
                 
-                // Show left pill, hide right pill
+
                 self.leftPillButton.alpha = 1
                 self.rightPillButton.alpha = 0
                 
@@ -463,7 +463,7 @@ class DashboardTopTileTableViewCell: UITableViewCell {
             }
         }
         
-        // When all values are zero, set a fixed Y-axis max so bars don't fill the chart
+
         if maxValue <= 0 {
             chartView.leftAxis.axisMaximum = 100
         } else {

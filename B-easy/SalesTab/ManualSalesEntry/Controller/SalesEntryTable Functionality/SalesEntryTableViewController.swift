@@ -17,11 +17,11 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     var adjustmentAmount: Double = 0
     var isCreditEnabled = false
     
-    // New GST fields
+
     var buyerGSTIN: String?
     var buyerStateCode: String?
     
-    // UI Elements
+
     private let discountLabel = UILabel()
     private var discountTextField = UITextField()
     
@@ -32,7 +32,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
 
     private let editButton = UIButton(type: .system)
     
-    /// Generated once per entry session
+
     var generatedInvoiceNumber: String = {
         AppDataModel.shared.dataModel.generateInvoiceNumber()
     }()
@@ -83,7 +83,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
 
         setupSuggestionsTableView()
         
-        // Apply any data passed before viewDidLoad (e.g. from scan callback)
+
         if let result = pendingResult {
             pendingResult = nil
             // entryMode is already set by the caller before pushing this VC
@@ -102,7 +102,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         suggestionsTableView.delegate = self
         suggestionsTableView.register(UITableViewCell.self, forCellReuseIdentifier: "InventorySuggestionCell")
         
-        // Remove all extra spacing that causes the blank area above rows
+
         suggestionsTableView.sectionHeaderTopPadding = 0
         suggestionsTableView.sectionHeaderHeight = 0
         suggestionsTableView.sectionFooterHeight = 0
@@ -135,17 +135,17 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             return
         }
 
-        // Add to the application window so it floats above the table view
+
         guard let window = view.window else { return }
         
-        // Convert the text field's frame to window coordinates
+
         let fieldRect = field.convert(field.bounds, to: window)
         
         let horizontalPadding: CGFloat = 16
         let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
         let desiredHeight = min(CGFloat(currentSuggestions.count) * suggestionsTableView.rowHeight, 220)
         
-        // Position below the text field, or above if not enough space below
+
         let spaceBelow = window.bounds.height - fieldRect.maxY - 20
         let yPosition: CGFloat
         if spaceBelow >= desiredHeight {
@@ -194,7 +194,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         transactionItems[index] = updated
     }
 
-    // MARK: - Add New Item (re-open voice/camera if entry started that way)
+
     
     private func addNewItemByEntryMode() {
         switch entryMode {
@@ -221,9 +221,6 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         }
     }
 
-    // MARK: - Append Items from Voice/Scan
-    
-    // Temporary queue for fuzzy matches waiting for user confirmation
     private var pendingFuzzyMatches: [(product: [(name: String, quantity: String, unit: String?, price: String?, costPrice: String?, itemID: UUID?, matchConfidence: Double, originalName: String)].Element, transactionItem: TransactionItem)] = []
     
     func appendItems(from result: ParsedResult) {
@@ -242,18 +239,17 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             let voicePrice = Double(product.price ?? "")
             let matchedItem = product.itemID.flatMap { id in inventoryItems.first { $0.id == id } }
             
-            // Determine the working unit:
-            // If the parser extracted a unit, use it. Otherwise default to the inventory unit (NOT "pcs").
+
             var finalUnit = product.unit ?? matchedItem?.unit ?? "pcs"
             var finalSellingPrice: Double
             
-            // Extract numeric quantity from unit if fused (e.g. "500g" -> 500.0, "g")
+
             if let extracted = UnitConversionService.shared.extractQuantityAndUnit(from: finalUnit) {
                 inputQty *= extracted.0
                 finalUnit = extracted.1
             }
             
-            // Auto-scale fractional units to avoid decimal loss (e.g. 0.5 kg -> 500 g)
+
             if floor(inputQty) != inputQty {
                 let nUnit = UnitConversionService.shared.normalizeUnit(finalUnit)
                 if nUnit == "kg" {
@@ -275,7 +271,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                 let normalizedInv = UnitConversionService.shared.normalizeUnit(inv.unit)
                 
                 if normalizedReq != normalizedInv {
-                    // Units differ — need prorated conversion (e.g. 540g at ₹40/kg)
+                    // Units differ — need prorated conversion
                     if let conversion = UnitConversionService.shared.calculateProrated(
                         requestedQty: inputQty,
                         requestedUnit: finalUnit,
@@ -287,11 +283,10 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                         finalQty = conversion.quantity
                         finalUnit = conversion.unit
                         
-                        // If user explicitly stated a price, use it; otherwise pro-rate
+                      
                         finalSellingPrice = voicePrice ?? conversion.proratedPrice
                         print("[VoiceSale] ✓ Converted: qty=\(finalQty), unit=\(finalUnit), price=\(finalSellingPrice)")
                     } else {
-                        // Incompatible families (e.g. pcs vs kg) — fall back to defaults
                         finalSellingPrice = voicePrice ?? inv.defaultSellingPrice
                         finalUnit = inv.unit
                         print("[VoiceSale] ✗ Incompatible units, using defaults: price=\(finalSellingPrice), unit=\(finalUnit)")
@@ -351,8 +346,6 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         }
 
         tableView.reloadData()
-        
-        // Present confirmation dialogs if any
         processNextFuzzyMatch()
     }
     
@@ -504,7 +497,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     }
     
     private func makeBillingDetails() -> BillingDetails {
-        // Prefer live text field value, fall back to synced model property
+
         let name = customerNameField.text?.isEmpty == false ? customerNameField.text! : (customerName ?? "")
         
         // Compute tax breakup if GST is registered

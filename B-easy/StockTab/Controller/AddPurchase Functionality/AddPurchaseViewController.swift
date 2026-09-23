@@ -48,7 +48,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     // Index of the expanded item (chevron tapped to show detail fields).
     private var expandedItemIndex: Int? = nil
 
-    // Holds voice/scan result passed before viewDidLoad; consumed in viewDidLoad.
+  
     var pendingResult: ParsedResult?
     var pendingPurchaseResult: ParsedPurchaseResult?
     var entryMode: EntryMode = .manual
@@ -369,7 +369,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             var finalCostPrice: Double = Double(item.costPrice ?? "") ?? 0
             var finalSellingPrice: Double = Double(item.sellingPrice ?? "") ?? 0
             
-            // Force mapping of any extracted selling price to cost price for purchases if cost price is missing
+            // Force mapping of any extracted price to cost price for purchases if cost price is missing
             if finalCostPrice == 0 && finalSellingPrice > 0 {
                 finalCostPrice = finalSellingPrice
                 finalSellingPrice = 0
@@ -423,7 +423,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             supplierName = supplier
         }
         
-        // Note: result.invoiceNumber and result.totalTaxableValue can be handled later if UI fields exist for invoice number
+        
         
         tableView.reloadData()
     }
@@ -665,10 +665,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             if entries.isEmpty {
                 return 1  // "Add Item" row
             } else {
-                // Each entry = 1 summary row. If expanded, that entry also gets detail rows.
-                var count = entries.count + 1  // +1 for "Add Item" row
+                var count = entries.count + 1
                 if let expanded = expandedItemIndex, expanded < entries.count {
-                    count += detailRowCount()  // extra rows for the expanded item
+                    count += detailRowCount()
                 }
                 return count
             }
@@ -680,13 +679,13 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         }
     }
     
-    /// Number of detail rows shown when an item is expanded
+    
     private func detailRowCount() -> Int {
         guard let expanded = expandedItemIndex, expanded < entries.count else { return 0 }
         return detailRowTypes(for: expanded).count
     }
     
-    /// Maps an indexPath.row in the items section to (entryIndex, isDetail, detailRow)
+    
     private func resolveItemRow(_ row: Int) -> (entryIndex: Int, isDetailRow: Bool, detailRow: Int) {
         guard let expanded = expandedItemIndex else {
             // No expansion — simple mapping
@@ -874,7 +873,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case lowStock, expiryToggle, expiry, barcode, photoRecord
     }
 
-    /// Build the ordered list of detail rows based on GST registration + goods/services
+
     private func detailRowTypes(for entryIndex: Int) -> [DetailRowType] {
         let isGST = (try? AppDataModel.shared.dataModel.db.getSettings())?.isGSTRegistered ?? false
         let isService = entries[entryIndex].itemType == .services
@@ -1021,7 +1020,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                 if !text.isEmpty, let rate = HSNDatabase.shared.lookupGSTRate(hsnCode: text) {
                     self.entries[entryIndex].gstRate = rate
                     
-                    // Update UI directly to avoid keyboard dismissal
+
                     let gstRateIndexPath = IndexPath(row: indexPath.row + 1, section: indexPath.section)
                     if let gstCell = self.tableView.cellForRow(at: gstRateIndexPath) {
                         gstCell.detailTextLabel?.text = "\(rate)%"
@@ -1289,10 +1288,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             entries[index].selectedItemName = selectedItem.name
             entries[index].selectedItemID = selectedItem.id
             entries[index].selectedUnitName = selectedItem.unit
-            // Forcefully override with the selected item's cost and selling prices
+
             entries[index].costPrice = selectedItem.defaultCostPrice
             entries[index].sellingPrice = selectedItem.defaultSellingPrice
-            // Auto-fill GST fields from matched item
+
             if let hsn = selectedItem.hsnCode { entries[index].hsnCode = hsn }
             if let rate = selectedItem.gstRate { entries[index].gstRate = rate }
 
@@ -1391,10 +1390,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     return
                 }
                 
-                return  // other detail rows handle their own interaction
+                return  
             }
             
-            // Summary row tapped — toggle expand/collapse
+        
             if !resolved.isDetailRow && resolved.entryIndex < entries.count {
                 if expandedItemIndex == resolved.entryIndex {
                     expandedItemIndex = nil
@@ -1406,7 +1405,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         }
     }
     
-    /// Tracks which entry's unit is being selected
+
     private var expandedUnitEntryIndex: Int = 0
 
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -1510,10 +1509,126 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
         let scanVC = QuickBarcodeScanViewController()
         scanVC.onBarcodeScanned = { [weak self, entryIndex] barcode in
-            guard let self = self else { return }
+            guard let self = self, entryIndex < self.entries.count else { return }
             self.entries[entryIndex].barcode = barcode
+
+            // 1. Check if barcode already exists in local inventory
+            if self.inventoryCache.isEmpty {
+                self.inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
+            }
+            if let matched = self.inventoryCache.first(where: { $0.barcode == barcode }) {
+                self.entries[entryIndex].selectedItemID = matched.id
+                self.entries[entryIndex].selectedItemName = matched.name
+                self.entries[entryIndex].selectedUnitName = matched.unit
+                if self.entries[entryIndex].costPrice <= 0 {
+                    self.entries[entryIndex].costPrice = matched.defaultCostPrice
+                }
+                if self.entries[entryIndex].sellingPrice <= 0 {
+                    self.entries[entryIndex].sellingPrice = matched.defaultSellingPrice
+                }
+                if self.entries[entryIndex].hsnCode == nil {
+                    self.entries[entryIndex].hsnCode = matched.hsnCode
+                }
+                if self.entries[entryIndex].gstRate == nil {
+                    self.entries[entryIndex].gstRate = matched.gstRate
+                }
+                self.entries[entryIndex].itemType = matched.itemType
+                if self.entries[entryIndex].quantity <= 0 {
+                    self.entries[entryIndex].quantity = 1
+                }
+                DispatchQueue.main.async {
+                    self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
+                }
+                return
+            }
+
+        
             DispatchQueue.main.async {
-                self.tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
+                self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
+            }
+
+            // 2. Unknown barcode -> lookup in Open Food Facts catalog
+            OpenFoodFactsService.shared.lookupBarcode(barcode) { [weak self] productInfo in
+                guard let self = self, entryIndex < self.entries.count, let info = productInfo else { return }
+
+    
+                let matches = BarcodeMatcher.shared.findMatches(for: info.displayName, in: self.inventoryCache)
+                if let bestMatch = matches.first, bestMatch.confidence >= 0.70 {
+                    // Match found in existing inventory! Map with it and link barcode
+                    var updated = bestMatch.item
+                    updated.barcode = barcode
+                    try? AppDataModel.shared.dataModel.db.updateItem(updated)
+                    if let idx = self.inventoryCache.firstIndex(where: { $0.id == updated.id }) {
+                        self.inventoryCache[idx] = updated
+                    }
+
+                    self.entries[entryIndex].selectedItemID = updated.id
+                    self.entries[entryIndex].selectedItemName = updated.name
+                    self.entries[entryIndex].selectedUnitName = updated.unit
+                    if self.entries[entryIndex].costPrice <= 0 {
+                        self.entries[entryIndex].costPrice = updated.defaultCostPrice
+                    }
+                    if self.entries[entryIndex].sellingPrice <= 0 {
+                        self.entries[entryIndex].sellingPrice = updated.defaultSellingPrice
+                    }
+                    if self.entries[entryIndex].hsnCode == nil {
+                        self.entries[entryIndex].hsnCode = updated.hsnCode
+                    }
+                    if self.entries[entryIndex].gstRate == nil {
+                        self.entries[entryIndex].gstRate = updated.gstRate
+                    }
+                    self.entries[entryIndex].itemType = updated.itemType
+                    if self.entries[entryIndex].quantity <= 0 {
+                        self.entries[entryIndex].quantity = 1
+                    }
+                } else {
+                    // Not in local inventory: autofill with details from Open Food Facts
+                    let currentName = (self.entries[entryIndex].selectedItemName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if currentName.isEmpty {
+                        self.entries[entryIndex].selectedItemName = info.displayName
+                    }
+
+                    let currentUnit = (self.entries[entryIndex].selectedUnitName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if currentUnit.isEmpty || currentUnit.lowercased() == "pcs" {
+                        self.entries[entryIndex].selectedUnitName = info.inferredUnit
+                    }
+
+                    if self.entries[entryIndex].quantity <= 0 {
+                        self.entries[entryIndex].quantity = 1
+                    }
+
+                    // Map GST / HSN from HSNDatabase
+                    if self.entries[entryIndex].hsnCode == nil || self.entries[entryIndex].gstRate == nil {
+                        if let hsnMatch = HSNDatabase.shared.searchByName(query: info.displayName) {
+                            if self.entries[entryIndex].hsnCode == nil {
+                                self.entries[entryIndex].hsnCode = hsnMatch.code
+                            }
+                            if self.entries[entryIndex].gstRate == nil {
+                                self.entries[entryIndex].gstRate = hsnMatch.gstRate
+                            }
+                        }
+                    }
+
+                    // Also check GlobalCatalogService for default prices if available
+                    if self.entries[entryIndex].costPrice <= 0 || self.entries[entryIndex].sellingPrice <= 0 {
+                        GlobalCatalogService.shared.search(query: info.displayName, limit: 1) { [weak self] catalogProducts in
+                            guard let self = self, entryIndex < self.entries.count, let first = catalogProducts.first else { return }
+                            if self.entries[entryIndex].costPrice <= 0, let cp = first.defaultCostPrice, cp > 0 {
+                                self.entries[entryIndex].costPrice = cp
+                            }
+                            if self.entries[entryIndex].sellingPrice <= 0, let sp = first.defaultSellingPrice, sp > 0 {
+                                self.entries[entryIndex].sellingPrice = sp
+                            }
+                            DispatchQueue.main.async {
+                                self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
+                            }
+                        }
+                    }
+                }
+
+                DispatchQueue.main.async {
+                    self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
+                }
             }
         }
         let nav = UINavigationController(rootViewController: scanVC)
@@ -1608,7 +1723,6 @@ extension AddPurchaseViewController {
     @objc func supplierGSTINChanged(_ sender: UITextField) {
         let text = sender.text?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
         
-        // Write uppercased text back so it displays correctly
         if sender.text != text {
             let cursorPos = sender.selectedTextRange
             sender.text = text

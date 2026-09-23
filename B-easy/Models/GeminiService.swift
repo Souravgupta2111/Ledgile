@@ -6,9 +6,7 @@ final class GeminiService {
     
     static let shared = GeminiService()
     
-    // AI requests go through Supabase Edge Function `gemini-proxy`.
-    // Voice JSON → OpenRouter paid Gemma 3 27B. Camera → paid Gemini 2.5 Flash-Lite.
-    // API keys live ONLY on the server. The app authenticates with the user's JWT.
+
     
     private static func resolveConfigValue(key: String, plistValue: String?) -> String {
         if let val = plistValue, !val.isEmpty, !val.hasPrefix("$(") {
@@ -333,8 +331,7 @@ final class GeminiService {
         return clean.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    /// Safely extracts a String from a JSON value that could be a String, Int, Double, or NSNumber.
-    /// Gemini sometimes returns numeric fields as JSON numbers instead of strings.
+  
     private static func flexString(from value: Any?) -> String? {
         guard let value = value else { return nil }
         if let str = value as? String {
@@ -353,7 +350,7 @@ final class GeminiService {
         return nil
     }
 
-    /// Drops a customer/supplier the model invented from the whole utterance or an item line.
+   
     private static func sanitizedPartyName(_ raw: String?, spokenText: String?, itemNames: [String]) -> String? {
         guard let raw else { return nil }
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
