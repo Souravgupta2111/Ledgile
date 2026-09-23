@@ -649,8 +649,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
             alternateUnitFactor:    readOptDouble(s, 18),
             hsnCode:                readOptString(s, 14),
             gstRate:                readOptDouble(s, 15),
-            cessRate:               readOptDouble(s, 16),
-            itemType:               ItemType(rawValue: readOptString(s, 19) ?? "goods") ?? .goods
+            cessRate:               readOptDouble(s, 16)
         )
     }
 
@@ -890,7 +889,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindOptDouble(stmt, 17, item.cessRate)
         bindOptText(stmt, 18, item.alternateUnitName)
         bindOptDouble(stmt, 19, item.alternateUnitFactor)
-        bindText(stmt, 20, item.itemType.rawValue)
+        bindText(stmt, 20, "goods")
         sqlite3_step(stmt)
     }
 
@@ -917,7 +916,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindOptDouble(stmt, 15, item.cessRate)
         bindOptText(stmt, 16, item.alternateUnitName)
         bindOptDouble(stmt, 17, item.alternateUnitFactor)
-        bindText(stmt, 18, item.itemType.rawValue)
+        bindText(stmt, 18, "goods")
         bindUUID(stmt, 19, item.id)
         sqlite3_step(stmt)
     }

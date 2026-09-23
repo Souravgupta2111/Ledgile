@@ -1380,7 +1380,7 @@ extension SalesScanCameraViewController: UISearchBarDelegate {
                         newItem.hsnCode = hsnMatch.code
                         newItem.gstRate = hsnMatch.gstRate
                     }
-                    newItem.itemType = .goods
+
 
                     // Save to database & update lookup
                     try? AppDataModel.shared.dataModel.db.insertItem(newItem)

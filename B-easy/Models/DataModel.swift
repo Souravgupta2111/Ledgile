@@ -244,8 +244,7 @@ nonisolated final class DataModel: @unchecked Sendable {
         try db.insertTransaction(transaction)
         try db.insertTransactionItems([txItem])
 
-        // Services: no batch or stock tracking
-        if !item.isService {
+        if true {
             let batch = ItemBatch(
                 id: UUID(),
                 itemID: itemID,
@@ -365,8 +364,7 @@ nonisolated final class DataModel: @unchecked Sendable {
 
             allTxItems.append(txItem)
             
-            // Services: no batch or stock tracking
-            if !item.isService {
+            if true {
                 let batch = ItemBatch(
                     id: UUID(),
                     itemID: purchaseItem.itemID,
@@ -694,8 +692,8 @@ nonisolated final class DataModel: @unchecked Sendable {
         let settings = try db.getSettings()
         let now = Date()
         
-        // Exclude services
-        let items = try getAllItems().filter { $0.isActive && !$0.isService }
+        // Exclude services (No longer applicable, all items track stock)
+        let items = try getAllItems().filter { $0.isActive }
         
         var alerts: [ExpiryAlert] = []
         
@@ -737,9 +735,9 @@ nonisolated final class DataModel: @unchecked Sendable {
         return alerts.sorted { $0.severity < $1.severity }
     }
     func getLowStockAlerts() throws -> [LowStockAlert] {
-        // Exclude services
+        // Exclude services (No longer applicable)
         let items = try getAllItems()
-            .filter { $0.isActive && !$0.isService && $0.isLowStock }
+            .filter { $0.isActive && $0.isLowStock }
         
         return items.map { item in
             LowStockAlert(
@@ -861,8 +859,7 @@ nonisolated final class DataModel: @unchecked Sendable {
         for saleItem in items {
             guard saleItem.quantity > 0 else { continue }
 
-            // Skip stock pre-check for service items
-            if let item = try db.getItem(id: saleItem.itemID), item.isService { continue }
+            // Skip stock pre-check for service items (No longer applicable)
 
             var batches = try preCheckBatches[saleItem.itemID] ?? db.getBatches(for: saleItem.itemID).filter { $0.quantityRemaining > 0 }
             let totalAvailable = batches.reduce(0) { $0 + $1.quantityRemaining }
@@ -905,12 +902,7 @@ nonisolated final class DataModel: @unchecked Sendable {
             var batchConsumptions: [(batch: ItemBatch, consumed: Double)] = []
             let txItemID = UUID()
 
-            if item.isService {
-                // Services: no FIFO, cost = default cost price
-                itemCost = lineRupees(quantity: saleItem.quantity, rate: item.defaultCostPrice)
-                avgCostPrice = item.defaultCostPrice
-            } else {
-                // Goods: FIFO batch consumption
+            // Goods: FIFO batch consumption
                 var batches = try inMemoryBatches[saleItem.itemID] ?? db.getBatches(for: saleItem.itemID)
                     .filter { $0.quantityRemaining > 0 }
                     .sorted { b1, b2 in
@@ -929,7 +921,6 @@ nonisolated final class DataModel: @unchecked Sendable {
                 }
                 avgCostPrice = saleItem.quantity > 0 ? itemCost / saleItem.quantity : 0
                 inMemoryBatches[saleItem.itemID] = batches
-            }
 
             var txItem = TransactionItem(
                 id: txItemID,
@@ -979,8 +970,8 @@ nonisolated final class DataModel: @unchecked Sendable {
 
             allTxItems.append(txItem)
             
-            // Batch tracking (goods only)
-            if !item.isService {
+            // Batch tracking
+            if true {
                 for consumption in batchConsumptions {
                     allSaleItemBatches.append(SaleItemBatch(
                         id: UUID(),
@@ -1151,7 +1142,7 @@ nonisolated final class DataModel: @unchecked Sendable {
     func getTotalInvestment() -> Double {
         guard let items = try? db.getAllItems() else { return 0 }
         var total: Double = 0
-        for item in items where !item.isService {
+        for item in items {
             if let batches = try? db.getBatches(for: item.id) {
                 for batch in batches where batch.quantityRemaining > 0 {
                     total += batch.quantityRemaining * batch.costPrice

@@ -64,12 +64,20 @@ class SalesViewController: UIViewController {
         performSegue(withIdentifier: "manual_sales", sender: nil)
     }
 
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        super.prepare(for: segue, sender: sender)
+        if segue.identifier == "manual_sales" {
+            segue.destination.hidesBottomBarWhenPushed = true
+        }
+    }
+
     private func openVoiceSalesEntry() {
         guard let voiceVC = storyboard?.instantiateViewController(
             withIdentifier: "VoiceEntryViewController"
         ) as? VoiceEntryViewController else {
             return
         }
+        voiceVC.hidesBottomBarWhenPushed = true
         navigationController?.pushViewController(voiceVC, animated: true)
     }
 
@@ -81,6 +89,7 @@ class SalesViewController: UIViewController {
                   let salesEntryVC = storyboard.instantiateViewController(withIdentifier: "SalesEntryTableViewController") as? SalesEntryTableViewController else { return }
             salesEntryVC.pendingResult = result
             salesEntryVC.entryMode = .camera
+            salesEntryVC.hidesBottomBarWhenPushed = true
             self.navigationController?.pushViewController(salesEntryVC, animated: true)
         }
         scanVC.modalPresentationStyle = .fullScreen

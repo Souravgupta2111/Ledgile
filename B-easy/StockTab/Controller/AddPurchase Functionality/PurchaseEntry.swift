@@ -16,6 +16,4 @@ struct PurchaseEntry {
     
     var pendingItemPhotos: [UIImage] = []
     var expiryDate: Date? = nil
-
-    var itemType: ItemType = .goods
 }

@@ -39,9 +39,7 @@ class PurchaseItemInformationTableViewController: UITableViewController {
             return
         }
 
-        if entry.itemType == .services {
-            entry.quantity = max(entry.quantity, 1)
-        } else if entry.quantity <= 0 {
+        if entry.quantity <= 0 {
             showAlert(title: "Invalid Quantity", message: "Enter quantity greater than 0.")
             return
         }
@@ -70,19 +68,12 @@ class PurchaseItemInformationTableViewController: UITableViewController {
 
 extension PurchaseItemInformationTableViewController {
     
-    private var isService: Bool { entry.itemType == .services }
-
     private enum Row {
-        case type, item, unit, quantity, sellingPrice, costPrice, lowStock, expiry, photo
+        case item, unit, quantity, sellingPrice, costPrice, lowStock, expiry, photo
     }
 
-    /// Goods: Type, Item, Unit, Quantity, Selling/Cost, Low Stock, Expiry, Photo
-    /// Services: Type, Item, Unit, Selling/Cost (no quantity / stock fields)
     private var visibleRows: [Row] {
-        if isService {
-            return [.type, .item, .unit, .sellingPrice, .costPrice]
-        }
-        return [.type, .item, .unit, .quantity, .sellingPrice, .costPrice, .lowStock, .expiry, .photo]
+        return [.item, .unit, .quantity, .sellingPrice, .costPrice, .lowStock, .expiry, .photo]
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -103,34 +94,6 @@ extension PurchaseItemInformationTableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         switch visibleRows[indexPath.row] {
-
-        case .type:
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            cell.selectionStyle = .none
-
-            let titleLabel = UILabel()
-            titleLabel.text = "Type"
-            titleLabel.font = .systemFont(ofSize: 17)
-            titleLabel.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(titleLabel)
-
-            let seg = UISegmentedControl(items: ["Goods", "Service"])
-            seg.selectedSegmentIndex = isService ? 1 : 0
-            seg.translatesAutoresizingMaskIntoConstraints = false
-            seg.addTarget(self, action: #selector(itemTypeChanged(_:)), for: .valueChanged)
-            cell.contentView.addSubview(seg)
-
-            NSLayoutConstraint.activate([
-                titleLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-                titleLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                seg.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
-                seg.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                seg.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
-                seg.widthAnchor.constraint(equalToConstant: 160),
-                cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
-            ])
-
-            return cell
 
         case .item:
             let cell = UITableViewCell(style: .value1, reuseIdentifier: "rightDetail")
@@ -284,18 +247,6 @@ extension PurchaseItemInformationTableViewController {
             
             return cell
         }
-    }
-
-    @objc private func itemTypeChanged(_ sender: UISegmentedControl) {
-        entry.itemType = sender.selectedSegmentIndex == 0 ? .goods : .services
-        // Clear goods-specific fields when switching to services
-        if entry.itemType == .services {
-            entry.quantity = max(entry.quantity, 1)
-            entry.lowStockThreshold = 0
-            entry.expiryDate = nil
-            entry.pendingItemPhotos = []
-        }
-        tableView.reloadData()
     }
 }
 

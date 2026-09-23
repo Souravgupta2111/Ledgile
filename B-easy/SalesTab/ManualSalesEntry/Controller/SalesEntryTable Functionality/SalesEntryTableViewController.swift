@@ -89,6 +89,42 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             // entryMode is already set by the caller before pushing this VC
             appendItems(from: result)
         }
+        
+        setupBackButton()
+    }
+
+    private func setupBackButton() {
+        self.navigationItem.hidesBackButton = true
+        let newBackButton = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(backButtonTapped))
+        self.navigationItem.leftBarButtonItem = newBackButton
+        
+        // Also handle the swipe-to-go-back gesture
+        self.navigationController?.interactivePopGestureRecognizer?.addTarget(self, action: #selector(handleSwipeGesture))
+    }
+
+    @objc private func handleSwipeGesture(gesture: UIGestureRecognizer) {
+        if gesture.state == .began {
+            if !transactionItems.isEmpty && !billSaved {
+                gesture.isEnabled = false
+                backButtonTapped()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    gesture.isEnabled = true
+                }
+            }
+        }
+    }
+
+    @objc private func backButtonTapped() {
+        if !transactionItems.isEmpty && !billSaved {
+            let alert = UIAlertController(title: "Unsaved Changes", message: "You have an ongoing sale. Going back will erase this sale. Are you sure?", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+            alert.addAction(UIAlertAction(title: "Go Back", style: .destructive, handler: { [weak self] _ in
+                self?.navigationController?.popViewController(animated: true)
+            }))
+            present(alert, animated: true, completion: nil)
+        } else {
+            navigationController?.popViewController(animated: true)
+        }
     }
 
     private func setupSuggestionsTableView() {
@@ -1249,8 +1285,7 @@ extension SalesEntryTableViewController: ItemInformationDelegate {
             quantity: item.quantity,
             sellingPricePerUnit: item.sellingPricePerUnit,
             costPricePerUnit: nil,
-            createdDate: item.createdAt,
-            itemType: item.itemType
+            createdDate: item.createdAt
         )
         transactionItems.append(placeholderTransactionItem)
 
