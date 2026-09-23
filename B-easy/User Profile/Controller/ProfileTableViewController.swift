@@ -29,7 +29,8 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
 
     private var currentReportsRows: [ReportsRow] {
         var base: [ReportsRow] = [.byItem, .bySales, .byCredit]
-        if let settings = appSettings, settings.isGSTRegistered, settings.gstScheme == "regular" {
+        // nil scheme = purana install jisme Regular dikhta tha — regular mano.
+        if let settings = appSettings, settings.isGSTRegistered, settings.gstScheme != "composition" {
             base.append(.gstr1)
             base.append(.gstr3b)
         }
@@ -38,6 +39,7 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
 
     private enum PreferencesRow: Int, CaseIterable {
         case appAppearance
+        case voiceWakePhrase
         case dataBackup
         case cloudBackup
         case importBackup
@@ -45,7 +47,7 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
     }
 
     private var currentPreferencesRows: [PreferencesRow] {
-        return [.appAppearance, .dataBackup, .cloudBackup, .importBackup, .restoreCloudBackup]
+        return [.appAppearance, .voiceWakePhrase, .dataBackup, .cloudBackup, .importBackup, .restoreCloudBackup]
     }
 
     private enum LegalRow: Int, CaseIterable {
@@ -293,6 +295,13 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
                     accessoryStyle: .chevron
                 )
 
+            case .voiceWakePhrase:
+                cell.configure(
+                    icon: UIImage(systemName: "waveform.and.mic"),
+                    title: "Wake Phrase",
+                    accessoryStyle: .chevron
+                )
+
             case .dataBackup:
                 cell.configure(
                     icon: UIImage(systemName: "tray.and.arrow.up.fill"),
@@ -428,6 +437,8 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
             switch row {
             case .appAppearance:
                 presentAppearancePicker()
+            case .voiceWakePhrase:
+                presentWakePhrasePicker()
             case .dataBackup:
                 exportDataBackup()
             case .cloudBackup:
@@ -837,6 +848,41 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
             popover.permittedArrowDirections = []
         }
 
+        present(alert, animated: true)
+    }
+
+    private func presentWakePhrasePicker() {
+        let alert = UIAlertController(
+            title: "Wake Phrase",
+            message: "Say this phrase from any screen to start a voice sale.\nKeep it short (2–4 words).",
+            preferredStyle: .alert
+        )
+        alert.addTextField { tf in
+            tf.text = HotwordListener.shared.wakePhrase
+            tf.placeholder = HotwordListener.defaultWakePhrase
+            tf.autocapitalizationType = .none
+            tf.autocorrectionType = .no
+            tf.clearButtonMode = .whileEditing
+        }
+        alert.addAction(UIAlertAction(title: "Reset to Default", style: .destructive) { [weak self] _ in
+            HotwordListener.shared.wakePhrase = HotwordListener.defaultWakePhrase
+            HotwordListener.shared.stop()
+            HotwordListener.shared.start()
+            self?.tableView.reloadData()
+        })
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            let newPhrase = alert.textFields?.first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+            if newPhrase.isEmpty {
+                HotwordListener.shared.wakePhrase = HotwordListener.defaultWakePhrase
+            } else {
+                HotwordListener.shared.wakePhrase = newPhrase
+            }
+            HotwordListener.shared.stop()
+            HotwordListener.shared.start()
+            self?.tableView.reloadData()
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(alert, animated: true)
     }
 

@@ -11,7 +11,9 @@ class ReportsViewController: UIViewController {
         
         let dm = AppDataModel.shared.dataModel
         if let settings = try? dm.db.getSettings(), settings.isGSTRegistered {
-            if settings.gstScheme == "regular" {
+            // NOTE: purane installs me gstScheme nil ho sakta hai (screen "Regular"
+            // dikhata tha) — nil ko regular mano, sirf composition ko alag rakho.
+            if settings.gstScheme != "composition" {
                 base.append(.gstr1)
                 base.append(.gstr3b)
                 base.append(.hsnSummary)
@@ -33,16 +35,23 @@ class ReportsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         tableView.dataSource = self
         tableView.delegate = self
-        
+
         tableView.register(UINib(nibName: "LabelTableViewCell", bundle: nil),
                            forCellReuseIdentifier: "LabelTableViewCell")
-        
+
         tableView.backgroundColor = .systemGray6
         tableView.separatorStyle = .none
         tableView.sectionHeaderTopPadding = 0
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // GST on/off GST Settings se badal sakta hai — wapas aane pe list refresh karo
+        // taaki GSTR-1/3B, HSN, ITC rows turant dikhe.
+        tableView.reloadData()
     }
 }
 

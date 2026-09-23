@@ -16,7 +16,7 @@ final class GSTReturnExporter {
    
     func generateGSTR1(from startDate: Date, to endDate: Date) throws -> Data {
         let settings = try db.getSettings()
-        guard settings.isGSTRegistered, settings.gstScheme == "regular" else {
+        guard settings.isGSTRegistered, settings.gstScheme != "composition" else {
             throw GSTExportError.notRegularScheme
         }
 
@@ -119,7 +119,7 @@ final class GSTReturnExporter {
   
     func generateGSTR3B(from startDate: Date, to endDate: Date) throws -> Data {
         let settings = try db.getSettings()
-        guard settings.isGSTRegistered, settings.gstScheme == "regular" else {
+        guard settings.isGSTRegistered, settings.gstScheme != "composition" else {
             throw GSTExportError.notRegularScheme
         }
 

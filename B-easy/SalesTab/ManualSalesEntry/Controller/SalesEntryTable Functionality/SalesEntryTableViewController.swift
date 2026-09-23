@@ -765,11 +765,11 @@ extension SalesEntryTableViewController {
                 return cell
             } else if indexPath.row == 1 {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-                cell.titleLabel.text = "    Buyer GSTIN"
+                cell.titleLabel.text = "Buyer GSTIN"
                 cell.titleLabel.font = .systemFont(ofSize: 17)
                 cell.titleLabel.textColor = UIColor(named: "Onyx") ?? .label
                 cell.textField.text = buyerGSTIN
-                cell.textField.placeholder = "Enter GSTIN    "
+                cell.textField.placeholder = "Enter GSTIN"
                 cell.textField.font = .systemFont(ofSize: 17)
                 cell.textField.textColor = UIColor(named: "Onyx") ?? .label
                 cell.textField.autocapitalizationType = .allCharacters

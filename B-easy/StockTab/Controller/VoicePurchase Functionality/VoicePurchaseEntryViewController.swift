@@ -110,6 +110,14 @@ class VoicePurchaseEntryViewController: UIViewController {
 
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            print("[VoicePurchase] ⚠️ Invalid input format (sampleRate: \(inputFormat.sampleRate), channels: \(inputFormat.channelCount))")
+            DispatchQueue.main.async {
+                self.resultLabel.text = "Microphone unavailable"
+                self.stopListening()
+            }
+            return
+        }
 
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) {
             [weak self] result, error in

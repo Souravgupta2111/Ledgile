@@ -16,8 +16,11 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
     private let composer = UITextView()
     private let placeholderLabel = UILabel()
     private let sendButton = UIButton(type: .system)
+    private let liveButton = UIButton(type: .system)
     private var isSending = false
     private var assistant: AnyObject?
+
+    // MARK: - Assistant Live (full-screen voice modal; history lands here on close)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -62,10 +65,20 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
 
+        var liveConfig = UIButton.Configuration.filled()
+        liveConfig.image = UIImage(systemName: "mic.fill")
+        liveConfig.cornerStyle = .capsule
+        liveConfig.baseBackgroundColor = UIColor(named: "Lime Moss") ?? .systemGreen
+        liveConfig.baseForegroundColor = .white
+        liveButton.configuration = liveConfig
+        liveButton.translatesAutoresizingMaskIntoConstraints = false
+        liveButton.addTarget(self, action: #selector(liveTapped), for: .touchUpInside)
+
         view.addSubview(tableView)
         view.addSubview(inputBar)
         inputBar.addSubview(composer)
         composer.addSubview(placeholderLabel)
+        inputBar.addSubview(liveButton)
         inputBar.addSubview(sendButton)
 
         NSLayoutConstraint.activate([
@@ -88,7 +101,12 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
             placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: composer.trailingAnchor, constant: -12),
             placeholderLabel.centerYAnchor.constraint(equalTo: composer.centerYAnchor),
 
-            sendButton.leadingAnchor.constraint(equalTo: composer.trailingAnchor, constant: 8),
+            liveButton.leadingAnchor.constraint(equalTo: composer.trailingAnchor, constant: 8),
+            liveButton.bottomAnchor.constraint(equalTo: composer.bottomAnchor),
+            liveButton.widthAnchor.constraint(equalToConstant: 36),
+            liveButton.heightAnchor.constraint(equalToConstant: 36),
+
+            sendButton.leadingAnchor.constraint(equalTo: liveButton.trailingAnchor, constant: 8),
             sendButton.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -12),
             sendButton.bottomAnchor.constraint(equalTo: composer.bottomAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 36),
@@ -177,10 +195,31 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
         guard row >= 0 else { return }
         tableView.scrollToRow(at: IndexPath(row: row, section: 0), at: .bottom, animated: false)
     }
+
+    // MARK: - Live voice (full-screen modal; turns land here as bubbles on close)
+
+    @objc private func liveTapped() {
+        let snap = ShopLedgerLookup.shopSnapshot()
+        let top = ShopLedgerLookup.topSellingProducts(limit: 5)
+        let low = ShopLedgerLookup.lowStock()
+        let pack = [snap, top, "LOWSTOCK:\n" + low].joined(separator: "\n")
+        let vc = LiveVoiceViewController(shopPack: pack)
+        vc.onExit = { [weak self] turns in
+            guard let self, !turns.isEmpty else { return }
+            for t in turns {
+                self.lines.append(Line(isUser: true, text: t.user))
+                self.lines.append(Line(isUser: false, text: t.assistant))
+            }
+            self.tableView.reloadData()
+            self.scrollToEnd()
+        }
+        present(vc, animated: true)
+    }
 }
 
 private final class BubbleCell: UITableViewCell {
-    private let bubble = PaddingLabel()
+    private let bubble = UIView()
+    private let label = UILabel()
     private var userTrailing: NSLayoutConstraint!
     private var assistantLeading: NSLayoutConstraint!
 
@@ -189,14 +228,15 @@ private final class BubbleCell: UITableViewCell {
         selectionStyle = .none
         backgroundColor = .clear
         contentView.backgroundColor = .clear
-        bubble.numberOfLines = 0
-        bubble.lineBreakMode = .byWordWrapping
-        bubble.font = .preferredFont(forTextStyle: .body)
         bubble.layer.cornerRadius = 16
         bubble.clipsToBounds = true
         bubble.translatesAutoresizingMaskIntoConstraints = false
-        bubble.insets = UIEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        label.font = .preferredFont(forTextStyle: .body)
+        label.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(bubble)
+        bubble.addSubview(label)
         userTrailing = bubble.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16)
         assistantLeading = bubble.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16)
         NSLayoutConstraint.activate([
@@ -205,62 +245,23 @@ private final class BubbleCell: UITableViewCell {
             bubble.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 16),
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -16),
             bubble.widthAnchor.constraint(lessThanOrEqualTo: contentView.widthAnchor, multiplier: 0.82),
-            assistantLeading
+            assistantLeading,
+            label.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 10),
+            label.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
+            label.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -12),
+            label.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -10)
         ])
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let maxBubble = contentView.bounds.width * 0.82
-        let textWidth = max(0, maxBubble - bubble.insets.left - bubble.insets.right)
-        if abs(bubble.preferredMaxLayoutWidth - textWidth) > 0.5 {
-            bubble.preferredMaxLayoutWidth = textWidth
-            bubble.invalidateIntrinsicContentSize()
-        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:)") }
 
     func configure(text: String, isUser: Bool) {
-        bubble.text = text
-        bubble.textColor = isUser ? .white : .label
+        label.text = text
+        label.textColor = isUser ? .white : .label
         bubble.backgroundColor = isUser
             ? (UIColor(named: "Lime Moss") ?? .systemGreen)
             : .secondarySystemBackground
         userTrailing.isActive = isUser
         assistantLeading.isActive = !isUser
-    }
-}
-
-private final class PaddingLabel: UILabel {
-    var insets = UIEdgeInsets.zero
-
-    override func drawText(in rect: CGRect) {
-        super.drawText(in: rect.inset(by: insets))
-    }
-
-    override func textRect(forBounds bounds: CGRect, limitedToNumberOfLines numberOfLines: Int) -> CGRect {
-        let insetBounds = bounds.inset(by: insets)
-        let text = super.textRect(forBounds: insetBounds, limitedToNumberOfLines: numberOfLines)
-        return CGRect(
-            x: text.origin.x - insets.left,
-            y: text.origin.y - insets.top,
-            width: text.width + insets.left + insets.right,
-            height: text.height + insets.top + insets.bottom
-        )
-    }
-
-    override var intrinsicContentSize: CGSize {
-        let size = super.intrinsicContentSize
-        return CGSize(width: size.width + insets.left + insets.right, height: size.height + insets.top + insets.bottom)
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let width = bounds.width - insets.left - insets.right
-        if width > 0, abs(preferredMaxLayoutWidth - width) > 0.5 {
-            preferredMaxLayoutWidth = width
-            invalidateIntrinsicContentSize()
-        }
     }
 }

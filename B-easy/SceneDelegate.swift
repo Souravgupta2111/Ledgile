@@ -87,11 +87,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         CloudBackupService.shared.uploadIfDueForDaily()
+        setupHotwordListener()
+        HotwordListener.shared.start()
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
-        // Called when the scene will move from an active state to an inactive state.
-        // This may occur due to temporary interruptions (ex. an incoming phone call).
+        HotwordListener.shared.stop()
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
@@ -103,4 +104,41 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // to restore the scene back to its current state.
     }
 
+}
+
+// MARK: - Hotword Navigation
+extension SceneDelegate {
+    private func setupHotwordListener() {
+        // Only set the callback once.
+        guard HotwordListener.shared.onHotword == nil else { return }
+        HotwordListener.shared.onHotword = { [weak self] in
+            guard let self, let window = self.window else { return }
+            guard let topVC = Self.topViewController(from: window.rootViewController) else { return }
+            // Don't re-present if already on voice entry or live voice.
+            if topVC is VoiceEntryViewController || topVC is LiveVoiceViewController { return }
+            HotwordListener.shared.pause()
+            let storyboard = UIStoryboard(name: "Main", bundle: nil)
+            guard let voiceVC = storyboard.instantiateViewController(withIdentifier: "VoiceEntryViewController")
+                    as? VoiceEntryViewController else { return }
+            voiceVC.autoStartListening = true
+            voiceVC.modalPresentationStyle = .fullScreen
+            voiceVC.onDismiss = {
+                HotwordListener.shared.resume()
+            }
+            topVC.present(voiceVC, animated: true)
+        }
+    }
+
+    private static func topViewController(from vc: UIViewController?) -> UIViewController? {
+        if let presented = vc?.presentedViewController {
+            return topViewController(from: presented)
+        }
+        if let nav = vc as? UINavigationController {
+            return topViewController(from: nav.visibleViewController)
+        }
+        if let tab = vc as? UITabBarController {
+            return topViewController(from: tab.selectedViewController)
+        }
+        return vc
+    }
 }

@@ -94,7 +94,6 @@ class DashboardViewController: UIViewController {
     }
 
     private func setupAssistantButton() {
-        guard #available(iOS 26.0, *) else { return }
         var config = UIButton.Configuration.filled()
         config.image = UIImage(systemName: "bubble.left.and.bubble.right.fill")
         config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .large)
@@ -116,8 +115,13 @@ class DashboardViewController: UIViewController {
     }
 
     @objc private func openAssistant() {
-        if #available(iOS 26.0, *) {
-            navigationController?.pushViewController(ShopAssistantViewController(), animated: true)
+        navigationController?.pushViewController(ShopAssistantViewController(), animated: true)
+    }
+
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "voice_sales_from_dashboard",
+           let voiceVC = segue.destination as? VoiceEntryViewController {
+            voiceVC.autoStartListening = true
         }
     }
 }

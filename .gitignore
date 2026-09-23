@@ -16,3 +16,7 @@ B-easy/VisionTab/MobileSAM-CoreML/.git/
 xcuserdata/
 **/xcuserdata/
 *.xcbkptlist
+
+# Scratch & test scripts
+scratch.swift
+test_*.swift
