@@ -61,6 +61,13 @@ class SalesViewController: UIViewController {
         // Refresh data each time the tab appears (e.g. after adding a sale).
         hostingController?.rootView.reload()
     }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Reset the transcription state after the view has transitioned away
+        self.onTranscriptionUpdate?("")
+        self.onListeningStateChanged?(false)
+    }
 
     // MARK: - SwiftUI Hosting
 
@@ -434,7 +441,6 @@ class SalesViewController: UIViewController {
 
     private func deliverResult(_ result: ParsedResult) {
         DispatchQueue.main.async {
-            self.onTranscriptionUpdate?("")
             self.performSegue(withIdentifier: "manual_sales", sender: result)
         }
     }

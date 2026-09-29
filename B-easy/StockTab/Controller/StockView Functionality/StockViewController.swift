@@ -9,7 +9,7 @@ class StockViewController: UIViewController {
     
     private var hostingController: UIHostingController<StockTabView>?
 
-    // MARK: - Inline Voice Recording Properties (copied from VoicePurchaseEntryViewController)
+    // MARK: - Inline Voice Recording Properties
 
     private let audioEngine = AVAudioEngine()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-IN"))
@@ -50,6 +50,13 @@ class StockViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Refresh data when the view appears
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Reset the transcription state after the view has transitioned away
+        self.onTranscriptionUpdate?("")
+        self.onListeningStateChanged?(false)
     }
 
     private func embedSwiftUIView() {
@@ -421,7 +428,6 @@ class StockViewController: UIViewController {
 
     private func deliverResult(_ result: ParsedResult) {
         DispatchQueue.main.async {
-            self.onTranscriptionUpdate?("")
             self.performSegue(withIdentifier: "AddPurchaseFromStock", sender: result)
         }
     }
