@@ -1,5 +1,18 @@
 import UIKit
 
+/// Capsule label with built-in horizontal and vertical padding to prevent text clipping.
+private final class PaddedPillLabel: UILabel {
+    var insets = UIEdgeInsets(top: 4, left: 14, bottom: 4, right: 14)
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: insets))
+    }
+    override var intrinsicContentSize: CGSize {
+        let s = super.intrinsicContentSize
+        return CGSize(width: s.width + insets.left + insets.right,
+                      height: max(28, s.height + insets.top + insets.bottom))
+    }
+}
+
 /// Full-screen voice conversation (ChatGPT-voice style, app theme).
 /// Center orb + ONE status word only — no transcript here.
 /// Voice turns land in the normal chat as bubbles when this closes.
@@ -16,7 +29,7 @@ final class LiveVoiceViewController: UIViewController {
     private let orb = LiveOrbView()
     private let statusLabel = UILabel()
     private let closeButton = UIButton(type: .system)
-    private let livePill = UILabel()
+    private let livePill = PaddedPillLabel()
     private let bottomBar = UIView()
     private let askField = UITextField()
     private let muteButton = UIButton(type: .system)
@@ -44,6 +57,12 @@ final class LiveVoiceViewController: UIViewController {
             trait.userInterfaceStyle == .dark ? .black : .systemGray6
         }
 
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tap.cancelsTouchesInView = false
+        view.addGestureRecognizer(tap)
+
+        setupKeyboardObservers()
+
         // Top-left close.
         var closeCfg = UIButton.Configuration.plain()
         closeCfg.image = UIImage(systemName: "xmark")
@@ -69,6 +88,11 @@ final class LiveVoiceViewController: UIViewController {
         statusLabel.font = .preferredFont(forTextStyle: .title3)
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 0
+        statusLabel.lineBreakMode = .byWordWrapping
+        statusLabel.adjustsFontSizeToFitWidth = true
+        statusLabel.minimumScaleFactor = 0.75
+        statusLabel.setContentCompressionResistancePriority(.required, for: .vertical)
 
         // Bottom bar: [Ask field] [mic] [X].
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
@@ -79,6 +103,9 @@ final class LiveVoiceViewController: UIViewController {
         askField.placeholder = "Ask..."
         askField.font = .preferredFont(forTextStyle: .body)
         askField.returnKeyType = .send
+        askField.adjustsFontSizeToFitWidth = true
+        askField.minimumFontSize = 13
+        askField.clearButtonMode = .whileEditing
         askField.delegate = self
 
         var muteCfg = UIButton.Configuration.plain()
@@ -114,20 +141,22 @@ final class LiveVoiceViewController: UIViewController {
 
             livePill.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             livePill.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            livePill.widthAnchor.constraint(equalToConstant: 112),
-            livePill.heightAnchor.constraint(equalToConstant: 28),
+            livePill.leadingAnchor.constraint(greaterThanOrEqualTo: closeButton.trailingAnchor, constant: 12),
+            livePill.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
 
             orb.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             orb.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40),
             orb.widthAnchor.constraint(equalToConstant: 220),
             orb.heightAnchor.constraint(equalToConstant: 220),
 
-            statusLabel.topAnchor.constraint(equalTo: orb.bottomAnchor, constant: 28),
+            statusLabel.topAnchor.constraint(equalTo: orb.bottomAnchor, constant: 24),
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            statusLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomBar.topAnchor, constant: -12),
 
-            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            bottomBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
             bottomBar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
+            bottomBar.topAnchor.constraint(greaterThanOrEqualTo: statusLabel.bottomAnchor, constant: 8),
             bottomBar.heightAnchor.constraint(equalToConstant: 52),
 
             askField.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 18),
@@ -141,7 +170,7 @@ final class LiveVoiceViewController: UIViewController {
             muteButton.heightAnchor.constraint(equalToConstant: 48),
 
             endButton.leadingAnchor.constraint(equalTo: muteButton.trailingAnchor, constant: 6),
-            endButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            endButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
             endButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
             endButton.widthAnchor.constraint(equalToConstant: 48),
             endButton.heightAnchor.constraint(equalToConstant: 48)
@@ -153,6 +182,7 @@ final class LiveVoiceViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         teardown()
         if !isClosing {
             isClosing = true
@@ -303,6 +333,42 @@ final class LiveVoiceViewController: UIViewController {
             setStatus(mode: .listening, text: "Listening...")
             engine?.listenAgain()
         }
+    }
+
+    // MARK: - Keyboard Handling
+
+    private func setupKeyboardObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillChangeFrame(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
+    }
+
+    @objc private func keyboardWillChangeFrame(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let endFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+              let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
+              let curveValue = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt else { return }
+
+        let keyboardInView = view.convert(endFrame, from: nil)
+        let isShowing = keyboardInView.origin.y < view.bounds.height
+
+        let options = UIView.AnimationOptions(rawValue: curveValue << 16)
+        UIView.animate(withDuration: duration, delay: 0, options: [options, .beginFromCurrentState]) {
+            if isShowing {
+                self.orb.transform = CGAffineTransform(scaleX: 0.65, y: 0.65).translatedBy(x: 0, y: -45)
+                self.statusLabel.transform = CGAffineTransform(translationX: 0, y: -45)
+            } else {
+                self.orb.transform = .identity
+                self.statusLabel.transform = .identity
+            }
+        }
+    }
+
+    @objc private func dismissKeyboard() {
+        view.endEditing(true)
     }
 }
 

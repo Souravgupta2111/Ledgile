@@ -16,6 +16,7 @@ class EmptyTableViewCell: UITableViewCell {
         containerView.backgroundColor = .systemBackground
         containerView.layer.cornerRadius = 16
         containerView.layer.masksToBounds = true
+        containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

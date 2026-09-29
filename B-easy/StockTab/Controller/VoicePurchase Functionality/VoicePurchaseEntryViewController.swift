@@ -37,6 +37,10 @@ class VoicePurchaseEntryViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        resultLabel.numberOfLines = 0
+        resultLabel.lineBreakMode = .byWordWrapping
+        resultLabel.adjustsFontSizeToFitWidth = true
+        resultLabel.minimumScaleFactor = 0.75
         
         setupMicButton()
         requestPermissions()
