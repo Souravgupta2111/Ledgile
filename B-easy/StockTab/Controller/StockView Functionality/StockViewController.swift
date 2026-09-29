@@ -60,7 +60,8 @@ class StockViewController: UIViewController {
             onItemTapped: { [weak self] item in self?.openItemProfile(for: item) },
             onPurchaseTapped: { [weak self] in self?.openPurchaseHistory() },
             onLowStockTapped: { [weak self] in self?.openLowStock() },
-            onExpiryTapped: { [weak self] in self?.openExpiry() }
+            onExpiryTapped: { [weak self] in self?.openExpiry() },
+            onInventoryTapped: { [weak self] in self?.openInventoryReport() }
         ), onTranscriptionUpdate: { [weak self] callback in
             self?.onTranscriptionUpdate = callback
         }, onListeningStateChanged: { [weak self] callback in
@@ -94,6 +95,10 @@ class StockViewController: UIViewController {
         performSegue(withIdentifier: "purchase_segue", sender: nil)
     }
 
+    private func openInventoryReport() {
+        performSegue(withIdentifier: "report_segue", sender: nil)
+    }
+
     private func openLowStock() {
         performSegue(withIdentifier: "low_stock_from_stock", sender: nil)
     }
@@ -110,6 +115,7 @@ class StockViewController: UIViewController {
         if segue.identifier == "item_profile" {
             if let dest = segue.destination as? ItemProfileTableViewController, let item = sender as? Item {
                 dest.item = item
+                dest.itemID = item.id
             }
         } else if segue.identifier == "AddPurchaseFromStock", let result = sender as? ParsedResult {
             if let dest = segue.destination as? AddPurchaseViewController {

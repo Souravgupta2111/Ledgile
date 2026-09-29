@@ -328,6 +328,7 @@ final class GlobalSearchViewController: UITableViewController {
             let itemProfileVC = ItemProfileTableViewController(style: .insetGrouped)
             itemProfileVC.itemID = item.id
             itemProfileVC.title = "Item Profile"
+            itemProfileVC.hidesBottomBarWhenPushed = true
             navigationController?.pushViewController(itemProfileVC, animated: true)
 
         case .bill:
@@ -337,8 +338,14 @@ final class GlobalSearchViewController: UITableViewController {
             billVC.isReadOnly = true
             billVC.receiveBilling(details: details)
             billVC.title = "Bill"
+            billVC.hidesBottomBarWhenPushed = true
             navigationController?.pushViewController(billVC, animated: true)
         }
+    }
+    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        super.prepare(for: segue, sender: sender)
+        segue.destination.hidesBottomBarWhenPushed = true
     }
 }
 

@@ -10,6 +10,7 @@ struct StockNavigationActions {
     var onPurchaseTapped: () -> Void = {}
     var onLowStockTapped: () -> Void = {}
     var onExpiryTapped: () -> Void = {}
+    var onInventoryTapped: () -> Void = {}
 }
 
 struct StockTabView: View {
@@ -281,7 +282,9 @@ struct StockTabView: View {
                     amount: String(format: "₹%.0f", viewModel.totalInventoryValue),
                     countLine: "\(viewModel.totalItemsCount) items",
                     trailingLine: nil
-                ) {}
+                ) {
+                    actions.onInventoryTapped()
+                }
 
                 ValueTileCard(
                     style: .beige,
