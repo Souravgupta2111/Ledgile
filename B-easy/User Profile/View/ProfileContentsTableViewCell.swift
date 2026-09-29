@@ -43,7 +43,10 @@ final class ProfileContentsTableViewCell: UITableViewCell {
         titleLabel.text = title
         titleLabel.font = .systemFont(ofSize: 17, weight: .regular)
         titleLabel.textColor = titleColor
-        titleLabel.numberOfLines = 1
+        titleLabel.numberOfLines = 2
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.adjustsFontSizeToFitWidth = true
+        titleLabel.minimumScaleFactor = 0.85
 
         switch accessoryStyle {
         case .chevron:

@@ -43,6 +43,10 @@ class VoiceEntryViewController: UIViewController {
      
      override func viewDidLoad() {
         super.viewDidLoad()
+        resultLabel.numberOfLines = 0
+        resultLabel.lineBreakMode = .byWordWrapping
+        resultLabel.adjustsFontSizeToFitWidth = true
+        resultLabel.minimumScaleFactor = 0.75
         resultLabel.text = "Say customer, items, quantity or price to add sale"
         
         setupMicButton()
