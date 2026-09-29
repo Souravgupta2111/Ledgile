@@ -372,8 +372,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                         currentStock: 0,
                         createdDate: now,
                         lastRestockDate: nil,
-                        isActive: true,
-                        itemType: txItem.itemType ?? .goods
+                        isActive: true
                     )
 
                     try db.insertItem(newItem)

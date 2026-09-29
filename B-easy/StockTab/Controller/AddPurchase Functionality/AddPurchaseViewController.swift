@@ -64,7 +64,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
     private var subTotal: Double {
         Money.round2(entries.reduce(0) {
-            let qty = $1.itemType == .services ? max($1.quantity, 1) : $1.quantity
+            let qty = $1.quantity
             return $0 + Money.line(quantity: qty, rate: $1.costPrice)
         })
     }
@@ -102,6 +102,40 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         if let result = pendingPurchaseResult {
             pendingPurchaseResult = nil
             appendEntries(fromPurchaseResult: result)
+        }
+        setupBackButton()
+    }
+
+    private func setupBackButton() {
+        self.navigationItem.hidesBackButton = true
+        let newBackButton = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(backButtonTapped))
+        self.navigationItem.leftBarButtonItem = newBackButton
+        
+        self.navigationController?.interactivePopGestureRecognizer?.addTarget(self, action: #selector(handleSwipeGesture))
+    }
+
+    @objc private func handleSwipeGesture(gesture: UIGestureRecognizer) {
+        if gesture.state == .began {
+            if !entries.isEmpty {
+                gesture.isEnabled = false
+                backButtonTapped()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    gesture.isEnabled = true
+                }
+            }
+        }
+    }
+
+    @objc private func backButtonTapped() {
+        if !entries.isEmpty {
+            let alert = UIAlertController(title: "Unsaved Changes", message: "You have an ongoing purchase. Going back will erase this purchase. Are you sure?", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+            alert.addAction(UIAlertAction(title: "Go Back", style: .destructive, handler: { [weak self] _ in
+                self?.navigationController?.popViewController(animated: true)
+            }))
+            present(alert, animated: true, completion: nil)
+        } else {
+            navigationController?.popViewController(animated: true)
         }
     }
 
@@ -204,7 +238,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         if entries[index].gstRate == nil, let rate = matched.gstRate {
             entries[index].gstRate = rate
         }
-        entries[index].itemType = matched.itemType
+
         
         // Auto-fill GST fields from HSN database if still nil
         if entries[index].hsnCode == nil || entries[index].gstRate == nil {
@@ -480,13 +514,13 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
                 let key = itemName.lowercased()
                 // Services are not stocked — treat as a single line amount (qty 1).
-                let quantity = entry.itemType == .services ? max(entry.quantity, 1) : entry.quantity
+                let quantity = entry.quantity
                 let costPrice = entry.costPrice
                 let sellingPrice = entry.sellingPrice
                 let barcode = entry.barcode?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let barcodeValue = (barcode?.isEmpty == false) ? barcode : nil
 
-                if entry.itemType != .services, quantity <= 0 { continue }
+                if quantity <= 0 { continue }
 
                 let itemID: UUID
 
@@ -526,7 +560,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     )
                     newItem.hsnCode = entry.hsnCode
                     newItem.gstRate = entry.gstRate
-                    newItem.itemType = entry.itemType
+
 
                     try db.insertItem(newItem)
                     nameToItem[key] = newItem
@@ -780,7 +814,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.selectionStyle = .none
 
             let name = entry.selectedItemName ?? "Item"
-            let isService = entry.itemType == .services
+            let isService = false
             let qty = entry.quantity > 0 ? String(format: "%g", entry.quantity) : "Qty"
             let cost = entry.costPrice > 0 ? "₹\(entry.costPrice)" : "Cost"
 
@@ -868,7 +902,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     
     /// Logical detail row types
     private enum DetailRowType {
-        case itemType, itemName, unit, quantity, costPrice, sellingPrice
+        case itemName, unit, quantity, costPrice, sellingPrice
         case hsnCode, gstRate   // GST-only
         case lowStock, expiryToggle, expiry, barcode, photoRecord
     }
@@ -876,8 +910,8 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
     private func detailRowTypes(for entryIndex: Int) -> [DetailRowType] {
         let isGST = (try? AppDataModel.shared.dataModel.db.getSettings())?.isGSTRegistered ?? false
-        let isService = entries[entryIndex].itemType == .services
-        var rows: [DetailRowType] = [.itemType, .itemName, .unit]
+        let isService = false
+        var rows: [DetailRowType] = [.itemName, .unit]
         if !isService {
             rows.append(.quantity)
         }
@@ -902,35 +936,6 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         let rowType = rowTypes[detailRow]
 
         switch rowType {
-        case .itemType:
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            cell.selectionStyle = .none
-            cell.contentView.backgroundColor = .cell
-            cell.backgroundColor = .cell
-
-            let titleLabel = UILabel()
-            titleLabel.text = "  Type"
-            titleLabel.font = .systemFont(ofSize: 17)
-            titleLabel.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(titleLabel)
-
-            let seg = UISegmentedControl(items: ["Goods", "Service"])
-            seg.selectedSegmentIndex = entry.itemType == .services ? 1 : 0
-            seg.tag = entryIndex
-            seg.translatesAutoresizingMaskIntoConstraints = false
-            seg.addTarget(self, action: #selector(purchaseItemTypeChanged(_:)), for: .valueChanged)
-            cell.contentView.addSubview(seg)
-
-            NSLayoutConstraint.activate([
-                titleLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-                titleLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                seg.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
-                seg.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                seg.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
-                seg.widthAnchor.constraint(equalToConstant: 160),
-                cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
-            ])
-            return cell
 
         case .itemName:
             // Item Name
@@ -1005,7 +1010,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .hsnCode:
             // HSN / SAC Code
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-            let isService = entry.itemType == .services
+            let isService = false
             cell.titleLabel.text = isService ? "  SAC Code" : "  HSN Code"
             cell.textField.placeholder = isService ? "e.g. 9983" : "e.g. 1006"
             cell.textField.keyboardType = .numberPad
@@ -1444,8 +1449,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     @objc private func purchaseItemTypeChanged(_ sender: UISegmentedControl) {
         let index = sender.tag
         guard index < entries.count else { return }
-        entries[index].itemType = sender.selectedSegmentIndex == 1 ? .services : .goods
-        if entries[index].itemType == .services {
+        if false {
             entries[index].quantity = max(entries[index].quantity, 1)
             entries[index].lowStockThreshold = 0
             entries[index].expiryDate = nil
@@ -1532,7 +1536,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                 if self.entries[entryIndex].gstRate == nil {
                     self.entries[entryIndex].gstRate = matched.gstRate
                 }
-                self.entries[entryIndex].itemType = matched.itemType
+
                 if self.entries[entryIndex].quantity <= 0 {
                     self.entries[entryIndex].quantity = 1
                 }
@@ -1577,7 +1581,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     if self.entries[entryIndex].gstRate == nil {
                         self.entries[entryIndex].gstRate = updated.gstRate
                     }
-                    self.entries[entryIndex].itemType = updated.itemType
+
                     if self.entries[entryIndex].quantity <= 0 {
                         self.entries[entryIndex].quantity = 1
                     }

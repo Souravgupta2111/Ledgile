@@ -60,3 +60,31 @@ class ItemTableViewCell: UITableViewCell {
         separatorView.isHidden = isLast
     }
 }
+
+extension UITableViewCell {
+    func applyStandardCornerMask(isFirst: Bool, isLast: Bool) {
+        let viewToMask = self
+        viewToMask.layer.cornerRadius = 26
+        viewToMask.layer.masksToBounds = true
+        viewToMask.layer.maskedCorners = []
+        
+        if isFirst && isLast {
+            viewToMask.layer.maskedCorners = [
+                .layerMinXMinYCorner,
+                .layerMaxXMinYCorner,
+                .layerMinXMaxYCorner,
+                .layerMaxXMaxYCorner
+            ]
+        } else if isFirst {
+            viewToMask.layer.maskedCorners = [
+                .layerMinXMinYCorner,
+                .layerMaxXMinYCorner
+            ]
+        } else if isLast {
+            viewToMask.layer.maskedCorners = [
+                .layerMinXMaxYCorner,
+                .layerMaxXMaxYCorner
+            ]
+        }
+    }
+}

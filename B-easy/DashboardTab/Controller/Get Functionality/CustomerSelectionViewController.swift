@@ -148,15 +148,36 @@ class CustomerSelectionViewController: UIViewController,
         return 1
     }
 
+    var showsCreateNew: Bool {
+        let text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !text.isEmpty && filteredCustomers.isEmpty
+    }
+
     func tableView(_ tableView: UITableView,
                    numberOfRowsInSection section: Int) -> Int {
-        return filteredCustomers.count
+        return filteredCustomers.count + (showsCreateNew ? 1 : 0)
     }
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        cell.backgroundColor = .systemBackground
+        let isFirst = indexPath.row == 0
+        let isLast = indexPath.row == (tableView.numberOfRows(inSection: indexPath.section) - 1)
+        if let customCell = cell as? ItemTableViewCell {
+            customCell.applySectionCornerMask(isFirst: isFirst, isLast: isLast)
+        } else {
+            cell.applyStandardCornerMask(isFirst: isFirst, isLast: isLast)
+        }
+        cell.backgroundColor = .cell
     }
     func tableView(_ tableView: UITableView,
                    cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+                   
+        if indexPath.row >= filteredCustomers.count {
+            let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+            cell.contentView.backgroundColor = .cell
+            cell.textLabel?.text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+            cell.detailTextLabel?.text = "Creating New"
+            cell.detailTextLabel?.textColor = .systemOrange
+            return cell
+        }
 
         let cell = tableView.dequeueReusableCell(
             withIdentifier: "ItemTableViewCell",
@@ -182,21 +203,21 @@ class CustomerSelectionViewController: UIViewController,
         cell.priceLabel.isHidden = true
         cell.symbolView.isHidden = true
 
-        cell.applySectionCornerMask(
-            isFirst: indexPath.row == 0,
-            isLast: indexPath.row == filteredCustomers.count - 1
-        )
+
 
         return cell
     }
 
     func tableView(_ tableView: UITableView,
                    didSelectRowAt indexPath: IndexPath) {
-
         tableView.deselectRow(at: indexPath, animated: true)
 
-        let customer = filteredCustomers[indexPath.row]
-
-        finishSelecting(name: customer.name)
+        if indexPath.row < filteredCustomers.count {
+            let customer = filteredCustomers[indexPath.row]
+            finishSelecting(name: customer.name)
+        } else {
+            let text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            finishSelecting(name: text)
+        }
     }
 }

@@ -1,18 +1,5 @@
 import Foundation
 
-// MARK: - ITEM TYPE
-enum ItemType: String, Codable, CaseIterable {
-    case goods = "goods"
-    case services = "services"
-
-    var displayName: String {
-        switch self {
-        case .goods:    return "Goods"
-        case .services: return "Service"
-        }
-    }
-}
-
 // MARK: - ITEM
 struct Item: Identifiable, Codable, Equatable {
     let id: UUID
@@ -44,16 +31,10 @@ struct Item: Identifiable, Codable, Equatable {
     var gstRate: Double? = nil    
     var cessRate: Double? = nil     
 
-   
-    var itemType: ItemType = .goods
-
     var effectiveSalesTier: Int { salesTier ?? 2 }
     var effectiveSalesCount: Int { Int((salesCount ?? 0).rounded()) }
 
-    var isService: Bool { itemType == .services }
-
     var isLowStock: Bool {
-        guard !isService else { return false }
         return currentStock <= lowStockThreshold
     }
 }
@@ -166,8 +147,6 @@ struct TransactionItem: Identifiable, Codable, Equatable {
     var sgstAmount: Double? = nil         // State GST
     var igstAmount: Double? = nil         // Integrated GST (inter-state)
     var cessAmount: Double? = nil
-    
-    var itemType: ItemType? = nil
 
     var totalRevenue: Double {
         guard let price = sellingPricePerUnit else { return 0 }
@@ -372,8 +351,6 @@ struct IncompleteSaleItem: Identifiable, Codable, Equatable {
     var expiryDate: Date?
     
     let createdAt: Date
-    
-    var itemType: ItemType? = nil
     
     var totalRevenue: Double {
         Money.line(quantity: quantity, rate: sellingPricePerUnit)

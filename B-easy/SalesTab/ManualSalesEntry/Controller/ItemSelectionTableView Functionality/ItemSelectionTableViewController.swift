@@ -60,27 +60,47 @@ class ItemSelectionTableViewController: UITableViewController {
         return 1
     }
 
+    var showsCreateNew: Bool {
+        let text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !text.isEmpty && filteredItems.isEmpty
+    }
+
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return filteredItems.count
+        return filteredItems.count + (showsCreateNew ? 1 : 0)
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: "Cell")
         cell.contentView.backgroundColor = .cell
-        let item = filteredItems[indexPath.row]
-        cell.textLabel?.text = item.name
-
         cell.textLabel?.textColor = .label
+        
+        if indexPath.row < filteredItems.count {
+            let item = filteredItems[indexPath.row]
+            cell.textLabel?.text = item.name
+            cell.detailTextLabel?.text = "Remaining stock: \(item.currentStock.cleanString) \(item.unit)"
+            cell.detailTextLabel?.textColor = .systemGray
+        } else {
+            cell.textLabel?.text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+            cell.detailTextLabel?.text = "Not found in Inventory"
+            cell.detailTextLabel?.textColor = .systemOrange
+        }
         return cell
     }
     
     override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        cell.backgroundColor = .systemBackground
+        let isFirst = indexPath.row == 0
+        let isLast = indexPath.row == (tableView.numberOfRows(inSection: indexPath.section) - 1)
+        cell.applyStandardCornerMask(isFirst: isFirst, isLast: isLast)
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let selectedItem = filteredItems[indexPath.row]
-        delegate?.itemSelection(self, didSelectItem: selectedItem)
+        if indexPath.row < filteredItems.count {
+            let selectedItem = filteredItems[indexPath.row]
+            delegate?.itemSelection(self, didSelectItem: selectedItem)
+        } else {
+            let text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            delegate?.itemSelection(self, didEnterUnknownItemName: text)
+        }
         navigationController?.popViewController(animated: true)
     }
 }

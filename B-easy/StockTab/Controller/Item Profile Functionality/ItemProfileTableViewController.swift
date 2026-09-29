@@ -26,24 +26,15 @@ class ItemProfileTableViewController: UITableViewController {
     var stockHistory: [StockHistoryEntry] = []
     
     enum RowType {
-        case itemType, name, quantity, unit, alternateUnitName, alternateUnitFactor, costPrice, sellingPrice, stockValue, barcode, hsn, gst, lowStock
+        case name, quantity, unit, alternateUnitName, alternateUnitFactor, costPrice, sellingPrice, stockValue, barcode, hsn, gst, lowStock
     }
     
     var visibleRows: [RowType] {
-        let isService = item?.isService ?? false
-        var rows: [RowType] = [.name, .itemType]
+        var rows: [RowType] = [.name]
 
-        if !isService {
-            rows.append(contentsOf: [.quantity, .lowStock, .unit, .alternateUnitName, .alternateUnitFactor])
-        } else {
-            rows.append(.unit)
-        }
-
+        rows.append(contentsOf: [.quantity, .lowStock, .unit, .alternateUnitName, .alternateUnitFactor])
         rows.append(contentsOf: [.costPrice, .sellingPrice])
-
-        if !isService {
-            rows.append(contentsOf: [.stockValue, .barcode])
-        }
+        rows.append(contentsOf: [.stockValue, .barcode])
         
         let isGST = (try? dm.db.getSettings().isGSTRegistered) ?? false
         if isGST {
@@ -326,15 +317,6 @@ class ItemProfileTableViewController: UITableViewController {
               let cell = tableView.cellForRow(at: IndexPath(row: row, section: 0)) as? LabelTextFieldTableViewCell else { return }
         cell.textField.becomeFirstResponder()
     }
-
-    @objc private func profileItemTypeChanged(_ sender: UISegmentedControl) {
-        item?.itemType = sender.selectedSegmentIndex == 1 ? .services : .goods
-        if item?.itemType == .services {
-            item?.lowStockThreshold = 0
-            item?.barcode = nil
-        }
-        tableView.reloadSections(IndexSet(integer: 0), with: .automatic)
-    }
     
     override func numberOfSections(in tableView: UITableView) -> Int {
         return 3
@@ -415,27 +397,6 @@ class ItemProfileTableViewController: UITableViewController {
             case 0:
                 let rowType = visibleRows[indexPath.row]
                 switch rowType {
-                    case .itemType:
-                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-                        cell.titleLabel.text = "Type"
-                        cell.textField.isHidden = true
-                        
-                        let seg = UISegmentedControl(items: ["Goods", "Service"])
-                        seg.selectedSegmentIndex = (item?.isService == true) ? 1 : 0
-                        seg.translatesAutoresizingMaskIntoConstraints = false
-                        seg.addTarget(self, action: #selector(profileItemTypeChanged(_:)), for: .valueChanged)
-                        seg.tag = 999
-                        
-                        if let container = cell.textField.superview {
-                            container.addSubview(seg)
-                            NSLayoutConstraint.activate([
-                                seg.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-                                seg.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-                                seg.widthAnchor.constraint(equalToConstant: 160)
-                            ])
-                        }
-                        
-                        return cell
                     case .name:
                         let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
                         cell.titleLabel.text = "Item Name"
@@ -601,7 +562,7 @@ class ItemProfileTableViewController: UITableViewController {
                         return cell
                     case .hsn:
                         let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-                        let isService = item?.isService ?? false
+                        let isService = false
                         cell.titleLabel.text = isService ? "SAC Code" : "HSN Code"
                         cell.textField.placeholder = isService ? "e.g. 9983" : "e.g. 1902"
                         cell.textField.text = item?.hsnCode
