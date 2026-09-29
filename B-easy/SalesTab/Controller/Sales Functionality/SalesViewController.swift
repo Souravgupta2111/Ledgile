@@ -105,6 +105,13 @@ class SalesViewController: UIViewController {
         super.prepare(for: segue, sender: sender)
         // Hide tab bar for ALL pushed sub-screens
         segue.destination.hidesBottomBarWhenPushed = true
+
+        if segue.identifier == "manual_sales", let result = sender as? ParsedResult {
+            if let dest = segue.destination as? SalesEntryTableViewController {
+                dest.pendingResult = result
+                dest.entryMode = .voice
+            }
+        }
     }
 
     private func openScannedSalesEntry() {
@@ -426,12 +433,7 @@ class SalesViewController: UIViewController {
 
     private func deliverResult(_ result: ParsedResult) {
         DispatchQueue.main.async {
-            guard let storyboard = self.storyboard,
-                  let salesEntryVC = storyboard.instantiateViewController(withIdentifier: "SalesEntryTableViewController") as? SalesEntryTableViewController else { return }
-            salesEntryVC.pendingResult = result
-            salesEntryVC.entryMode = .voice
-            salesEntryVC.hidesBottomBarWhenPushed = true
-            self.navigationController?.pushViewController(salesEntryVC, animated: true)
+            self.performSegue(withIdentifier: "manual_sales", sender: result)
         }
     }
 

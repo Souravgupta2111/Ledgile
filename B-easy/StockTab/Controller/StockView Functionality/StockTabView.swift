@@ -268,7 +268,7 @@ struct StockTabView: View {
         }
     }
 
-    // MARK: - Summary Tiles (2×2 Grid)
+    // MARK: - Summary Tiles
 
     private var summaryTiles: some View {
         VStack(spacing: Spacing.md) {
@@ -295,29 +295,19 @@ struct StockTabView: View {
                 }
             }
 
-            // Row 2: Low Stock + Expiry
+            // Row 2: Low Stock + Expiry Alerts
             HStack(spacing: Spacing.md) {
-                ValueTileCard(
-                    style: .brand,
-                    title: "Low Stock",
-                    subtitle: "Alerts",
-                    amount: "\(viewModel.lowStockItemsCount)",
-                    countLine: "items need restock",
-                    trailingLine: nil
-                ) {
-                    actions.onLowStockTapped()
-                }
+                AlertCardView(
+                    title: "Low Stock Alert",
+                    subtitle: "\(viewModel.lowStockItemsCount) items",
+                    action: { actions.onLowStockTapped() }
+                )
 
-                ValueTileCard(
-                    style: .beige,
-                    title: "Expiry",
-                    subtitle: "Alerts",
-                    amount: "\(viewModel.expiryAlertsCount)",
-                    countLine: "items expiring",
-                    trailingLine: nil
-                ) {
-                    actions.onExpiryTapped()
-                }
+                AlertCardView(
+                    title: "Expiry Alert",
+                    subtitle: "\(viewModel.expiryAlertsCount) items",
+                    action: { actions.onExpiryTapped() }
+                )
             }
         }
     }
@@ -368,10 +358,8 @@ struct StockTabView: View {
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundStyle(Color.textPrimary)
                             }
-                            .padding(.vertical, 8)
-                        }
-                        if item.id != viewModel.items.last?.id {
-                            Divider()
+                            .padding(.vertical, 14)
+                            .padding(.horizontal, Spacing.lg)
                         }
                     }
                 }
@@ -433,6 +421,38 @@ struct StockTabView: View {
             } else {
                 sheetState = .collapsed
             }
+        }
+    }
+}
+
+// MARK: - Alert Card View
+
+struct AlertCardView: View {
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.red)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                }
+                Text(subtitle)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(Color.textPrimary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
     }
 }

@@ -111,6 +111,11 @@ class StockViewController: UIViewController {
             if let dest = segue.destination as? ItemProfileTableViewController, let item = sender as? Item {
                 dest.item = item
             }
+        } else if segue.identifier == "AddPurchaseFromStock", let result = sender as? ParsedResult {
+            if let dest = segue.destination as? AddPurchaseViewController {
+                dest.pendingResult = result
+                dest.entryMode = .voice
+            }
         }
     }
 
@@ -409,12 +414,7 @@ class StockViewController: UIViewController {
 
     private func deliverResult(_ result: ParsedResult) {
         DispatchQueue.main.async {
-            guard let storyboard = self.storyboard,
-                  let purchaseVC = storyboard.instantiateViewController(withIdentifier: "AddPurchaseViewController") as? AddPurchaseViewController else { return }
-            purchaseVC.pendingResult = result
-            purchaseVC.entryMode = .voice
-            purchaseVC.hidesBottomBarWhenPushed = true
-            self.navigationController?.pushViewController(purchaseVC, animated: true)
+            self.performSegue(withIdentifier: "AddPurchaseFromStock", sender: result)
         }
     }
 
