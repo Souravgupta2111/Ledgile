@@ -9,6 +9,12 @@ class VoiceEntryViewController: UIViewController {
     @IBOutlet weak var micButton: UIButton!
     @IBOutlet weak var tapToSpeakLabel: UILabel!
 
+    /// When true, mic starts listening immediately on appear (no tap needed).
+    var autoStartListening = false
+
+    /// Called when this VC is dismissed (so hotword listener can resume).
+    var onDismiss: (() -> Void)?
+
     
      let audioEngine = AVAudioEngine()
      let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-IN"))
@@ -44,6 +50,28 @@ class VoiceEntryViewController: UIViewController {
         
         WhisperService.shared.preloadModel()
         print("[VoiceSale] viewDidLoad — WhisperService preload triggered")
+    }
+
+     override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        HotwordListener.shared.pause()
+        if autoStartListening {
+            autoStartListening = false  // don't re-trigger on nav back
+            // Small delay to let permissions and UI settle.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, !self.audioEngine.isRunning else { return }
+                self.startListening()
+            }
+        }
+    }
+
+     override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if isBeingDismissed || isMovingFromParent {
+            stopListening()
+            onDismiss?()
+            HotwordListener.shared.resume()
+        }
     }
     
      func setupMicButton() {
@@ -116,6 +144,14 @@ class VoiceEntryViewController: UIViewController {
 
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            print("[VoiceSale] ⚠️ Invalid input format (sampleRate: \(inputFormat.sampleRate), channels: \(inputFormat.channelCount))")
+            DispatchQueue.main.async {
+                self.resultLabel.text = "Microphone unavailable"
+                self.stopListening()
+            }
+            return
+        }
 
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) {
             [weak self] result, error in

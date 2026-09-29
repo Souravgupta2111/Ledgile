@@ -196,7 +196,17 @@ final class WhisperService {
         }
         
         let words = lower.split(separator: " ")
-        
+
+        // Standalone pleasantries = room-noise hallucination, never a real turn.
+        if words.count <= 3 {
+            let joined = words.joined(separator: " ")
+            let junkShort: Set<String> = [
+                "thank you", "thanks", "thankyou", "thank you.", "thanks.",
+                "bye", "bye bye", "bye.", "ok thanks", "okay thanks", "shukriya"
+            ]
+            if junkShort.contains(joined) { return true }
+        }
+
         if words.count >= 3 {
             for i in 0..<(words.count - 2) {
                 if words[i] == words[i+1] && words[i+1] == words[i+2] {

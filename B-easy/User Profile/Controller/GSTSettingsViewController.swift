@@ -9,6 +9,19 @@ class GSTSettingsViewController: UITableViewController {
         case registration
         case details
         case defaults
+        case tally
+    }
+
+    /// Section mapping: tally row GST row ke neeche hamesha dikhe,
+    /// chahe GST on ho ya off (export bina GST ke bhi kaam karta hai).
+    private func resolvedSection(_ index: Int) -> Section? {
+        if appSettings.isGSTRegistered {
+            return Section(rawValue: index)
+        }
+        // GST off: 0 = registration, 1 = tally
+        if index == 0 { return .registration }
+        if index == 1 { return .tally }
+        return nil
     }
 
     private var appSettings: AppSettings
@@ -52,6 +65,12 @@ class GSTSettingsViewController: UITableViewController {
         pricesIncludeGSTSwitch.isOn = appSettings.pricesIncludeGST
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Refresh the pending count when returning from the export screen.
+        tableView.reloadData()
+    }
+
     @objc private func gstRegisteredChanged(_ sender: UISwitch) {
         appSettings.isGSTRegistered = sender.isOn
         tableView.reloadData()
@@ -62,6 +81,12 @@ class GSTSettingsViewController: UITableViewController {
     }
 
     @objc private func saveTapped() {
+        // Scheme kabhi chuni hi nahi to nil rehta hai (screen pe "Regular" dikhta hai).
+        // Nil ko regular default karo, warna Reports me GST rows kabhi nahi aayengi.
+        if appSettings.isGSTRegistered,
+           (appSettings.gstScheme == nil || appSettings.gstScheme?.isEmpty == true) {
+            appSettings.gstScheme = "regular"
+        }
         // Validate GSTIN if registered
         if appSettings.isGSTRegistered {
             if let gstin = appSettings.gstNumber, !gstin.isEmpty {
@@ -95,32 +120,36 @@ class GSTSettingsViewController: UITableViewController {
     // MARK: - Table view data source
 
     override func numberOfSections(in tableView: UITableView) -> Int {
-        return appSettings.isGSTRegistered ? Section.allCases.count : 1
+        return appSettings.isGSTRegistered ? Section.allCases.count : 2 // registration + tally
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        guard let s = Section(rawValue: section) else { return 0 }
+        guard let s = resolvedSection(section) else { return 0 }
         switch s {
         case .registration: return 1
         case .details: return 3 // GSTIN, State, Scheme
         case .defaults: return 2 // MRP includes GST, Default GST Rate
+        case .tally: return 1 // Export Tally XML
         }
     }
     
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        guard let s = Section(rawValue: section) else { return nil }
+        guard let s = resolvedSection(section) else { return nil }
         switch s {
         case .registration: return "GST Registration"
         case .details: return "Business Details"
         case .defaults: return "Invoice Defaults"
+        case .tally: return "Tally"
         }
     }
-    
+
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        guard let s = Section(rawValue: section) else { return nil }
+        guard let s = resolvedSection(section) else { return nil }
         switch s {
         case .registration:
             return appSettings.isGSTRegistered ? nil : "Enable this to generate GST-compliant invoices and file returns."
+        case .tally:
+            return "Export bills missing in Tally as one XML file."
         default: return nil
         }
     }
@@ -130,13 +159,20 @@ class GSTSettingsViewController: UITableViewController {
         cell.selectionStyle = .none
         cell.accessoryView = nil
         cell.accessoryType = .none
-        
-        guard let s = Section(rawValue: indexPath.section) else { return cell }
-        
+
+        guard let s = resolvedSection(indexPath.section) else { return cell }
+
         switch s {
         case .registration:
             cell.textLabel?.text = "I am GST Registered"
             cell.accessoryView = gstRegisteredSwitch
+        case .tally:
+            cell.textLabel?.text = "Export Tally XML"
+            cell.detailTextLabel?.text = pendingTallyTitle()
+            cell.detailTextLabel?.textColor = .secondaryLabel
+            cell.selectionStyle = .default
+            cell.accessoryType = .disclosureIndicator
+            return cell
             
         case .details:
             cell.selectionStyle = .default
@@ -181,8 +217,13 @@ class GSTSettingsViewController: UITableViewController {
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard let s = Section(rawValue: indexPath.section) else { return }
-        
+        guard let s = resolvedSection(indexPath.section) else { return }
+
+        if s == .tally {
+            navigationController?.pushViewController(TallyExportViewController(), animated: true)
+            return
+        }
+
         if s == .details {
             switch indexPath.row {
             case 0:
@@ -200,8 +241,16 @@ class GSTSettingsViewController: UITableViewController {
         }
     }
     
+    // MARK: - Tally row subtitle (pending bills count)
+
+    private func pendingTallyTitle() -> String {
+        let counts = TallyExporter.pendingCounts(db: AppDataModel.shared.dataModel.db)
+        if counts.total == 0 { return "Up to date" }
+        return "\(counts.total) pending"
+    }
+
     // MARK: - Prompts
-    
+
     private func promptForGSTIN() {
         let alert = UIAlertController(title: "GSTIN", message: "Enter your 15-character GSTIN", preferredStyle: .alert)
         alert.addTextField { tf in

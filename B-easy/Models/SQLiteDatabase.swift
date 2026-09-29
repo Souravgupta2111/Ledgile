@@ -323,6 +323,48 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         """
 
         exec(ddl)
+        createTallyTables()
+    }
+
+    // MARK: - Tally one-tap export + backward mirror (file-based, no bridge)
+    private func createTallyTables() {
+        let ddl = """
+        CREATE TABLE IF NOT EXISTS tally_exports (
+            transaction_id TEXT PRIMARY KEY,
+            invoice_number TEXT NOT NULL,
+            exported_at TEXT NOT NULL,
+            file_name TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS tally_vouchers (
+            id TEXT PRIMARY KEY,
+            date TEXT NOT NULL,
+            voucher_no TEXT NOT NULL,
+            type TEXT NOT NULL,
+            party TEXT,
+            amount REAL NOT NULL,
+            source_file TEXT NOT NULL,
+            UNIQUE(voucher_no, date, type)
+        );
+        CREATE TABLE IF NOT EXISTS tally_items (
+            id TEXT PRIMARY KEY,
+            voucher_key TEXT NOT NULL,
+            item_name TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            rate REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS tally_parties (
+            name TEXT PRIMARY KEY,
+            balance REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS tally_imports (
+            file_name TEXT PRIMARY KEY,
+            imported_at TEXT NOT NULL,
+            voucher_count INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_tally_vouchers_date ON tally_vouchers(date);
+        CREATE INDEX IF NOT EXISTS idx_tally_items_voucher ON tally_items(voucher_key);
+        """
+        exec(ddl)
     }
 
 
@@ -525,6 +567,190 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
             return nil
         }
         return stmt
+    }
+
+    // MARK: - Assistant Live read-only SQL (no writes, guarded)
+    // Used by LiveAssistant: Qwen emits `SQL: SELECT ...`, app executes locally.
+    // NOTE: PRAGMA query_only is NOT set (shared connection must keep writing bills).
+    // Safety comes from validation below: single SELECT/WITH, allowlisted tables.
+    func runReadOnlySelect(_ sql: String, maxRows: Int = 50) throws -> (columns: [String], rows: [[String]]) {
+        let q = sql.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { throw SQLiteDBError.prepareFailed("empty SQL") }
+        let upper = q.uppercased()
+        guard upper.hasPrefix("SELECT") || upper.hasPrefix("WITH") else {
+            throw SQLiteDBError.prepareFailed("only SELECT allowed")
+        }
+        let banned = [";", "--", "/*", "DROP", "DELETE", "UPDATE", "INSERT", "ALTER",
+                      "ATTACH", "DETACH", "VACUUM", "REPLACE", "PRAGMA", "INTO", "CREATE"]
+        for b in banned where upper.contains(b) {
+            throw SQLiteDBError.prepareFailed("blocked keyword: \(b)")
+        }
+        let allowedTables = ["transactions", "transaction_items", "items", "item_batches",
+                             "daily_summaries", "customers", "suppliers",
+                             "customer_payments", "supplier_payments", "app_settings"]
+        // Every FROM/JOIN target must be allowlisted.
+        let tokens = upper.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+        var i = 0
+        while i < tokens.count {
+            if tokens[i] == "FROM" || tokens[i] == "JOIN" {
+                var j = i + 1
+                if j < tokens.count && tokens[j] == "SELECT" { i += 1; continue }
+                if j < tokens.count {
+                    let t = tokens[j].lowercased()
+                    if !allowedTables.contains(t) {
+                        throw SQLiteDBError.prepareFailed("table not allowed: \(t)")
+                    }
+                }
+            }
+            i += 1
+        }
+
+        var limited = q
+        if !upper.contains("LIMIT") { limited += " LIMIT \(min(max(1, maxRows), 50))" }
+        guard let stmt = prepare(limited) else { throw SQLiteDBError.prepareFailed(limited) }
+        defer { sqlite3_finalize(stmt) }
+
+        let colCount = Int(sqlite3_column_count(stmt))
+        var cols: [String] = []
+        for c in 0..<colCount {
+            cols.append(String(cString: sqlite3_column_name(stmt, Int32(c))))
+        }
+        var rows: [[String]] = []
+        let deadline = CFAbsoluteTimeGetCurrent() + 2.0
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if CFAbsoluteTimeGetCurrent() > deadline || rows.count >= 50 { break }
+            var row: [String] = []
+            for c in 0..<colCount {
+                let name = cols[c].lowercased()
+                if sqlite3_column_type(stmt, Int32(c)) == SQLITE_NULL {
+                    row.append("")
+                    continue
+                }
+                var val = String(cString: sqlite3_column_text(stmt, Int32(c)))
+                if name.contains("phone") && val.count >= 6 {
+                    // Mask PII: 98XXXXXX10
+                    let pre = val.prefix(2), suf = val.suffix(2)
+                    val = "\(pre)XXXXXX\(suf)"
+                }
+                if val.count > 120 { val = String(val.prefix(120)) + "…" }
+                row.append(val)
+            }
+            rows.append(row)
+        }
+        return (cols, rows)
+    }
+
+    static func formatReadOnlyResult(columns: [String], rows: [[String]]) -> String {
+        guard !rows.isEmpty else { return "no rows" }
+        var lines = ["COLS: " + columns.joined(separator: " | ")]
+        for r in rows.prefix(50) { lines.append(r.joined(separator: " | ")) }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Tally export tracking (one-tap: only never-exported bills)
+    func getTallyExportedIDs() -> Set<String> {
+        var out = Set<String>()
+        guard let stmt = prepare("SELECT transaction_id FROM tally_exports") else { return out }
+        defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW { out.insert(readString(stmt, 0)) }
+        return out
+    }
+
+    func getTallyExportInfo() -> (count: Int, lastDate: String?, lastFile: String?) {
+        guard let stmt = prepare("SELECT COUNT(*), MAX(exported_at), (SELECT file_name FROM tally_exports ORDER BY exported_at DESC LIMIT 1) FROM tally_exports") else {
+            return (0, nil, nil)
+        }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return (0, nil, nil) }
+        return (readInt(stmt, 0), readOptString(stmt, 1), readOptString(stmt, 2))
+    }
+
+    func markTallyExported(transactionIDs: [String], invoiceNumbers: [String], fileName: String) throws {
+        let now = ISO8601DateFormatter().string(from: Date())
+        try performWrite {
+            for (idx, tid) in transactionIDs.enumerated() {
+                guard let stmt = prepare("INSERT OR IGNORE INTO tally_exports (transaction_id, invoice_number, exported_at, file_name) VALUES (?,?,?,?)") else { continue }
+                bindText(stmt, 1, tid)
+                bindText(stmt, 2, idx < invoiceNumbers.count ? invoiceNumbers[idx] : "")
+                bindText(stmt, 3, now)
+                bindText(stmt, 4, fileName)
+                sqlite3_step(stmt)
+                sqlite3_finalize(stmt)
+            }
+        }
+    }
+
+    // MARK: - Tally backward mirror (Tally DayBook XML -> app tables)
+    func hasTallyImport(fileName: String) -> Bool {
+        guard let stmt = prepare("SELECT 1 FROM tally_imports WHERE file_name=? LIMIT 1") else { return false }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, fileName)
+        return sqlite3_step(stmt) == SQLITE_ROW
+    }
+
+    func insertTallyMirror(vouchers: [(date: String, no: String, type: String, party: String, amount: Double, items: [(name: String, qty: Double, rate: Double)])], fileName: String) throws -> Int {
+        var inserted = 0
+        let now = ISO8601DateFormatter().string(from: Date())
+        try performWrite {
+            for v in vouchers {
+                let id = UUID().uuidString
+                guard let stmt = prepare("INSERT OR IGNORE INTO tally_vouchers (id, date, voucher_no, type, party, amount, source_file) VALUES (?,?,?,?,?,?,?)") else { continue }
+                bindText(stmt, 1, id)
+                bindText(stmt, 2, v.date)
+                bindText(stmt, 3, v.no)
+                bindText(stmt, 4, v.type)
+                bindText(stmt, 5, v.party)
+                bindDouble(stmt, 6, v.amount)
+                bindText(stmt, 7, fileName)
+                let rc = sqlite3_step(stmt)
+                sqlite3_finalize(stmt)
+                guard rc == SQLITE_DONE else { continue }
+                inserted += 1
+                let key = "\(v.no)|\(v.date)|\(v.type)"
+                for it in v.items {
+                    guard let ist = prepare("INSERT INTO tally_items (id, voucher_key, item_name, quantity, rate) VALUES (?,?,?,?,?)") else { continue }
+                    bindText(ist, 1, UUID().uuidString)
+                    bindText(ist, 2, key)
+                    bindText(ist, 3, it.name)
+                    bindDouble(ist, 4, it.qty)
+                    bindDouble(ist, 5, it.rate)
+                    sqlite3_step(ist)
+                    sqlite3_finalize(ist)
+                }
+                if !v.party.isEmpty {
+                    guard let pst = prepare("INSERT INTO tally_parties (name, balance) VALUES (?,?) ON CONFLICT(name) DO UPDATE SET balance=balance+excluded.balance") else { continue }
+                    bindText(pst, 1, v.party)
+                    bindDouble(pst, 2, v.amount)
+                    sqlite3_step(pst)
+                    sqlite3_finalize(pst)
+                }
+            }
+            guard let ist = prepare("INSERT OR REPLACE INTO tally_imports (file_name, imported_at, voucher_count) VALUES (?,?,?)") else { return }
+            bindText(ist, 1, fileName)
+            bindText(ist, 2, now)
+            bindInt(ist, 3, inserted)
+            sqlite3_step(ist)
+            sqlite3_finalize(ist)
+        }
+        return inserted
+    }
+
+    func getTallyMirrorCounts() -> (vouchers: Int, parties: Int, lastFile: String?) {
+        var v = 0, p = 0
+        var last: String?
+        if let stmt = prepare("SELECT COUNT(*) FROM tally_vouchers") {
+            if sqlite3_step(stmt) == SQLITE_ROW { v = readInt(stmt, 0) }
+            sqlite3_finalize(stmt)
+        }
+        if let stmt = prepare("SELECT COUNT(*) FROM tally_parties") {
+            if sqlite3_step(stmt) == SQLITE_ROW { p = readInt(stmt, 0) }
+            sqlite3_finalize(stmt)
+        }
+        if let stmt = prepare("SELECT file_name FROM tally_imports ORDER BY imported_at DESC LIMIT 1") {
+            if sqlite3_step(stmt) == SQLITE_ROW { last = readOptString(stmt, 0) }
+            sqlite3_finalize(stmt)
+        }
+        return (v, p, last)
     }
 
 

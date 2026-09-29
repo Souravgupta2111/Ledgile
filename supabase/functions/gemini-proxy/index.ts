@@ -1,13 +1,20 @@
-// Voice JSON → OpenRouter paid Gemma 3 27B (Hinglish + JSON, cheaper than Gemini Flash-Lite).
+// Voice JSON → OpenRouter paid model (Hinglish + JSON, cheaper than Gemini Flash-Lite).
 // Camera → OpenRouter paid Gemini 2.5 Flash-Lite.
-// Secret: OPENROUTER_API_KEY (never in the iOS app).
-// Optional: OPENROUTER_VOICE_MODEL, OPENROUTER_VISION_MODEL
+// Assistant Live chat (Roman Hinglish, text) → Qwen 3.7 Flash (fast + cheap + tool-calling).
+// TTS → Sarvam Bulbul v3 (Hindi voice, streaming-capable).
+// Secrets (never in the iOS app): OPENROUTER_API_KEY, SARVAM_API_KEY.
+// Optional: OPENROUTER_VOICE_MODEL, OPENROUTER_VISION_MODEL, OPENROUTER_ASSISTANT_MODEL,
+//   SARVAM_TTS_SPEAKER (default anushka), SARVAM_TTS_LANGUAGE (default hi-IN)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const VOICE_MODEL = Deno.env.get("OPENROUTER_VOICE_MODEL") ?? "google/gemma-3-27b-it";
 const VISION_MODEL = Deno.env.get("OPENROUTER_VISION_MODEL") ?? "google/gemini-2.5-flash-lite";
+const ASSISTANT_MODEL = Deno.env.get("OPENROUTER_ASSISTANT_MODEL") ?? "qwen/qwen3.7-flash";
+const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
+const SARVAM_TTS_SPEAKER = Deno.env.get("SARVAM_TTS_SPEAKER") ?? "priya";
+const SARVAM_TTS_LANGUAGE = Deno.env.get("SARVAM_TTS_LANGUAGE") ?? "hi-IN";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -27,6 +34,13 @@ Deno.serve(async (req) => {
       return json({ ok: true, quota });
     }
 
+    // Bulbul TTS does not consume an extra LLM turn; the Qwen assistant-chat
+    // turn already counted. Skip consumeQuota entirely for TTS sentences.
+    if (task === "bulbul-tts") {
+      const audio = await sarvamBulbulTTS(body);
+      return json({ ...audio });
+    }
+
     const kind = task === "vision" ? "camera" : "voice";
     const quota = await consumeQuota(admin, user.user.id, kind);
     if (!quota.ok) {
@@ -36,6 +50,8 @@ Deno.serve(async (req) => {
     let payload: Record<string, unknown>;
     if (task === "vision") {
       payload = await openRouterVision(body);
+    } else if (task === "assistant-chat") {
+      payload = await openRouterAssistantChat(body);
     } else {
       payload = await openRouterVoice(body);
     }
@@ -250,6 +266,101 @@ async function openRouterVoice(body: {
   }
   if (!result.ok) throw new Error(result.error);
   return geminiShaped(result.text);
+}
+
+/// Assistant Live chat: Roman Hinglish/English text reply (no JSON mode).
+/// Body: { messages: [{role, content}], maxOutputTokens?, temperature? }
+/// Supports: plain text answer OR a single tool line `SQL: SELECT ...` for shop queries.
+async function openRouterAssistantChat(body: {
+  messages?: Array<{ role?: string; content?: string }>;
+  systemPrompt?: string;
+  userPrompt?: string;
+  maxOutputTokens?: number;
+  temperature?: number;
+}) {
+  const maxTokens = Math.min(Number(body.maxOutputTokens ?? 400), 1024);
+  const temperature = Number(body.temperature ?? 0.1);
+  let messages: Array<Record<string, string>>;
+  if (Array.isArray(body.messages) && body.messages.length > 0) {
+    messages = body.messages
+      .filter((m) => m && typeof m.content === "string")
+      .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 4000) }))
+      .slice(-21);
+  } else {
+    messages = [
+      { role: "system", content: String(body.systemPrompt ?? "You are B-easy shop assistant. Reply in Roman Hinglish only, no Devanagari.") },
+      { role: "user", content: String(body.userPrompt ?? "").slice(0, 4000) },
+    ];
+  }
+
+  // Primary: Qwen (cheap + fast). Fallback: Gemini Flash-Lite (proven) —
+  // some Qwen routes return empty content under load; never fail the turn.
+  const models = [ASSISTANT_MODEL, VISION_MODEL];
+  let lastError = "unknown";
+  for (const model of models) {
+    const payload: Record<string, unknown> = {
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      provider: paidProvider(),
+    };
+    const result = await openRouterChat(payload);
+    if (result.ok) {
+      if (model !== ASSISTANT_MODEL) console.log(`assistant-chat fallback used: ${model}`);
+      return geminiShaped(result.text);
+    }
+    lastError = result.error;
+    console.log(`assistant-chat ${model} failed: ${result.error}`);
+  }
+  throw new Error(lastError);
+}
+
+/// Sarvam Bulbul v3 TTS. Body: { text, speaker?, language?, pace? }
+/// Returns { audioBase64, format } — text is transliterated server-side hint:
+/// Bulbul speaks native script best, so Roman Hinglish is sent as-is (Bulbul
+/// handles romanized Hindi) with hi-IN target language.
+async function sarvamBulbulTTS(body: {
+  text?: string;
+  speaker?: string;
+  language?: string;
+  pace?: number;
+}): Promise<Record<string, unknown>> {
+  const key = Deno.env.get("SARVAM_API_KEY");
+  if (!key) throw new Error("SARVAM_API_KEY is not set (add via supabase secrets set)");
+  const text = String(body.text ?? "").trim().slice(0, 2500);
+  if (!text) throw new Error("bulbul-tts requires text");
+  const speaker = String(body.speaker ?? SARVAM_TTS_SPEAKER);
+  const language_code: string = String(body.language ?? SARVAM_TTS_LANGUAGE);
+  const pace = Math.min(Math.max(Number(body.pace ?? 1.0), 0.5), 2.0);
+
+  const res = await fetch(SARVAM_TTS_URL, {
+    method: "POST",
+    headers: {
+      "api-subscription-key": key,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text,
+      language_code,
+      speaker,
+      pace,
+      model: "bulbul:v3",
+    }),
+  });
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`Sarvam TTS HTTP ${res.status}: ${raw.slice(0, 300)}`);
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new Error("Sarvam TTS returned non-JSON response");
+  }
+  // Sarvam returns { audios: [base64], ... } — normalize to audioBase64.
+  const audios = parsed.audios as Array<string> | undefined;
+  const audioBase64 = (audios && audios[0]) ?? (parsed.audio as string | undefined) ?? "";
+  if (!audioBase64) throw new Error("Sarvam TTS returned empty audio");
+  return { audioBase64, format: "wav", speaker, language: target_language_code };
 }
 
 async function openRouterVision(body: {
