@@ -115,10 +115,14 @@ class DashboardViewController: UIViewController {
     }
 
     @objc private func openAssistant() {
-        navigationController?.pushViewController(ShopAssistantViewController(), animated: true)
+        let assistant = ShopAssistantViewController()
+        assistant.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(assistant, animated: true)
     }
 
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        segue.destination.hidesBottomBarWhenPushed = true
+        
         if segue.identifier == "voice_sales_from_dashboard",
            let voiceVC = segue.destination as? VoiceEntryViewController {
             voiceVC.autoStartListening = true

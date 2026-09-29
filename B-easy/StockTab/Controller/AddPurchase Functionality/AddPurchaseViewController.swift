@@ -44,6 +44,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     private var currentSuggestions: [Item] = []
     private let suggestionsTableView = UITableView(frame: .zero, style: .plain)
     private weak var activeNameField: UITextField?
+    private weak var activeUnitField: UITextField?
+    private var isSuggestingUnits = false
+    private var currentUnitSuggestions: [String] = []
 
     // Index of the expanded item (chevron tapped to show detail fields).
     private var expandedItemIndex: Int? = nil
@@ -102,6 +105,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         if let result = pendingPurchaseResult {
             pendingPurchaseResult = nil
             appendEntries(fromPurchaseResult: result)
+        }
+        if entryMode == .manual && entries.isEmpty {
+            entries.append(PurchaseEntry())
         }
         setupBackButton()
     }
@@ -688,7 +694,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if tableView == suggestionsTableView {
-            return currentSuggestions.count
+            return isSuggestingUnits ? currentUnitSuggestions.count : currentSuggestions.count
         }
         switch Section(rawValue: section)! {
         case .supplier:
@@ -744,9 +750,12 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if tableView == suggestionsTableView {
             let cell = tableView.dequeueReusableCell(withIdentifier: "PurchaseSuggestionCell", for: indexPath)
-            let item = currentSuggestions[indexPath.row]
             var content = cell.defaultContentConfiguration()
-            content.text = item.name
+            if isSuggestingUnits {
+                content.text = currentUnitSuggestions[indexPath.row]
+            } else {
+                content.text = currentSuggestions[indexPath.row].name
+            }
             content.textProperties.font = .systemFont(ofSize: 13, weight: .regular)
             content.textProperties.numberOfLines = 1
             cell.contentConfiguration = content
@@ -939,28 +948,34 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
         case .itemName:
             // Item Name
-            let cell = UITableViewCell(style: .value1, reuseIdentifier: "summary")
-            cell.textLabel?.text = "  Item"
-            cell.textLabel?.textColor = .systemRed
-            cell.detailTextLabel?.text = entry.selectedItemName ?? "Tap to Select"
-            cell.textLabel?.font = .systemFont(ofSize: 17)
-            cell.detailTextLabel?.font = .systemFont(ofSize: 17)
-            cell.accessoryType = .disclosureIndicator
-            cell.contentView.backgroundColor = .cell
-            cell.backgroundColor = .cell
+            let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            cell.titleLabel.text = "  Item"
+            cell.titleLabel.textColor = .systemRed
+            cell.textField.placeholder = "Add Item"
+            cell.textField.text = entry.selectedItemName ?? ""
+            cell.textField.tag = entryIndex
+            cell.textField.isUserInteractionEnabled = true
+            cell.accessoryType = .none
+            cell.textField.removeTarget(self, action: nil, for: .allEvents)
+            cell.textField.addTarget(self, action: #selector(detailNameEditingDidBegin(_:)), for: .editingDidBegin)
+            cell.textField.addTarget(self, action: #selector(detailNameEditingChanged(_:)), for: .editingChanged)
+            cell.textField.addTarget(self, action: #selector(detailNameEditingDidEnd(_:)), for: .editingDidEnd)
             return cell
             
         case .unit:
             // Unit
-            let cell = UITableViewCell(style: .value1, reuseIdentifier: "summary")
-            cell.textLabel?.text = "  Unit"
-            cell.textLabel?.textColor = .systemRed
-            cell.detailTextLabel?.text = entry.selectedUnitName ?? "Tap to Select"
-            cell.textLabel?.font = .systemFont(ofSize: 17)
-            cell.detailTextLabel?.font = .systemFont(ofSize: 17)
-            cell.accessoryType = .disclosureIndicator
-            cell.contentView.backgroundColor = .cell
-            cell.backgroundColor = .cell
+            let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            cell.titleLabel.text = "  Unit"
+            cell.titleLabel.textColor = .systemRed
+            cell.textField.placeholder = "pcs, kg, etc."
+            cell.textField.text = entry.selectedUnitName ?? ""
+            cell.textField.isUserInteractionEnabled = true
+            cell.accessoryType = .none
+            cell.textField.tag = entryIndex
+            cell.textField.removeTarget(self, action: nil, for: .allEvents)
+            cell.textField.addTarget(self, action: #selector(detailUnitEditingDidBegin(_:)), for: .editingDidBegin)
+            cell.textField.addTarget(self, action: #selector(detailUnitEditingChanged(_:)), for: .editingChanged)
+            cell.textField.addTarget(self, action: #selector(detailUnitEditingDidEnd(_:)), for: .editingDidEnd)
             return cell
             
         case .quantity:
@@ -1285,28 +1300,47 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         if tableView == suggestionsTableView {
-            let selectedItem = currentSuggestions[indexPath.row]
-            guard let field = activeNameField else { return }
-            let index = field.tag
-            guard index >= 0 && index < entries.count else { return }
+            if isSuggestingUnits {
+                let unit = currentUnitSuggestions[indexPath.row]
+                guard let field = activeUnitField else { return }
+                
+                let index = field.tag
+                guard index >= 0 && index < entries.count else { return }
+                
+                entries[index].selectedUnitName = unit
+                field.text = unit
+                
+                suggestionsTableView.isHidden = true
+                suggestionsTableView.removeFromSuperview()
+                isSuggestingUnits = false
+                field.resignFirstResponder()
+                
+                self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
+                return
+            } else {
+                let selectedItem = currentSuggestions[indexPath.row]
+                guard let field = activeNameField else { return }
+                let index = field.tag
+                guard index >= 0 && index < entries.count else { return }
 
-            entries[index].selectedItemName = selectedItem.name
-            entries[index].selectedItemID = selectedItem.id
-            entries[index].selectedUnitName = selectedItem.unit
+                entries[index].selectedItemName = selectedItem.name
+                entries[index].selectedItemID = selectedItem.id
+                entries[index].selectedUnitName = selectedItem.unit
 
-            entries[index].costPrice = selectedItem.defaultCostPrice
-            entries[index].sellingPrice = selectedItem.defaultSellingPrice
+                entries[index].costPrice = selectedItem.defaultCostPrice
+                entries[index].sellingPrice = selectedItem.defaultSellingPrice
 
-            if let hsn = selectedItem.hsnCode { entries[index].hsnCode = hsn }
-            if let rate = selectedItem.gstRate { entries[index].gstRate = rate }
+                if let hsn = selectedItem.hsnCode { entries[index].hsnCode = hsn }
+                if let rate = selectedItem.gstRate { entries[index].gstRate = rate }
 
-            field.text = selectedItem.name
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
-            field.resignFirstResponder()
-            tableView.deselectRow(at: indexPath, animated: true)
-            self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
-            return
+                field.text = selectedItem.name
+                suggestionsTableView.isHidden = true
+                suggestionsTableView.removeFromSuperview()
+                field.resignFirstResponder()
+                tableView.deselectRow(at: indexPath, animated: true)
+                self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
+                return
+            }
         }
 
         if Section(rawValue: indexPath.section) == .supplier {
@@ -1345,32 +1379,11 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                 let rowType = rowTypes[resolved.detailRow]
                 
                 if rowType == .itemName {
-                    expandedUnitEntryIndex = resolved.entryIndex
-                    if let storyboard = storyboard,
-                       let itemVC = storyboard.instantiateViewController(withIdentifier: "PurchaseItemSelectionTableViewController") as? PurchaseItemSelectionTableViewController {
-                        itemVC.delegate = self
-                        navigationController?.pushViewController(itemVC, animated: true)
-                    } else {
-                        let itemVC = PurchaseItemSelectionTableViewController(style: .plain)
-                        itemVC.delegate = self
-                        navigationController?.pushViewController(itemVC, animated: true)
-                    }
                     return
                 }
                 
-                // Detail row: unit row -> navigate to unit selection
+                // Detail row: unit row -> now inline
                 if rowType == .unit {
-                    expandedUnitEntryIndex = resolved.entryIndex
-                    if let storyboard = storyboard,
-                       let unitVC = storyboard.instantiateViewController(withIdentifier: "PurchaseUnitSelectionTableViewController") as? PurchaseUnitSelectionTableViewController {
-                        unitVC.unitDelegate = self
-                        navigationController?.pushViewController(unitVC, animated: true)
-                    } else {
-                        let unitVC = PurchaseUnitSelectionTableViewController(style: .plain)
-                        unitVC.unitDelegate = self
-                        unitVC.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
-                        navigationController?.pushViewController(unitVC, animated: true)
-                    }
                     return
                 }
                 
@@ -1474,6 +1487,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     }
     
     @objc private func detailNameEditingDidBegin(_ sender: UITextField) {
+        isSuggestingUnits = false
         activeNameField = sender
         updateSuggestions(for: sender.text ?? "")
     }
@@ -1492,9 +1506,85 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     
     @objc private func detailNameEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.suggestionsTableView.isHidden = true
-            self?.suggestionsTableView.removeFromSuperview()
+            if self?.activeNameField == sender {
+                self?.suggestionsTableView.isHidden = true
+                self?.suggestionsTableView.removeFromSuperview()
+            }
         }
+    }
+    
+    @objc private func detailUnitEditingDidBegin(_ sender: UITextField) {
+        sender.selectAll(nil)
+        activeUnitField = sender
+        isSuggestingUnits = true
+        updateUnitSuggestions(for: sender.text ?? "")
+    }
+
+    @objc private func detailUnitEditingChanged(_ sender: UITextField) {
+        let index = sender.tag
+        guard index >= 0 && index < entries.count else { return }
+        entries[index].selectedUnitName = sender.text
+        if activeUnitField == sender {
+            updateUnitSuggestions(for: sender.text ?? "")
+        }
+    }
+
+    @objc private func detailUnitEditingDidEnd(_ sender: UITextField) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            if self?.activeUnitField == sender {
+                self?.suggestionsTableView.isHidden = true
+                self?.suggestionsTableView.removeFromSuperview()
+                self?.isSuggestingUnits = false
+            }
+        }
+    }
+    
+    private func updateUnitSuggestions(for query: String) {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allUnits = UnitConversionService.standardUnits
+        
+        if normalized.isEmpty {
+            currentUnitSuggestions = allUnits
+        } else {
+            currentUnitSuggestions = allUnits.filter { $0.lowercased().hasPrefix(normalized) }
+        }
+        
+        guard !currentUnitSuggestions.isEmpty, let field = activeUnitField else {
+            suggestionsTableView.isHidden = true
+            suggestionsTableView.removeFromSuperview()
+            return
+        }
+
+        guard let window = view.window else { return }
+        let fieldRect = field.convert(field.bounds, to: window)
+        
+        let horizontalPadding: CGFloat = 16
+        let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
+        let desiredHeight = min(CGFloat(currentUnitSuggestions.count) * suggestionsTableView.rowHeight, 150)
+        
+        let spaceBelow = window.bounds.height - fieldRect.maxY
+        let yPos: CGFloat
+        if spaceBelow >= desiredHeight + 8 {
+            yPos = fieldRect.maxY + 4
+        } else {
+            yPos = fieldRect.minY - desiredHeight - 4
+        }
+        
+        suggestionsTableView.frame = CGRect(
+            x: horizontalPadding,
+            y: yPos,
+            width: dropdownWidth,
+            height: desiredHeight
+        )
+        
+        if suggestionsTableView.superview != window {
+            suggestionsTableView.removeFromSuperview()
+            window.addSubview(suggestionsTableView)
+        }
+        
+        suggestionsTableView.reloadData()
+        suggestionsTableView.isHidden = false
+        window.bringSubviewToFront(suggestionsTableView)
     }
     
     // MARK: - Photo/Video for expanded entries

@@ -39,11 +39,16 @@ struct SalesTabView: View {
     @State private var sheetState: SalesSheetState = .collapsed
     @State private var dragOffset: CGFloat = 0
 
-    // Voice button visual state (no actual recording — delegates to UIKit VC)
-    @State private var isVoiceActive = false
-    @State private var ripplePulse = false
+    // Inline voice state
+    @State private var isListening: Bool = false
+    @State private var transcribedText: String = ""
 
     var actions = SalesNavigationActions()
+
+    /// UIKit VC registers a callback to push transcription updates into SwiftUI.
+    var onTranscriptionUpdate: ((@escaping (String) -> Void) -> Void)?
+    /// UIKit VC registers a callback to toggle listening state.
+    var onListeningStateChanged: ((@escaping (Bool) -> Void) -> Void)?
 
     var body: some View {
         GeometryReader { geometry in
@@ -58,15 +63,16 @@ struct SalesTabView: View {
 
                     // Centered status area
                     VStack(spacing: 12) {
-                        SalesWaveformView(isListening: false)
+                        SalesWaveformView(isListening: isListening)
 
-                        Text("Tap and speak, scan or add manually\nto record a sale")
+                        Text(captionText)
                             .font(.system(size: 15, weight: .regular))
-                            .foregroundStyle(Color.textSecondary)
+                            .foregroundStyle(isListening ? Color.textPrimary : Color.textSecondary)
                             .multilineTextAlignment(.center)
                             .lineSpacing(3)
                             .padding(.horizontal, Spacing.xl)
                             .frame(minHeight: 44)
+                            .animation(.easeInOut(duration: 0.2), value: isListening)
                     }
 
                     Spacer()
@@ -91,7 +97,31 @@ struct SalesTabView: View {
         }
         .onAppear {
             viewModel.loadSalesData()
+            // Register callbacks from UIKit VC
+            onTranscriptionUpdate? { text in
+                transcribedText = text
+            }
+            onListeningStateChanged? { listening in
+                isListening = listening
+                if !listening {
+                    // Reset caption after a delay when done
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                        if !self.isListening {
+                            self.transcribedText = ""
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    // MARK: - Caption Text
+
+    private var captionText: String {
+        if isListening || !transcribedText.isEmpty {
+            return transcribedText
+        }
+        return "Tap and speak, scan or add manually\nto record a sale"
     }
 
     // MARK: - Top Header
@@ -117,23 +147,34 @@ struct SalesTabView: View {
             actions.onVoiceEntry()
         } label: {
             ZStack {
+                // Pulsing ring when listening
+                if isListening {
+                    Circle()
+                        .stroke(Color.brand.opacity(0.3), lineWidth: 3)
+                        .frame(width: 150, height: 150)
+                        .scaleEffect(isListening ? 1.15 : 1.0)
+                        .opacity(isListening ? 0.0 : 0.6)
+                        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false), value: isListening)
+                }
+
                 Circle()
-                    .fill(Color.brand)
+                    .fill(isListening ? Color.red : Color.brand)
                     .frame(width: 130, height: 130)
                     .shadow(
-                        color: Color.brand.opacity(0.38),
+                        color: (isListening ? Color.red : Color.brand).opacity(0.38),
                         radius: 18,
                         x: 0,
                         y: 8
                     )
 
-                Image(systemName: "mic.fill")
+                Image(systemName: isListening ? "stop.fill" : "mic.fill")
                     .font(.system(size: 46, weight: .semibold))
                     .foregroundStyle(Color.white)
             }
-            .frame(width: 130, height: 130)
+            .frame(width: 150, height: 150)
         }
         .buttonStyle(ActionCircleButtonStyle())
+        .animation(.easeInOut(duration: 0.25), value: isListening)
     }
 
     // MARK: - Scan & Manual Row
@@ -186,7 +227,7 @@ struct SalesTabView: View {
         }
     }
 
-    // MARK: - Modal Sheet
+    // MARK: - Modal Sheet (Liquid Glass)
 
     private func modalSheet(availableHeight: CGFloat) -> some View {
         let currentHeight = currentSheetHeight(availableHeight: availableHeight)
@@ -203,7 +244,6 @@ struct SalesTabView: View {
                     toggleSheet()
                 }
                 .frame(maxWidth: .infinity)
-                .background(Color(.systemBackground))
                 .gesture(dragGesture(availableHeight: availableHeight))
 
             // Scrollable Sheet Content
@@ -219,7 +259,7 @@ struct SalesTabView: View {
         }
         .frame(height: currentHeight, alignment: .top)
         .frame(maxWidth: .infinity)
-        .background(Color(.systemBackground))
+        .background(.ultraThinMaterial)
         .clipShape(
             UnevenRoundedRectangle(
                 topLeadingRadius: 28,
@@ -229,9 +269,22 @@ struct SalesTabView: View {
                 style: .continuous
             )
         )
-        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: -4)
+        .shadow(color: Color.black.opacity(0.10), radius: 16, x: 0, y: -6)
+        .overlay(alignment: .top) {
+            // Subtle top border for glass edge
+            UnevenRoundedRectangle(
+                topLeadingRadius: 28,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 28,
+                style: .continuous
+            )
+            .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+            .frame(height: currentHeight)
+        }
         .overlay(alignment: .bottom) {
-            Color(.systemBackground)
+            Rectangle()
+                .fill(.ultraThinMaterial)
                 .frame(height: 250)
                 .offset(y: 250)
         }

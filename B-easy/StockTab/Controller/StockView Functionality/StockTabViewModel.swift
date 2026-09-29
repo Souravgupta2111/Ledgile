@@ -7,9 +7,17 @@ final class StockTabViewModel: ObservableObject {
     @Published var totalItemsCount: Int = 0
     @Published var items: [Item] = []
 
+    // Purchase tile data
+    @Published var todayPurchaseAmount: Double = 0
+    @Published var todayPurchaseItemCount: Int = 0
+
+    // Expiry tile data
+    @Published var expiryAlertsCount: Int = 0
+
     func loadStockData() {
+        let dm = AppDataModel.shared.dataModel
         do {
-            let items = try AppDataModel.shared.dataModel.db.getAllItems()
+            let items = try dm.db.getAllItems()
             var value = 0.0
             var lowCount = 0
             for item in items {
@@ -25,5 +33,13 @@ final class StockTabViewModel: ObservableObject {
         } catch {
             print("Error loading stock data: \(error)")
         }
+
+        // Purchase data
+        todayPurchaseAmount = dm.getTodayPurchaseTotal()
+        todayPurchaseItemCount = dm.getTodayItemsPurchasedCount()
+
+        // Expiry data
+        let expiryAlerts = (try? dm.getExpiryAlerts()) ?? []
+        expiryAlertsCount = expiryAlerts.count
     }
 }

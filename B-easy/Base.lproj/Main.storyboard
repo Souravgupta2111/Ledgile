@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24765" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="63k-fO-f1j">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="25098" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="63k-fO-f1j">
     <device id="retina6_12" orientation="portrait" appearance="light"/>
     <dependencies>
-        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24743"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="25073"/>
         <capability name="Image references" minToolsVersion="12.0"/>
         <capability name="Named colors" minToolsVersion="9.0"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
@@ -62,7 +62,6 @@
                     </tabBarItem>
                     <toolbarItems/>
                     <navigationBar key="navigationBar" contentMode="left" id="TJj-Ht-Ar1">
-                        <rect key="frame" x="0.0" y="118" width="393" height="54"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <textAttributes key="titleTextAttributes">
                             <offsetWrapper key="textShadowOffset" horizontal="0.0" vertical="0.0"/>
@@ -698,7 +697,7 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <tableView clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" estimatedSectionHeaderHeight="-1" sectionFooterHeight="28" estimatedSectionFooterHeight="-1" translatesAutoresizingMaskIntoConstraints="NO" id="9gA-VU-Ikl">
-                                <rect key="frame" x="0.0" y="172" width="393" height="680"/>
+                                <rect key="frame" x="0.0" y="115" width="393" height="737"/>
                                 <color key="sectionIndexBackgroundColor" systemColor="systemBackgroundColor"/>
                             </tableView>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="xxA-tE-8Xh">
@@ -720,7 +719,7 @@
                                 </connections>
                             </button>
                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="he1-wV-iCj">
-                                <rect key="frame" x="0.0" y="0.0" width="393" height="172"/>
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="115"/>
                                 <subviews>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Stock" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="GbO-e8-8qL">
                                         <rect key="frame" x="18" y="62" width="97" height="43"/>
@@ -836,7 +835,7 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <tableView clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" estimatedSectionHeaderHeight="-1" sectionFooterHeight="28" estimatedSectionFooterHeight="-1" translatesAutoresizingMaskIntoConstraints="NO" id="fY3-1t-jgs">
-                                <rect key="frame" x="0.0" y="172" width="393" height="680"/>
+                                <rect key="frame" x="0.0" y="115" width="393" height="737"/>
                                 <color key="backgroundColor" systemColor="systemGray6Color"/>
                             </tableView>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="TMs-bR-7KD">
@@ -857,7 +856,7 @@
                                 </connections>
                             </button>
                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="3Qa-x3-D7r">
-                                <rect key="frame" x="0.0" y="0.0" width="393" height="172"/>
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="115"/>
                                 <subviews>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Sales" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="SZA-X2-c1s">
                                         <rect key="frame" x="18" y="62" width="91.666666666666671" height="43"/>
@@ -1128,8 +1127,8 @@
                                 <constraints>
                                     <constraint firstItem="phY-EU-tGk" firstAttribute="leading" secondItem="yuW-iM-tcl" secondAttribute="leading" constant="18" id="3Ce-kC-dsH"/>
                                     <constraint firstItem="phY-EU-tGk" firstAttribute="top" secondItem="yuW-iM-tcl" secondAttribute="top" constant="62" id="Vgx-eY-zD1"/>
-                                    <constraint firstAttribute="bottom" secondItem="phY-EU-tGk" secondAttribute="bottom" constant="10" id="dash-hdr-btm"/>
                                     <constraint firstAttribute="trailing" secondItem="iDB-lr-WIG" secondAttribute="trailing" constant="16" id="c58-9h-nHA"/>
+                                    <constraint firstAttribute="bottom" secondItem="phY-EU-tGk" secondAttribute="bottom" constant="10" id="dash-hdr-btm"/>
                                     <constraint firstItem="iDB-lr-WIG" firstAttribute="centerY" secondItem="phY-EU-tGk" secondAttribute="centerY" id="i6M-fQ-FBB"/>
                                 </constraints>
                             </view>
@@ -2754,13 +2753,13 @@
     </inferredMetricsTieBreakers>
     <resources>
         <image name="Image" width="804" height="934"/>
-        <image name="camera.fill" catalog="system" width="128" height="93"/>
-        <image name="cart" catalog="system" width="128" height="102"/>
-        <image name="chart.line.text.clipboard" catalog="system" width="103" height="128"/>
-        <image name="cube.box" catalog="system" width="128" height="123"/>
-        <image name="gearshape.fill" catalog="system" width="128" height="123"/>
-        <image name="mic.fill" catalog="system" width="110" height="128"/>
-        <image name="plus" catalog="system" width="128" height="113"/>
+        <image name="camera.fill" catalog="system" width="128" height="96"/>
+        <image name="cart" catalog="system" width="128" height="105"/>
+        <image name="chart.line.text.clipboard" catalog="system" width="100" height="128"/>
+        <image name="cube.box" catalog="system" width="128" height="127"/>
+        <image name="gearshape.fill" catalog="system" width="128" height="128"/>
+        <image name="mic.fill" catalog="system" width="107" height="128"/>
+        <image name="plus" catalog="system" width="128" height="118"/>
         <namedColor name="AccentColor">
             <color red="0.0" green="0.46000000000000002" blue="0.89000000000000001" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
         </namedColor>

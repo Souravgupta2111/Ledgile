@@ -43,17 +43,15 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     var grandTotal: Double {
         Money.round2(subTotal - discountAmount + adjustmentAmount)
     }
-    private var isEditingEnabled = false {
-        didSet {
-            tableView.reloadData()
-            editButton.setTitle(isEditingEnabled ? "Done" : "Edit", for: .normal)
-        }
-    }
+    private var isEditingEnabled = true
     var customerNameField = UITextField()
     var inventoryCache: [Item] = []
     private var currentSuggestions: [Item] = []
     private let suggestionsTableView = UITableView(frame: .zero, style: .plain)
     private weak var activeNameField: UITextField?
+    private weak var activeUnitField: UITextField?
+    private var isSuggestingUnits = false
+    private var currentUnitSuggestions: [String] = []
     
     /// Holds scan/voice result passed before viewDidLoad; consumed in viewDidLoad.
     var pendingResult: ParsedResult?
@@ -88,6 +86,8 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             pendingResult = nil
             // entryMode is already set by the caller before pushing this VC
             appendItems(from: result)
+        } else if entryMode == .manual && transactionItems.isEmpty {
+            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: 0.0, costPricePerUnit: 0.0, createdDate: Date()))
         }
         
         setupBackButton()
@@ -253,7 +253,8 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             scanVC.modalPresentationStyle = .fullScreen
             present(scanVC, animated: true)
         case .manual:
-            performSegue(withIdentifier: "item_information", sender: nil)
+            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: 0.0, costPricePerUnit: 0.0, createdDate: Date()))
+            tableView.reloadData()
         }
     }
 
@@ -753,7 +754,7 @@ extension SalesEntryTableViewController {
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if tableView == suggestionsTableView {
-            return currentSuggestions.count
+            return isSuggestingUnits ? currentUnitSuggestions.count : currentSuggestions.count
         }
         switch SalesSection(rawValue: section)! {
         case .customer:
@@ -779,9 +780,12 @@ extension SalesEntryTableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if tableView == suggestionsTableView {
             let cell = tableView.dequeueReusableCell(withIdentifier: "InventorySuggestionCell", for: indexPath)
-            let item = currentSuggestions[indexPath.row]
             var content = cell.defaultContentConfiguration()
-            content.text = item.name
+            if isSuggestingUnits {
+                content.text = currentUnitSuggestions[indexPath.row]
+            } else {
+                content.text = currentSuggestions[indexPath.row].name
+            }
             content.textProperties.font = .systemFont(ofSize: 13, weight: .regular)
             content.textProperties.numberOfLines = 1
             cell.contentConfiguration = content
@@ -832,19 +836,8 @@ extension SalesEntryTableViewController {
                 return cell
             }
             let item = transactionItems[indexPath.row]
-            
-            if !isEditingEnabled {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "SalesItemTableViewCell", for: indexPath) as! SalesItemTableViewCell
-                cell.selectionStyle = .none
-                cell.titleLabel.text = item.itemName
-                cell.detailLabel.text = String(format: "%@ × ₹%.2f", item.quantity.cleanString, item.sellingPricePerUnit ?? 0.0)
-                cell.priceLabel.text = String(format: "₹ %.2f", item.totalRevenue)
-                
-                return cell
-                }
-            else {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "EditSalesItemTableViewCell", for: indexPath) as! EditSalesItemTableViewCell
-                cell.selectionStyle = .none
+            let cell = tableView.dequeueReusableCell(withIdentifier: "EditSalesItemTableViewCell", for: indexPath) as! EditSalesItemTableViewCell
+            cell.selectionStyle = .none
                 cell.nameLabel.text = item.itemName
                 cell.unitLabel.text = "\(item.unit)"
                 cell.priceLabel.text = item.sellingPricePerUnit != nil ?
@@ -863,8 +856,9 @@ extension SalesEntryTableViewController {
                 cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidEnd(_:)), for: .editingDidEnd)
                 cell.nameLabel.addTarget(self, action: #selector(itemEditingDidEnd(_:)), for: .editingDidEnd)
                 cell.deleteButton.addTarget(self, action: #selector(deleteItemTapped(_:)), for: .touchUpInside)
-                cell.unitLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+                cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidBegin(_:)), for: .editingDidBegin)
                 cell.unitLabel.addTarget(self, action: #selector(itemUnitChanged(_:)), for: .editingChanged)
+                cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidEnd(_:)), for: .editingDidEnd)
                 cell.priceLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
                 cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
                 cell.priceLabel.addTarget(self, action: #selector(itemEditingDidEnd(_:)), for: .editingDidEnd)
@@ -874,14 +868,13 @@ extension SalesEntryTableViewController {
                 
                 cell.priceLabel.keyboardType = .decimalPad
                 cell.quantityLabel.keyboardType = .decimalPad
+                cell.nameLabel.placeholder = "Add Item"
                 cell.nameLabel.borderStyle = .roundedRect
                 cell.unitLabel.borderStyle = .roundedRect
                 cell.priceLabel.borderStyle = .roundedRect
                 cell.quantityLabel.borderStyle = .roundedRect
                 
                 return cell
-            }
-            
         case .summary:
             switch indexPath.row {
             case 0:
@@ -1032,31 +1025,59 @@ extension SalesEntryTableViewController {
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         if tableView == suggestionsTableView {
-            let item = currentSuggestions[indexPath.row]
-            guard let field = activeNameField else { return }
-            let index = field.tag
-            guard index >= 0 && index < transactionItems.count else { return }
-
-            let old = transactionItems[index]
-            let updated = TransactionItem(
-                id: old.id,
-                transactionID: old.transactionID,
-                itemID: item.id,
-                itemName: item.name,
-                unit: item.unit,
-                quantity: old.quantity,
-                sellingPricePerUnit: item.defaultSellingPrice,
-                costPricePerUnit: item.defaultCostPrice,
-                createdDate: old.createdDate
-            )
-            transactionItems[index] = updated
-            field.text = item.name
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
-            field.resignFirstResponder()
-            tableView.deselectRow(at: indexPath, animated: true)
-            self.tableView.reloadSections(IndexSet([SalesSection.items.rawValue, SalesSection.summary.rawValue]), with: .none)
-            return
+            if isSuggestingUnits {
+                let unit = currentUnitSuggestions[indexPath.row]
+                guard let field = activeUnitField else { return }
+                
+                let index = field.tag
+                guard index >= 0 && index < transactionItems.count else { return }
+                let old = transactionItems[index]
+                let updated = TransactionItem(
+                    id: old.id,
+                    transactionID: old.transactionID,
+                    itemID: old.itemID,
+                    itemName: old.itemName,
+                    unit: unit,
+                    quantity: old.quantity,
+                    sellingPricePerUnit: old.sellingPricePerUnit,
+                    costPricePerUnit: old.costPricePerUnit,
+                    createdDate: old.createdDate
+                )
+                transactionItems[index] = updated
+                field.text = unit
+                suggestionsTableView.isHidden = true
+                suggestionsTableView.removeFromSuperview()
+                isSuggestingUnits = false
+                field.resignFirstResponder()
+                self.tableView.reloadSections(IndexSet([SalesSection.items.rawValue, SalesSection.summary.rawValue]), with: .none)
+                return
+            } else {
+                let item = currentSuggestions[indexPath.row]
+                guard let field = activeNameField else { return }
+                let index = field.tag
+                guard index >= 0 && index < transactionItems.count else { return }
+    
+                let old = transactionItems[index]
+                let updated = TransactionItem(
+                    id: old.id,
+                    transactionID: old.transactionID,
+                    itemID: item.id,
+                    itemName: item.name,
+                    unit: item.unit,
+                    quantity: old.quantity,
+                    sellingPricePerUnit: item.defaultSellingPrice,
+                    costPricePerUnit: item.defaultCostPrice,
+                    createdDate: old.createdDate
+                )
+                transactionItems[index] = updated
+                field.text = item.name
+                suggestionsTableView.isHidden = true
+                suggestionsTableView.removeFromSuperview()
+                field.resignFirstResponder()
+                tableView.deselectRow(at: indexPath, animated: true)
+                self.tableView.reloadSections(IndexSet([SalesSection.items.rawValue, SalesSection.summary.rawValue]), with: .none)
+                return
+            }
         }
 
         if SalesSection(rawValue: indexPath.section) == .customer {
@@ -1090,12 +1111,9 @@ extension SalesEntryTableViewController {
         titleLabel.textColor = .gray
         titleLabel.font = UIFont.preferredFont(forTextStyle: .headline)
 
-        let button = UIButton(type: .system)
-        button.setTitle(isEditingEnabled ? "Done" : "Edit", for: .normal)
-        button.setTitleColor(UIColor(named: "Lime Moss") ?? .systemGreen, for: .normal)
-        button.addTarget(self, action: #selector(toggleEditing), for: .touchUpInside)
+        // Button removed
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, UIView(), button])
+        let stack = UIStackView(arrangedSubviews: [titleLabel])
         stack.axis = .horizontal
         stack.alignment = .center
         stack.spacing = 8
@@ -1128,6 +1146,10 @@ extension SalesEntryTableViewController {
     }
     
     @objc private func itemUnitChanged(_ sender: UITextField) {
+        if activeUnitField == sender {
+            updateUnitSuggestions(for: sender.text ?? "")
+        }
+        
         let index = sender.tag
         guard index >= 0 && index < transactionItems.count else { return }
         let old = transactionItems[index]
@@ -1159,15 +1181,83 @@ extension SalesEntryTableViewController {
     }
 
     @objc private func itemNameEditingDidBegin(_ sender: UITextField) {
+        isSuggestingUnits = false
         activeNameField = sender
         updateSuggestions(for: sender.text ?? "")
     }
 
     @objc private func itemNameEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.suggestionsTableView.isHidden = true
-            self?.suggestionsTableView.removeFromSuperview()
+            if self?.activeNameField == sender {
+                self?.suggestionsTableView.isHidden = true
+                self?.suggestionsTableView.removeFromSuperview()
+            }
         }
+    }
+    
+    @objc private func itemUnitEditingDidBegin(_ sender: UITextField) {
+        sender.selectAll(nil)
+        activeUnitField = sender
+        isSuggestingUnits = true
+        updateUnitSuggestions(for: sender.text ?? "")
+    }
+
+    @objc private func itemUnitEditingDidEnd(_ sender: UITextField) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            if self?.activeUnitField == sender {
+                self?.suggestionsTableView.isHidden = true
+                self?.suggestionsTableView.removeFromSuperview()
+                self?.isSuggestingUnits = false
+            }
+        }
+    }
+    
+    private func updateUnitSuggestions(for query: String) {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allUnits = UnitConversionService.standardUnits
+        
+        if normalized.isEmpty {
+            currentUnitSuggestions = allUnits
+        } else {
+            currentUnitSuggestions = allUnits.filter { $0.lowercased().hasPrefix(normalized) }
+        }
+        
+        guard !currentUnitSuggestions.isEmpty, let field = activeUnitField else {
+            suggestionsTableView.isHidden = true
+            suggestionsTableView.removeFromSuperview()
+            return
+        }
+
+        guard let window = view.window else { return }
+        let fieldRect = field.convert(field.bounds, to: window)
+        
+        let horizontalPadding: CGFloat = 16
+        let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
+        let desiredHeight = min(CGFloat(currentUnitSuggestions.count) * suggestionsTableView.rowHeight, 150)
+        
+        let spaceBelow = window.bounds.height - fieldRect.maxY
+        let yPos: CGFloat
+        if spaceBelow >= desiredHeight + 8 {
+            yPos = fieldRect.maxY + 4
+        } else {
+            yPos = fieldRect.minY - desiredHeight - 4
+        }
+        
+        suggestionsTableView.frame = CGRect(
+            x: horizontalPadding,
+            y: yPos,
+            width: dropdownWidth,
+            height: desiredHeight
+        )
+        
+        if suggestionsTableView.superview != window {
+            suggestionsTableView.removeFromSuperview()
+            window.addSubview(suggestionsTableView)
+        }
+        
+        suggestionsTableView.reloadData()
+        suggestionsTableView.isHidden = false
+        window.bringSubviewToFront(suggestionsTableView)
     }
     
     @objc private func customerNameChanged(_ sender: UITextField) {
