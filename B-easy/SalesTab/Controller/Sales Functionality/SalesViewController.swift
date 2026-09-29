@@ -220,10 +220,8 @@ class SalesViewController: UIViewController {
                 self.lastSpeechActivity = CFAbsoluteTimeGetCurrent()
                 self.hasHeardSpeech = true
 
-                // Update SwiftUI caption with live transcription
-                DispatchQueue.main.async {
-                    self.onTranscriptionUpdate?(spokenText)
-                }
+                // We intentionally do not update the UI with live transcription here.
+                // The UI will remain showing "Listening..." as set in toggleInlineRecording.
             }
 
             if let error = error {
@@ -339,10 +337,12 @@ class SalesViewController: UIViewController {
             print("[SalesInlineVoice] ⏭️ Audio is mostly silence — skipping Whisper")
             DispatchQueue.main.async {
                 if Self.isUsableRecognizedText(sfSpeechText) {
-                    self.onTranscriptionUpdate?(sfSpeechText)
                     self.processFinalTextAndNavigate(sfSpeechText)
                 } else {
                     self.onTranscriptionUpdate?("Could not understand speech. Please try again.")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.onTranscriptionUpdate?("")
+                    }
                 }
             }
             return
@@ -363,17 +363,18 @@ class SalesViewController: UIViewController {
 
                 if useWhisper, let whisperText = whisperResult, !whisperText.isEmpty {
                     print("[SalesInlineVoice] ✅ USING WHISPER: '\(whisperText)'")
-                    self.onTranscriptionUpdate?(whisperText)
                     self.processFinalTextAndNavigate(whisperText)
 
                 } else if Self.isUsableRecognizedText(sfSpeechText) {
                     print("[SalesInlineVoice] 🔀 USING SFSPEECH FALLBACK: '\(sfSpeechText)'")
-                    self.onTranscriptionUpdate?(sfSpeechText)
                     self.processFinalTextAndNavigate(sfSpeechText)
 
                 } else {
                     print("[SalesInlineVoice] ❌ Both Whisper and SFSpeech failed")
                     self.onTranscriptionUpdate?("Could not understand speech. Please try again.")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.onTranscriptionUpdate?("")
+                    }
                 }
             }
         }
@@ -433,6 +434,7 @@ class SalesViewController: UIViewController {
 
     private func deliverResult(_ result: ParsedResult) {
         DispatchQueue.main.async {
+            self.onTranscriptionUpdate?("")
             self.performSegue(withIdentifier: "manual_sales", sender: result)
         }
     }
