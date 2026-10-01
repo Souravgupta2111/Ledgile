@@ -70,6 +70,8 @@
                             <constraint firstItem="I5G-NU-Bp6" firstAttribute="leading" secondItem="N0S-Gr-3gq" secondAttribute="leading" id="pIZ-1R-4IV"/>
                             <constraint firstItem="Dbh-cr-Bad" firstAttribute="centerY" secondItem="N0S-Gr-3gq" secondAttribute="centerY" id="vYF-4V-m96"/>
                             <constraint firstItem="Dbh-cr-Bad" firstAttribute="leading" secondItem="Jfk-G8-h3g" secondAttribute="trailing" constant="4" id="znI-E3-HM6"/>
+                            <constraint firstItem="EUP-IQ-C6I" firstAttribute="trailing" relation="lessThanOrEqual" secondItem="Jfk-G8-h3g" secondAttribute="leading" constant="-8" id="kLM-op-qr1"/>
+                            <constraint firstItem="pHb-Jb-ffT" firstAttribute="trailing" relation="lessThanOrEqual" secondItem="Jfk-G8-h3g" secondAttribute="leading" constant="-8" id="kLM-op-qr2"/>
                         </constraints>
                     </view>
                 </subviews>

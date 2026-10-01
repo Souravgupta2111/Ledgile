@@ -10,6 +10,11 @@ class PersonTableViewCell: UITableViewCell {
     override func awakeFromNib() {
         super.awakeFromNib()
         profileImageView.clipsToBounds = true
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.numberOfLines = 1
+        priceLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        priceLabel.setContentHuggingPriority(.required, for: .horizontal)
+        nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
     
     func configureProfile(name: String, image: UIImage?) {

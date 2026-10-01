@@ -41,11 +41,15 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
 
 
     private func styleUI() {
+        verifyButton.configuration = nil
         verifyButton.layer.cornerRadius = 20
         verifyButton.clipsToBounds = true
-        verifyButton.backgroundColor = .black
+        verifyButton.backgroundColor = UIColor.systemGray3
+        verifyButton.setTitle("Verify Code", for: .normal)
         verifyButton.setTitleColor(.white, for: .normal)
-        verifyButton.setTitleColor(.lightGray, for: .disabled)
+        verifyButton.setTitleColor(.white, for: .disabled)
+        verifyButton.setTitleColor(.white, for: .highlighted)
+        verifyButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
     }
 
     
@@ -81,8 +85,9 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
     private func updateVerifyState() {
         let complete = allFields.allSatisfy { ($0.text?.count ?? 0) == 1 }
         verifyButton.isEnabled = complete
+        verifyButton.alpha = 1.0
         UIView.animate(withDuration: 0.2) {
-            self.verifyButton.alpha = complete ? 1.0 : 0.5
+            self.verifyButton.backgroundColor = complete ? .black : UIColor.systemGray3
         }
     }
 
@@ -261,8 +266,14 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
 
     private func setLoading(_ loading: Bool) {
         verifyButton.isEnabled = !loading
-        verifyButton.setTitle(loading ? "Verifying..." : "Verify", for: .normal)
-        verifyButton.alpha = loading ? 0.6 : 1.0
+        verifyButton.setTitle(loading ? "Verifying..." : "Verify Code", for: .normal)
+        verifyButton.setTitleColor(.white, for: .normal)
+        verifyButton.setTitleColor(.white, for: .disabled)
+        verifyButton.alpha = 1.0
+        let complete = allFields.allSatisfy { ($0.text?.count ?? 0) == 1 }
+        UIView.animate(withDuration: 0.2) {
+            self.verifyButton.backgroundColor = loading ? UIColor.systemGray2 : (complete ? .black : UIColor.systemGray3)
+        }
         allFields.forEach { $0.isEnabled = !loading }
     }
 

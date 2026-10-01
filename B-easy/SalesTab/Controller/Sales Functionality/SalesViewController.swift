@@ -45,6 +45,9 @@ class SalesViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        extendedLayoutIncludesOpaqueBars = true
+        edgesForExtendedLayout = .all
+
         // Hide the storyboard-provided table and button — SwiftUI replaces them.
         tableView?.isHidden = true
         addEntryButton?.isHidden = true
@@ -58,8 +61,14 @@ class SalesViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
         // Refresh data each time the tab appears (e.g. after adding a sale).
         hostingController?.rootView.reload()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: animated)
     }
     
     override func viewDidDisappear(_ animated: Bool) {

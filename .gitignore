@@ -20,3 +20,5 @@ xcuserdata/
 # Scratch & test scripts
 scratch.swift
 test_*.swift
+/*.png
+

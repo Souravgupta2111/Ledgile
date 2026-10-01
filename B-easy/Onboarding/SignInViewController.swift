@@ -50,11 +50,15 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
         countryCodeButton.clipsToBounds = true
 
 
+        sendCodeButton.configuration = nil
         sendCodeButton.layer.cornerRadius = 14
         sendCodeButton.clipsToBounds = true
-        sendCodeButton.backgroundColor = .black
+        sendCodeButton.backgroundColor = UIColor.systemGray3
+        sendCodeButton.setTitle("Send Code", for: .normal)
         sendCodeButton.setTitleColor(.white, for: .normal)
-        sendCodeButton.setTitleColor(.lightGray, for: .disabled)
+        sendCodeButton.setTitleColor(.white, for: .disabled)
+        sendCodeButton.setTitleColor(.white, for: .highlighted)
+        sendCodeButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
     }
 
     // MARK: - Configuration
@@ -86,8 +90,9 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
     private func updateSendCodeState() {
         let valid = isValidPhone(phoneField.text ?? "")
         sendCodeButton.isEnabled = valid
+        sendCodeButton.alpha = 1.0
         UIView.animate(withDuration: 0.2) {
-            self.sendCodeButton.alpha = valid ? 1.0 : 0.5
+            self.sendCodeButton.backgroundColor = valid ? .black : UIColor.systemGray3
         }
     }
 
@@ -158,7 +163,13 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
     private func setLoading(_ loading: Bool) {
         sendCodeButton.isEnabled = !loading
         sendCodeButton.setTitle(loading ? "Sending..." : "Send Code", for: .normal)
-        sendCodeButton.alpha = loading ? 0.6 : 1.0
+        sendCodeButton.setTitleColor(.white, for: .normal)
+        sendCodeButton.setTitleColor(.white, for: .disabled)
+        sendCodeButton.alpha = 1.0
+        let valid = isValidPhone(phoneField.text ?? "")
+        UIView.animate(withDuration: 0.2) {
+            self.sendCodeButton.backgroundColor = loading ? UIColor.systemGray2 : (valid ? .black : UIColor.systemGray3)
+        }
         phoneField.isEnabled = !loading
     }
 

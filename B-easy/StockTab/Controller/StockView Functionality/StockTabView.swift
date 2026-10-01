@@ -56,16 +56,12 @@ struct StockTabView: View {
 
                     Spacer()
 
-                    // Voice Button (Centered)
-                    shazamVoiceButton
-
-                    // Scan & Manual buttons
-                    secondaryButtonsRow
-                        .padding(.top, 20)
+                    // Voice & Action Buttons (Scan on left, Voice centered, Manual on right)
+                    actionButtonsRow
 
                     // Space between buttons and collapsed modal sheet
                     Spacer()
-                        .frame(height: 148)
+                        .frame(height: 228)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .screenBackground()
@@ -73,7 +69,9 @@ struct StockTabView: View {
                 // Pull-up Modal Sheet
                 modalSheet(availableHeight: availableHeight)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
+        .ignoresSafeArea(edges: .bottom)
         .onAppear {
             viewModel.loadStockData()
             // Register callbacks from UIKit VC
@@ -108,14 +106,15 @@ struct StockTabView: View {
     private var topTitleHeader: some View {
         HStack {
             Text("Stock")
-                .font(.displayTitleBold)
+                .font(.system(size: 36, weight: .bold))
                 .foregroundStyle(Color.textPrimary)
                 .accessibilityAddTraits(.isHeader)
 
             Spacer()
         }
-        .padding(.horizontal, Spacing.lg + 2)
-        .padding(.top, Spacing.xs)
+        .padding(.leading, 18)
+        .padding(.trailing, 18)
+        .padding(.top, 3)
         .padding(.bottom, Spacing.sm)
     }
 
@@ -129,7 +128,7 @@ struct StockTabView: View {
                 // Pulsing ring when listening
                 if isListening {
                     Circle()
-                        .stroke(Color.brand.opacity(0.3), lineWidth: 3)
+                        .stroke(Color.red.opacity(0.3), lineWidth: 3)
                         .frame(width: 150, height: 150)
                         .scaleEffect(isListening ? 1.15 : 1.0)
                         .opacity(isListening ? 0.0 : 0.6)
@@ -137,10 +136,16 @@ struct StockTabView: View {
                 }
 
                 Circle()
-                    .fill(isListening ? Color.red : Color.brand)
+                    .fill(isListening ? Color.white : Color.brand)
                     .frame(width: 130, height: 130)
+                    .overlay {
+                        if isListening {
+                            Circle()
+                                .stroke(Color.red.opacity(0.15), lineWidth: 1.5)
+                        }
+                    }
                     .shadow(
-                        color: (isListening ? Color.red : Color.brand).opacity(0.38),
+                        color: isListening ? Color.black.opacity(0.12) : Color.brand.opacity(0.38),
                         radius: 18,
                         x: 0,
                         y: 8
@@ -148,7 +153,7 @@ struct StockTabView: View {
 
                 Image(systemName: isListening ? "stop.fill" : "mic.fill")
                     .font(.system(size: 46, weight: .semibold))
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(isListening ? Color.red : Color.white)
             }
             .frame(width: 150, height: 150)
         }
@@ -156,54 +161,66 @@ struct StockTabView: View {
         .animation(.easeInOut(duration: 0.25), value: isListening)
     }
 
-    // MARK: - Scan & Manual Row
+    // MARK: - Action Buttons Row (Scan, Voice, Manual)
 
-    private var secondaryButtonsRow: some View {
-        HStack(spacing: 56) {
-            // Scan Button
-            Button {
-                actions.onScanEntry()
-            } label: {
-                VStack(spacing: 6) {
-                    Circle()
-                        .fill(Color(red: 0.88, green: 0.94, blue: 0.86))
-                        .frame(width: 54, height: 54)
-                        .overlay {
-                            Image(systemName: "camera.viewfinder")
-                                .font(.system(size: 22, weight: .medium))
-                                .foregroundStyle(Color(red: 0.18, green: 0.38, blue: 0.15))
-                        }
-
-                    Text("Scan")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(Color.textPrimary)
-                }
-                .frame(width: 70)
-            }
-            .buttonStyle(ActionCircleButtonStyle())
-
-            // Manual Button
-            Button {
-                actions.onManualEntry()
-            } label: {
-                VStack(spacing: 6) {
-                    Circle()
-                        .fill(Color(red: 0.88, green: 0.94, blue: 0.86))
-                        .frame(width: 54, height: 54)
-                        .overlay {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(Color(red: 0.18, green: 0.38, blue: 0.15))
-                        }
-
-                    Text("Manual")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(Color.textPrimary)
-                }
-                .frame(width: 70)
-            }
-            .buttonStyle(ActionCircleButtonStyle())
+    private var actionButtonsRow: some View {
+        HStack(alignment: .center, spacing: 20) {
+            scanButton
+            shazamVoiceButton
+            manualButton
         }
+    }
+
+    // MARK: - Scan Button
+
+    private var scanButton: some View {
+        Button {
+            actions.onScanEntry()
+        } label: {
+            VStack(spacing: 6) {
+                Circle()
+                    .fill(Color(red: 0.88, green: 0.94, blue: 0.86))
+                    .frame(width: 54, height: 54)
+                    .overlay {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(Color(red: 0.18, green: 0.38, blue: 0.15))
+                    }
+
+                Text("Scan")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Color.textPrimary)
+            }
+            .frame(width: 70)
+        }
+        .buttonStyle(ActionCircleButtonStyle())
+        .alignmentGuide(VerticalAlignment.center) { _ in 27 }
+    }
+
+    // MARK: - Manual Button
+
+    private var manualButton: some View {
+        Button {
+            actions.onManualEntry()
+        } label: {
+            VStack(spacing: 6) {
+                Circle()
+                    .fill(Color(red: 0.88, green: 0.94, blue: 0.86))
+                    .frame(width: 54, height: 54)
+                    .overlay {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(Color(red: 0.18, green: 0.38, blue: 0.15))
+                    }
+
+                Text("Manual")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Color.textPrimary)
+            }
+            .frame(width: 70)
+        }
+        .buttonStyle(ActionCircleButtonStyle())
+        .alignmentGuide(VerticalAlignment.center) { _ in 27 }
     }
 
     // MARK: - Modal Sheet (Liquid Glass)
@@ -232,7 +249,7 @@ struct StockTabView: View {
                     itemsSection
                 }
                 .padding(.horizontal, Spacing.lg)
-                .padding(.bottom, Spacing.xxxl)
+                .padding(.bottom, 110)
             }
             .scrollDisabled(sheetState == .collapsed)
         }
@@ -260,12 +277,6 @@ struct StockTabView: View {
             )
             .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
             .frame(height: currentHeight)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .frame(height: 250)
-                .offset(y: 250)
         }
     }
 

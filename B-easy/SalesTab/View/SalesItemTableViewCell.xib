@@ -49,6 +49,8 @@
                             <constraint firstAttribute="trailing" secondItem="i5J-jy-HSg" secondAttribute="trailing" constant="16" id="hUT-2U-Ltk"/>
                             <constraint firstItem="vxA-VL-Yhs" firstAttribute="top" secondItem="psf-4D-EO1" secondAttribute="top" constant="12" id="hal-Tq-H5m"/>
                             <constraint firstAttribute="height" constant="60" id="jhf-xJ-tzQ"/>
+                            <constraint firstItem="vxA-VL-Yhs" firstAttribute="trailing" relation="lessThanOrEqual" secondItem="i5J-jy-HSg" secondAttribute="leading" constant="-12" id="aB1-vx-trg"/>
+                            <constraint firstItem="xj4-y8-iqs" firstAttribute="trailing" relation="lessThanOrEqual" secondItem="i5J-jy-HSg" secondAttribute="leading" constant="-12" id="bC2-xj-trg"/>
                         </constraints>
                     </view>
                 </subviews>

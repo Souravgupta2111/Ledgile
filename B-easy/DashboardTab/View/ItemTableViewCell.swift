@@ -14,6 +14,17 @@ class ItemTableViewCell: UITableViewCell {
         super.awakeFromNib()
         contentView.backgroundColor = .systemGray6
         separatorView.backgroundColor = .separator
+        
+        itemNameLabel.lineBreakMode = .byTruncatingTail
+        itemNameLabel.numberOfLines = 1
+        quantityLabel.lineBreakMode = .byTruncatingTail
+        quantityLabel.numberOfLines = 1
+        
+        priceLabel.textAlignment = .right
+        priceLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        priceLabel.setContentHuggingPriority(.required, for: .horizontal)
+        itemNameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        quantityLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

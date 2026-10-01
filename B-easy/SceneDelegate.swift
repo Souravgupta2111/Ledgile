@@ -7,8 +7,34 @@ enum MainTabInstaller {
         let root = storyboard.instantiateViewController(withIdentifier: "MainTabBarController")
         if let tab = root as? UITabBarController {
             addSearchTabIfNeeded(on: tab)
+            configureTransparentTabBar(tab)
         }
         return root
+    }
+
+    /// Makes the tab bar background fully transparent so page-sheet modals
+    /// aren't hidden behind an opaque bar region.
+    static func configureTransparentTabBar(_ tab: UITabBarController) {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundColor = .clear
+        appearance.backgroundEffect = nil
+        appearance.shadowColor = .clear          // remove the hairline
+        appearance.shadowImage = UIImage()
+
+        // Keep selected tint from storyboard ("Lime Moss")
+        let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.13, green: 0.75, blue: 0.42, alpha: 1.0)
+        tab.tabBar.tintColor = lime
+
+        tab.tabBar.standardAppearance = appearance
+        tab.tabBar.scrollEdgeAppearance = appearance
+
+        tab.tabBar.backgroundColor = .clear
+        tab.tabBar.barTintColor = .clear
+        tab.tabBar.backgroundImage = UIImage()
+        tab.tabBar.shadowImage = UIImage()
+        tab.tabBar.isTranslucent = true
+        tab.tabBar.isOpaque = false
     }
 
     static func addSearchTabIfNeeded(on tabBarController: UITabBarController) {
@@ -75,6 +101,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         if let tabBarController = window?.rootViewController as? UITabBarController {
             MainTabInstaller.addSearchTabIfNeeded(on: tabBarController)
+            MainTabInstaller.configureTransparentTabBar(tabBarController)
         }
     }
     

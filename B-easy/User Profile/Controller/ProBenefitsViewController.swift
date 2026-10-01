@@ -1,240 +1,441 @@
 import UIKit
 import SafariServices
 
-/// First paywall screen: benefits carousel, then plan picker.
+/// In-App Paywall Screen matching B-easy design system (Beige background, white card with comparison matrix).
 final class ProBenefitsViewController: UIViewController {
 
-    private let lime = UIColor(named: "Lime Moss") ?? .systemGreen
-    private let beige = UIColor(named: "Beige") ?? UIColor(red: 0.91, green: 0.90, blue: 0.76, alpha: 1)
-    private let onyx = UIColor(named: "Onyx") ?? UIColor(red: 0.05, green: 0.07, blue: 0, alpha: 1)
+    private let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.41, green: 0.56, blue: 0.0, alpha: 1.0)
+    private let beige = UIColor(named: "Beige") ?? UIColor(red: 0.91, green: 0.90, blue: 0.76, alpha: 1.0)
+    private let onyx = UIColor(named: "Onyx") ?? UIColor(red: 0.05, green: 0.07, blue: 0.05, alpha: 1.0)
+
+    private enum FeatureAccess {
+        case included   // ✅ green checkmark — full access
+        case basic      // ⚡ orange bolt — works but basic/on-device
+        case excluded   // ❌ gray X — not available
+    }
+
+    private struct FeatureItem {
+        let iconName: String
+        let title: String
+        let subtitle: String
+        let freeAccess: FeatureAccess
+        let proAccess: FeatureAccess
+    }
+
+    private let features: [FeatureItem] = [
+        FeatureItem(
+            iconName: "doc.text.fill",
+            title: "Billing & Udhar Khata",
+            subtitle: "Create bills, track sales & manage credit",
+            freeAccess: .included,
+            proAccess: .included
+        ),
+        FeatureItem(
+            iconName: "waveform.and.mic",
+            title: "Voice Entry",
+            subtitle: "Add sales by speaking — Pro uses smarter AI",
+            freeAccess: .basic,
+            proAccess: .included
+        ),
+        FeatureItem(
+            iconName: "camera.viewfinder",
+            title: "Bill & Barcode Scanner",
+            subtitle: "Scan any bill or barcode — Pro reads better",
+            freeAccess: .basic,
+            proAccess: .included
+        ),
+        FeatureItem(
+            iconName: "icloud.and.arrow.up.fill",
+            title: "Cloud Backup & Sync",
+            subtitle: "Your data stays safe & syncs across devices",
+            freeAccess: .included,
+            proAccess: .included
+        ),
+        FeatureItem(
+            iconName: "chart.bar.doc.horizontal",
+            title: "GST & Tax Reports",
+            subtitle: "Ready-made reports to share with your CA",
+            freeAccess: .excluded,
+            proAccess: .included
+        ),
+        FeatureItem(
+            iconName: "cpu.fill",
+            title: "AI Business Assistant",
+            subtitle: "Ask about your sales, stock & daily trends",
+            freeAccess: .excluded,
+            proAccess: .included
+        )
+    ]
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = beige
         navigationItem.largeTitleDisplayMode = .never
-        build()
+        navigationController?.setNavigationBarHidden(true, animated: false)
+        buildUI()
     }
 
-    private func build() {
-        let scroll = UIScrollView()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.alwaysBounceVertical = true
-        scroll.showsVerticalScrollIndicator = false
-        view.addSubview(scroll)
+    private func buildUI() {
+        // Back / Dismiss button
+        let dismissButton = UIButton(type: .system)
+        dismissButton.translatesAutoresizingMaskIntoConstraints = false
+        let iconName = (presentingViewController != nil && navigationController?.viewControllers.first == self) ? "xmark" : "chevron.left"
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
+        dismissButton.setImage(UIImage(systemName: iconName, withConfiguration: iconConfig), for: .normal)
+        dismissButton.tintColor = onyx
+        dismissButton.addTarget(self, action: #selector(dismissSelf), for: .touchUpInside)
+        view.addSubview(dismissButton)
 
-        let content = UIView()
-        content.translatesAutoresizingMaskIntoConstraints = false
-        scroll.addSubview(content)
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceVertical = true
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.clipsToBounds = true
+        view.addSubview(scrollView)
 
-        let brandRow = UIStackView()
-        brandRow.axis = .horizontal
-        brandRow.alignment = .center
-        brandRow.spacing = 10
-        brandRow.translatesAutoresizingMaskIntoConstraints = false
+        let contentView = UIView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(contentView)
 
-        let brand = UILabel()
-        brand.text = "B-easy"
-        brand.font = .systemFont(ofSize: 28, weight: .bold)
-        brand.textColor = onyx
+        // Bottom CTA Container
+        let bottomContainer = UIView()
+        bottomContainer.translatesAutoresizingMaskIntoConstraints = false
+        bottomContainer.backgroundColor = .clear
+        view.addSubview(bottomContainer)
 
-        let proBadge = UILabel()
-        proBadge.text = "  PRO  "
-        proBadge.font = .systemFont(ofSize: 12, weight: .heavy)
-        proBadge.textColor = onyx
-        proBadge.backgroundColor = lime
-        proBadge.layer.cornerRadius = 8
-        proBadge.clipsToBounds = true
+        let upgradeButton = UIButton(type: .system)
+        upgradeButton.translatesAutoresizingMaskIntoConstraints = false
+        upgradeButton.configuration = nil
+        upgradeButton.backgroundColor = onyx
+        upgradeButton.setTitle("See Pro plans", for: .normal)
+        upgradeButton.setTitleColor(.white, for: .normal)
+        upgradeButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
+        upgradeButton.layer.cornerRadius = 20
+        upgradeButton.clipsToBounds = true
+        upgradeButton.addTarget(self, action: #selector(choosePlan), for: .touchUpInside)
 
-        brandRow.addArrangedSubview(brand)
-        brandRow.addArrangedSubview(proBadge)
-        let brandSpacer = UIView()
-        brandRow.addArrangedSubview(brandSpacer)
+        let priceNote = UILabel()
+        priceNote.translatesAutoresizingMaskIntoConstraints = false
+        priceNote.text = "From ₹\(UsageTracker.monthlyPriceINR)/month · Cancel anytime"
+        priceNote.font = .systemFont(ofSize: 13, weight: .medium)
+        priceNote.textColor = UIColor.black.withAlphaComponent(0.55)
+        priceNote.textAlignment = .center
 
-        let headline = UILabel()
-        headline.translatesAutoresizingMaskIntoConstraints = false
-        headline.text = "Get exclusive benefits with B-easy Pro."
-        headline.font = .systemFont(ofSize: 28, weight: .bold)
-        headline.textColor = onyx
-        headline.numberOfLines = 0
+        let notNowButton = UIButton(type: .system)
+        notNowButton.translatesAutoresizingMaskIntoConstraints = false
+        notNowButton.setTitle("Continue with Free", for: .normal)
+        notNowButton.setTitleColor(UIColor.black.withAlphaComponent(0.65), for: .normal)
+        notNowButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        notNowButton.addTarget(self, action: #selector(dismissSelf), for: .touchUpInside)
 
-        let sub = UILabel()
-        sub.translatesAutoresizingMaskIntoConstraints = false
-        sub.text = "₹\(UsageTracker.monthlyPriceINR) per month. ₹\(UsageTracker.yearlyPriceINR) per year — save \(UsageTracker.yearlySavingsPercent)%."
-        sub.font = .systemFont(ofSize: 15, weight: .medium)
-        sub.textColor = UIColor.black.withAlphaComponent(0.45)
-        sub.numberOfLines = 0
+        bottomContainer.addSubview(upgradeButton)
+        bottomContainer.addSubview(priceNote)
+        bottomContainer.addSubview(notNowButton)
 
-        let benefitsLabel = UILabel()
-        benefitsLabel.translatesAutoresizingMaskIntoConstraints = false
-        benefitsLabel.text = "PREMIUM BENEFITS"
-        benefitsLabel.font = .systemFont(ofSize: 12, weight: .heavy)
-        benefitsLabel.textColor = UIColor.black.withAlphaComponent(0.4)
+        // --- Screen Header: Title & Subtitle ---
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = "How do you want to use\nB-easy?"
+        titleLabel.font = .systemFont(ofSize: 26, weight: .bold)
+        titleLabel.textColor = onyx
+        titleLabel.numberOfLines = 2
 
-        let carousel = UIScrollView()
-        carousel.translatesAutoresizingMaskIntoConstraints = false
-        carousel.showsHorizontalScrollIndicator = false
-        carousel.alwaysBounceHorizontal = true
+        let subtitleLabel = UILabel()
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        subtitleLabel.text = "The ledger is free. Voice and photo scans are limited unless you choose Pro."
+        subtitleLabel.font = .systemFont(ofSize: 13.5, weight: .regular)
+        subtitleLabel.textColor = UIColor.black.withAlphaComponent(0.55)
+        subtitleLabel.numberOfLines = 2
 
-        let cards = UIStackView()
-        cards.translatesAutoresizingMaskIntoConstraints = false
-        cards.axis = .horizontal
-        cards.spacing = 14
-        carousel.addSubview(cards)
+        // --- White Comparison Card ---
+        let cardView = UIView()
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.backgroundColor = .white
+        cardView.layer.cornerRadius = 22
+        cardView.layer.shadowColor = UIColor.black.cgColor
+        cardView.layer.shadowOpacity = 0.05
+        cardView.layer.shadowOffset = CGSize(width: 0, height: 3)
+        cardView.layer.shadowRadius = 10
 
-        let voiceCard = benefitCard(
-            symbol: "waveform",
-            title: "\(UsageTracker.proVoiceScansPerDay) voice scans",
-            subtitle: "Every day"
-        )
-        let cameraCard = benefitCard(
-            symbol: "camera.fill",
-            title: "\(UsageTracker.proCameraScansPerDay) photo scans",
-            subtitle: "Bills & products"
-        )
-        let backupCard = benefitCard(
-            symbol: "icloud.fill",
-            title: "Cloud backup",
-            subtitle: "Keep the ledger safe"
-        )
-        cards.addArrangedSubview(voiceCard)
-        cards.addArrangedSubview(cameraCard)
-        cards.addArrangedSubview(backupCard)
+        // --- Card Header Row ---
+        let headerRow = UIView()
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let choose = UIButton(type: .system)
-        choose.translatesAutoresizingMaskIntoConstraints = false
-        choose.setTitle("Choose your Plan", for: .normal)
-        choose.setTitleColor(.white, for: .normal)
-        choose.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
-        choose.backgroundColor = onyx
-        choose.layer.cornerRadius = 22
-        choose.addTarget(self, action: #selector(choosePlan), for: .touchUpInside)
+        let headerTitle = UILabel()
+        headerTitle.translatesAutoresizingMaskIntoConstraints = false
+        headerTitle.text = "What's included"
+        headerTitle.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        headerTitle.textColor = UIColor.black.withAlphaComponent(0.45)
 
-        let notNow = UIButton(type: .system)
-        notNow.translatesAutoresizingMaskIntoConstraints = false
-        notNow.setTitle("Not Now", for: .normal)
-        notNow.setTitleColor(UIColor.black.withAlphaComponent(0.45), for: .normal)
-        notNow.titleLabel?.font = .systemFont(ofSize: 16, weight: .medium)
-        notNow.addTarget(self, action: #selector(dismissSelf), for: .touchUpInside)
+        let starterHeader = UILabel()
+        starterHeader.translatesAutoresizingMaskIntoConstraints = false
+        starterHeader.text = "Free"
+        starterHeader.font = .systemFont(ofSize: 14.5, weight: .bold)
+        starterHeader.textColor = onyx
+        starterHeader.textAlignment = .center
 
-        content.addSubview(brandRow)
-        content.addSubview(headline)
-        content.addSubview(sub)
-        content.addSubview(benefitsLabel)
-        content.addSubview(carousel)
-        view.addSubview(choose)
-        view.addSubview(notNow)
+        let unlimitedPill = UIView()
+        unlimitedPill.translatesAutoresizingMaskIntoConstraints = false
+        unlimitedPill.backgroundColor = lime.withAlphaComponent(0.18)
+        unlimitedPill.layer.cornerRadius = 12
+        unlimitedPill.clipsToBounds = true
 
-        let cardWidth: CGFloat = 210
+        let unlimitedLabel = UILabel()
+        unlimitedLabel.translatesAutoresizingMaskIntoConstraints = false
+        unlimitedLabel.text = "Pro"
+        unlimitedLabel.font = .systemFont(ofSize: 13.5, weight: .bold)
+        unlimitedLabel.textColor = UIColor(red: 0.18, green: 0.42, blue: 0.15, alpha: 1.0)
+        unlimitedLabel.textAlignment = .center
+
+        unlimitedPill.addSubview(unlimitedLabel)
+
+        headerRow.addSubview(headerTitle)
+        headerRow.addSubview(starterHeader)
+        headerRow.addSubview(unlimitedPill)
+
+        let headerDivider = UIView()
+        headerDivider.translatesAutoresizingMaskIntoConstraints = false
+        headerDivider.backgroundColor = UIColor.black.withAlphaComponent(0.06)
+
+        // --- Feature Rows Stack inside Card ---
+        let featuresStack = UIStackView()
+        featuresStack.translatesAutoresizingMaskIntoConstraints = false
+        featuresStack.axis = .vertical
+        featuresStack.spacing = 8
+
+        for (index, item) in features.enumerated() {
+            let row = makeFeatureRow(item: item)
+            featuresStack.addArrangedSubview(row)
+
+            if index < features.count - 1 {
+                let rowDivider = UIView()
+                rowDivider.translatesAutoresizingMaskIntoConstraints = false
+                rowDivider.backgroundColor = UIColor.black.withAlphaComponent(0.04)
+                rowDivider.heightAnchor.constraint(equalToConstant: 1).isActive = true
+                featuresStack.addArrangedSubview(rowDivider)
+            }
+        }
+
+        cardView.addSubview(headerRow)
+        cardView.addSubview(headerDivider)
+        cardView.addSubview(featuresStack)
+
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(subtitleLabel)
+        contentView.addSubview(cardView)
+
+        let colUnlimitedWidth: CGFloat = 56
+        let colStarterWidth: CGFloat = 48
+
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: choose.topAnchor, constant: -16),
+            // Dismiss Button
+            dismissButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            dismissButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            dismissButton.widthAnchor.constraint(equalToConstant: 32),
+            dismissButton.heightAnchor.constraint(equalToConstant: 32),
 
-            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
-            content.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
-            content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
-            content.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            // Bottom Container (lowered down to give maximum space to table)
+            bottomContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            bottomContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            bottomContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -2),
 
-            brandRow.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
-            brandRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            brandRow.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            upgradeButton.topAnchor.constraint(equalTo: bottomContainer.topAnchor),
+            upgradeButton.leadingAnchor.constraint(equalTo: bottomContainer.leadingAnchor),
+            upgradeButton.trailingAnchor.constraint(equalTo: bottomContainer.trailingAnchor),
+            upgradeButton.heightAnchor.constraint(equalToConstant: 50),
 
-            headline.topAnchor.constraint(equalTo: brandRow.bottomAnchor, constant: 28),
-            headline.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            headline.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            priceNote.topAnchor.constraint(equalTo: upgradeButton.bottomAnchor, constant: 5),
+            priceNote.centerXAnchor.constraint(equalTo: bottomContainer.centerXAnchor),
 
-            sub.topAnchor.constraint(equalTo: headline.bottomAnchor, constant: 10),
-            sub.leadingAnchor.constraint(equalTo: headline.leadingAnchor),
-            sub.trailingAnchor.constraint(equalTo: headline.trailingAnchor),
+            notNowButton.topAnchor.constraint(equalTo: priceNote.bottomAnchor, constant: 2),
+            notNowButton.centerXAnchor.constraint(equalTo: bottomContainer.centerXAnchor),
+            notNowButton.heightAnchor.constraint(equalToConstant: 28),
+            notNowButton.bottomAnchor.constraint(equalTo: bottomContainer.bottomAnchor),
 
-            benefitsLabel.topAnchor.constraint(equalTo: sub.bottomAnchor, constant: 36),
-            benefitsLabel.leadingAnchor.constraint(equalTo: headline.leadingAnchor),
+            // Scroll View
+            scrollView.topAnchor.constraint(equalTo: dismissButton.bottomAnchor, constant: 2),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomContainer.topAnchor, constant: -6),
 
-            carousel.topAnchor.constraint(equalTo: benefitsLabel.bottomAnchor, constant: 14),
-            carousel.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            carousel.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            carousel.heightAnchor.constraint(equalToConstant: 280),
-            carousel.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -8),
+            contentView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            contentView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -8),
+            contentView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
 
-            cards.topAnchor.constraint(equalTo: carousel.contentLayoutGuide.topAnchor),
-            cards.bottomAnchor.constraint(equalTo: carousel.contentLayoutGuide.bottomAnchor),
-            cards.leadingAnchor.constraint(equalTo: carousel.contentLayoutGuide.leadingAnchor, constant: 24),
-            cards.trailingAnchor.constraint(equalTo: carousel.contentLayoutGuide.trailingAnchor, constant: -24),
-            cards.heightAnchor.constraint(equalTo: carousel.frameLayoutGuide.heightAnchor),
+            // Title & Subtitle Layout
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
 
-            voiceCard.widthAnchor.constraint(equalToConstant: cardWidth),
-            cameraCard.widthAnchor.constraint(equalToConstant: cardWidth),
-            backupCard.widthAnchor.constraint(equalToConstant: cardWidth),
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 5),
+            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            subtitleLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
 
-            notNow.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            notNow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            // Card Container
+            cardView.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 10),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
-            choose.bottomAnchor.constraint(equalTo: notNow.topAnchor, constant: -10),
-            choose.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            choose.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            choose.heightAnchor.constraint(equalToConstant: 56)
+            // Card Header Layout
+            headerRow.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
+            headerRow.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+            headerRow.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            headerRow.heightAnchor.constraint(equalToConstant: 26),
+
+            headerTitle.leadingAnchor.constraint(equalTo: headerRow.leadingAnchor),
+            headerTitle.centerYAnchor.constraint(equalTo: headerRow.centerYAnchor),
+            headerTitle.trailingAnchor.constraint(lessThanOrEqualTo: starterHeader.leadingAnchor, constant: -8),
+
+            unlimitedPill.trailingAnchor.constraint(equalTo: headerRow.trailingAnchor),
+            unlimitedPill.centerYAnchor.constraint(equalTo: headerRow.centerYAnchor),
+            unlimitedPill.widthAnchor.constraint(equalToConstant: colUnlimitedWidth),
+            unlimitedPill.heightAnchor.constraint(equalToConstant: 24),
+
+            unlimitedLabel.centerXAnchor.constraint(equalTo: unlimitedPill.centerXAnchor),
+            unlimitedLabel.centerYAnchor.constraint(equalTo: unlimitedPill.centerYAnchor),
+
+            starterHeader.trailingAnchor.constraint(equalTo: unlimitedPill.leadingAnchor, constant: -12),
+            starterHeader.centerYAnchor.constraint(equalTo: headerRow.centerYAnchor),
+            starterHeader.widthAnchor.constraint(equalToConstant: colStarterWidth),
+
+            headerDivider.topAnchor.constraint(equalTo: headerRow.bottomAnchor, constant: 8),
+            headerDivider.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+            headerDivider.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            headerDivider.heightAnchor.constraint(equalToConstant: 1),
+
+            // Features Stack inside Card
+            featuresStack.topAnchor.constraint(equalTo: headerDivider.bottomAnchor, constant: 8),
+            featuresStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+            featuresStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            featuresStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12)
         ])
     }
 
-    private func benefitCard(symbol: String, title: String, subtitle: String) -> UIView {
-        let card = UIView()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.backgroundColor = onyx
-        card.layer.cornerRadius = 28
+    private func makeFeatureRow(item: FeatureItem) -> UIView {
+        let row = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
 
-        let iconWrap = UIView()
-        iconWrap.translatesAutoresizingMaskIntoConstraints = false
-        iconWrap.backgroundColor = lime.withAlphaComponent(0.22)
-        iconWrap.layer.cornerRadius = 36
+        let iconContainer = UIView()
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        let icon = UIImageView(image: UIImage(systemName: symbol))
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.tintColor = lime
-        icon.contentMode = .scaleAspectFit
-        iconWrap.addSubview(icon)
+        let iconView = UIImageView()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+        iconView.image = UIImage(systemName: item.iconName, withConfiguration: iconConfig)
+        iconView.tintColor = onyx
+        iconView.contentMode = .scaleAspectFit
+        iconContainer.addSubview(iconView)
+
+        let textStack = UIStackView()
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.axis = .vertical
+        textStack.spacing = 1
 
         let titleLabel = UILabel()
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.text = title
-        titleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
-        titleLabel.textColor = .white
-        titleLabel.numberOfLines = 2
+        titleLabel.text = item.title
+        titleLabel.font = .systemFont(ofSize: 14.5, weight: .bold)
+        titleLabel.textColor = onyx
+        titleLabel.numberOfLines = 1
 
-        let subLabel = UILabel()
-        subLabel.translatesAutoresizingMaskIntoConstraints = false
-        subLabel.text = subtitle
-        subLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        subLabel.textColor = UIColor.white.withAlphaComponent(0.55)
+        let subtitleLabel = UILabel()
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        subtitleLabel.text = item.subtitle
+        subtitleLabel.font = .systemFont(ofSize: 11.5, weight: .regular)
+        subtitleLabel.textColor = UIColor.black.withAlphaComponent(0.55)
+        subtitleLabel.numberOfLines = 2
 
-        card.addSubview(iconWrap)
-        card.addSubview(titleLabel)
-        card.addSubview(subLabel)
+        textStack.addArrangedSubview(titleLabel)
+        textStack.addArrangedSubview(subtitleLabel)
+
+        let starterIcon = makeStatusIcon(access: item.freeAccess)
+        let unlimitedIcon = makeStatusIcon(access: item.proAccess)
+
+        let starterWrap = UIView()
+        starterWrap.translatesAutoresizingMaskIntoConstraints = false
+        starterWrap.addSubview(starterIcon)
+
+        let unlimitedWrap = UIView()
+        unlimitedWrap.translatesAutoresizingMaskIntoConstraints = false
+        unlimitedWrap.addSubview(unlimitedIcon)
+
+        row.addSubview(iconContainer)
+        row.addSubview(textStack)
+        row.addSubview(starterWrap)
+        row.addSubview(unlimitedWrap)
+
+        let colUnlimitedWidth: CGFloat = 56
+        let colStarterWidth: CGFloat = 48
 
         NSLayoutConstraint.activate([
-            iconWrap.topAnchor.constraint(equalTo: card.topAnchor, constant: 36),
-            iconWrap.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            iconWrap.widthAnchor.constraint(equalToConstant: 72),
-            iconWrap.heightAnchor.constraint(equalToConstant: 72),
+            iconContainer.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            iconContainer.topAnchor.constraint(equalTo: row.topAnchor),
+            iconContainer.widthAnchor.constraint(equalToConstant: 24),
+            iconContainer.heightAnchor.constraint(equalToConstant: 24),
 
-            icon.centerXAnchor.constraint(equalTo: iconWrap.centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: iconWrap.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 32),
-            icon.heightAnchor.constraint(equalToConstant: 32),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20),
 
-            titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
-            titleLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
-            titleLabel.bottomAnchor.constraint(equalTo: subLabel.topAnchor, constant: -4),
+            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 8),
+            textStack.topAnchor.constraint(equalTo: row.topAnchor),
+            textStack.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: starterWrap.leadingAnchor, constant: -6),
 
-            subLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            subLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            subLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -22)
+            unlimitedWrap.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            unlimitedWrap.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            unlimitedWrap.widthAnchor.constraint(equalToConstant: colUnlimitedWidth),
+
+            unlimitedIcon.centerXAnchor.constraint(equalTo: unlimitedWrap.centerXAnchor),
+            unlimitedIcon.centerYAnchor.constraint(equalTo: unlimitedWrap.centerYAnchor),
+
+            starterWrap.trailingAnchor.constraint(equalTo: unlimitedWrap.leadingAnchor, constant: -12),
+            starterWrap.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            starterWrap.widthAnchor.constraint(equalToConstant: colStarterWidth),
+
+            starterIcon.centerXAnchor.constraint(equalTo: starterWrap.centerXAnchor),
+            starterIcon.centerYAnchor.constraint(equalTo: starterWrap.centerYAnchor)
         ])
-        return card
+
+        return row
     }
 
+    private func makeStatusIcon(access: FeatureAccess) -> UIView {
+        let size: CGFloat = 20
+        let imgView = UIImageView()
+        imgView.translatesAutoresizingMaskIntoConstraints = false
+
+        switch access {
+        case .included:
+            let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
+            imgView.image = UIImage(systemName: "checkmark.circle.fill", withConfiguration: config)
+            imgView.tintColor = lime
+        case .basic:
+            let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+            imgView.image = UIImage(systemName: "bolt.circle.fill", withConfiguration: config)
+            imgView.tintColor = UIColor(red: 0.95, green: 0.65, blue: 0.12, alpha: 1.0)
+        case .excluded:
+            let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+            imgView.image = UIImage(systemName: "xmark.circle", withConfiguration: config)
+            imgView.tintColor = UIColor.black.withAlphaComponent(0.22)
+        }
+
+        imgView.contentMode = .scaleAspectFit
+        NSLayoutConstraint.activate([
+            imgView.widthAnchor.constraint(equalToConstant: size),
+            imgView.heightAnchor.constraint(equalToConstant: size)
+        ])
+        return imgView
+    }
+
+    // MARK: - Actions
+
     @objc private func choosePlan() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         navigationController?.pushViewController(ProPlanViewController(), animated: true)
     }
 

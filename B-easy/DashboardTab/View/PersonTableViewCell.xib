@@ -84,6 +84,7 @@
                             <constraint firstItem="zbR-ip-p9D" firstAttribute="leading" secondItem="I0o-z0-u71" secondAttribute="trailing" constant="4" id="kfe-2w-Mao"/>
                             <constraint firstAttribute="height" constant="60" id="kqf-2A-80a"/>
                             <constraint firstItem="ztm-Gd-dLK" firstAttribute="centerY" secondItem="OxD-KD-yla" secondAttribute="centerY" id="vlu-md-sNJ"/>
+                            <constraint firstItem="CN9-iJ-sHv" firstAttribute="trailing" relation="lessThanOrEqual" secondItem="I0o-z0-u71" secondAttribute="leading" constant="-8" id="cTr-9m-nLv"/>
                         </constraints>
                     </view>
                 </subviews>

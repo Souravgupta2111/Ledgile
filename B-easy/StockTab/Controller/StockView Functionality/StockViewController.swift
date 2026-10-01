@@ -39,6 +39,9 @@ class StockViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        extendedLayoutIncludesOpaqueBars = true
+        edgesForExtendedLayout = .all
+
         tableView?.isHidden = true
         embedSwiftUIView()
 
@@ -49,7 +52,12 @@ class StockViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Refresh data when the view appears
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: animated)
     }
     
     override func viewDidDisappear(_ animated: Bool) {
