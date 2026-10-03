@@ -26,7 +26,7 @@ class ItemProfileTableViewController: UITableViewController {
     var stockHistory: [StockHistoryEntry] = []
     
     enum RowType {
-        case name, quantity, unit, alternateUnitName, alternateUnitFactor, costPrice, sellingPrice, stockValue, barcode, hsn, gst, lowStock
+        case name, quantity, unit, alternateUnitName, alternateUnitFactor, costPrice, sellingPrice, stockValue, barcode, hsn, gst, lowStock, watchlist
     }
     
     var visibleRows: [RowType] {
@@ -40,6 +40,7 @@ class ItemProfileTableViewController: UITableViewController {
         if isGST {
             rows.append(contentsOf: [.hsn, .gst])
         }
+        rows.append(.watchlist)
         return rows
     }
 
@@ -180,6 +181,8 @@ class ItemProfileTableViewController: UITableViewController {
                        forCellReuseIdentifier: "LabelTextFieldTableViewCell")
         tableView.register(UINib(nibName: "LabelDatePickerTableViewCell", bundle: nil),
                        forCellReuseIdentifier: "LabelDatePickerTableViewCell")
+        tableView.register(UINib(nibName: "LabelSwitchTableViewCell", bundle: nil),
+                       forCellReuseIdentifier: "LabelSwitchTableViewCell")
         tableView.sectionHeaderHeight = UITableView.automaticDimension
         tableView.estimatedSectionHeaderHeight = 50
         loadStockHistory()
@@ -598,6 +601,14 @@ class ItemProfileTableViewController: UITableViewController {
                         cell.textField.keyboardType = .decimalPad
                         cell.onTextChanged = { [weak self] text in
                             self?.item?.gstRate = Double(text)
+                        }
+                        return cell
+                    case .watchlist:
+                        // Watchlist toggle. Persisted by `saveButtonTapped`, which writes the
+                        // whole `Item` back through `updateItem` like every other field here.
+                        let cell = tableView.dequeueReusableCell(withIdentifier: "LabelSwitchTableViewCell", for: indexPath) as! LabelSwitchTableViewCell
+                        cell.configure(title: "Watchlist", isOn: item?.isWatchlisted ?? false) { [weak self] isOn in
+                            self?.item?.isWatchlisted = isOn
                         }
                         return cell
                 }

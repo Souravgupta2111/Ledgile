@@ -31,6 +31,9 @@ struct Item: Identifiable, Codable, Equatable {
     var gstRate: Double? = nil    
     var cessRate: Double? = nil     
 
+    /// When true this item is on the watchlist and is tracked for sales performance.
+    var isWatchlisted: Bool = false
+
     var effectiveSalesTier: Int { salesTier ?? 2 }
     var effectiveSalesCount: Int { Int((salesCount ?? 0).rounded()) }
 
