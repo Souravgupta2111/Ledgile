@@ -938,6 +938,24 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         return rows
     }
 
+    /// Resets a freshly dequeued `LabelTextFieldTableViewCell` so state left over from a
+    /// previous row type (most importantly the Unit row's editing handlers) cannot leak into
+    /// the row being configured.
+    ///
+    /// Only targets owned by this view controller are removed — the cell's own
+    /// `#selector(textChanged)` target is registered by the cell itself and must survive,
+    /// otherwise every `onTextChanged` binding silently stops firing.
+    private func resetDetailTextField(_ cell: LabelTextFieldTableViewCell) {
+        cell.textField.removeTarget(self, action: nil, for: .allEvents)
+        cell.textField.rightView = nil
+        cell.textField.rightViewMode = .never
+        cell.textField.keyboardType = .default
+        cell.textField.isUserInteractionEnabled = true
+        cell.textField.tag = 0
+        cell.onTextChanged = nil
+        cell.accessoryType = .none
+    }
+
     private func buildDetailCell(for entryIndex: Int, detailRow: Int, at indexPath: IndexPath) -> UITableViewCell {
         let entry = entries[entryIndex]
         let rowTypes = detailRowTypes(for: entryIndex)
@@ -949,6 +967,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .itemName:
             // Item Name
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            resetDetailTextField(cell)
             cell.titleLabel.text = "  Item"
             cell.titleLabel.textColor = .systemRed
             cell.textField.placeholder = "Add Item"
@@ -965,6 +984,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .unit:
             // Unit
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            resetDetailTextField(cell)
             cell.titleLabel.text = "  Unit"
             cell.titleLabel.textColor = .systemRed
             cell.textField.placeholder = "pcs, kg, etc."
@@ -981,6 +1001,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .quantity:
             // Quantity
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            resetDetailTextField(cell)
             cell.titleLabel.text = "  Quantity"
             cell.titleLabel.textColor = .systemRed
             cell.textField.placeholder = "0"
@@ -996,6 +1017,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .costPrice:
             // Cost Price
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            resetDetailTextField(cell)
             cell.titleLabel.text = "  Cost Price"
             cell.titleLabel.textColor = .systemRed
             cell.textField.placeholder = "₹ 0.00"
@@ -1011,6 +1033,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .sellingPrice:
             // Selling Price
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            resetDetailTextField(cell)
             cell.titleLabel.text = "  Selling Price"
             cell.textField.placeholder = "₹ 0.00"
             cell.textField.keyboardType = .decimalPad
@@ -1026,6 +1049,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             // HSN / SAC Code
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
             let isService = false
+            resetDetailTextField(cell)
             cell.titleLabel.text = isService ? "  SAC Code" : "  HSN Code"
             cell.textField.placeholder = isService ? "e.g. 9983" : "e.g. 1006"
             cell.textField.keyboardType = .numberPad
@@ -1067,8 +1091,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             return cell
 
         case .lowStock:
-            // Low Stock Alert
+            // Low Stock Alert — plain numeric threshold, so no item/unit suggestion handlers
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            resetDetailTextField(cell)
             cell.titleLabel.text = "  Low Stock Alert"
             cell.textField.placeholder = "Enter count"
             cell.textField.keyboardType = .numberPad
@@ -1111,6 +1136,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         case .barcode:
             // Barcode
             let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
+            resetDetailTextField(cell)
             cell.titleLabel.text = "  Barcode"
             cell.textField.placeholder = "Scan or enter..."
             cell.textField.text = entry.barcode ?? ""

@@ -23,6 +23,8 @@ final class LabelSwitchTableViewCell: UITableViewCell {
         titleLabel.text = title
         switchControl.isOn = isOn
         self.onToggleChanged = onToggleChanged
+        backgroundColor = .cell
+        contentView.backgroundColor = .cell
     }
 
     @objc private func toggleChanged(_ sender: UISwitch) {
