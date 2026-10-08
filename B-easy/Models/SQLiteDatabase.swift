@@ -47,6 +47,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         migrateProfileGSTINColumns()
         migrateCreditTransactionIDs()
         migrateUPICollectionColumns()
+        migrateWatchlistColumns()
         _ = exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_invoice ON transactions(invoice_number)")
         capitalizeExistingItemNames()
     }
@@ -123,6 +124,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         migrateProfileGSTINColumns()
         migrateCreditTransactionIDs()
         migrateUPICollectionColumns()
+        migrateWatchlistColumns()
     }
 
 
@@ -148,7 +150,8 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
             cess_rate REAL,
             alternate_unit_name TEXT,
             alternate_unit_factor REAL,
-            item_type TEXT DEFAULT 'goods'
+            item_type TEXT DEFAULT 'goods',
+            is_watchlisted INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS item_batches (
@@ -445,6 +448,10 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
     private func migrateUPICollectionColumns() {
         addColumnIfNeeded("app_settings", "upi_vpa", "TEXT")
         addColumnIfNeeded("app_settings", "upi_qr_image_data", "BLOB")
+    }
+
+    private func migrateWatchlistColumns() {
+        addColumnIfNeeded("items", "is_watchlisted", "INTEGER NOT NULL DEFAULT 0")
     }
 
 
@@ -875,7 +882,8 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
             alternateUnitFactor:    readOptDouble(s, 18),
             hsnCode:                readOptString(s, 14),
             gstRate:                readOptDouble(s, 15),
-            cessRate:               readOptDouble(s, 16)
+            cessRate:               readOptDouble(s, 16),
+            isWatchlisted:          sqlite3_column_count(s) > 20 ? readBool(s, 20) : false
         )
     }
 
@@ -1065,7 +1073,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
 
 
     func getItem(id: UUID) throws -> Item? {
-        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type FROM items WHERE id=?"
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type,is_watchlisted FROM items WHERE id=?"
         guard let stmt = prepare(sql) else { return nil }
         defer { sqlite3_finalize(stmt) }
         bindUUID(stmt, 1, id)
@@ -1073,7 +1081,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
     }
 
     func getAllItems() throws -> [Item] {
-        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type FROM items WHERE is_active = 1"
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type,is_watchlisted FROM items WHERE is_active = 1"
         guard let stmt = prepare(sql) else { return [] }
         defer { sqlite3_finalize(stmt) }
         var result: [Item] = []
@@ -1082,7 +1090,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
     }
 
     func getAllItemsIncludingInactive() throws -> [Item] {
-        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type FROM items"
+        let sql = "SELECT id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type,is_watchlisted FROM items"
         guard let stmt = prepare(sql) else { return [] }
         defer { sqlite3_finalize(stmt) }
         var result: [Item] = []
@@ -1091,7 +1099,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
     }
 
     func insertItem(_ item: Item) throws {
-        let sql = "INSERT INTO items (id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        let sql = "INSERT INTO items (id,name,unit,barcode,default_cost_price,default_selling_price,default_price_updated_at,low_stock_threshold,current_stock,created_date,last_restock_date,is_active,sales_count,sales_tier,hsn_code,gst_rate,cess_rate,alternate_unit_name,alternate_unit_factor,item_type,is_watchlisted) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         guard let stmt = prepare(sql) else {
             throw NSError(domain: "SQLiteDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare INSERT for items table. Column migration may have failed."])
         }
@@ -1116,11 +1124,12 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindOptText(stmt, 18, item.alternateUnitName)
         bindOptDouble(stmt, 19, item.alternateUnitFactor)
         bindText(stmt, 20, "goods")
+        bindBool(stmt, 21, item.isWatchlisted)
         sqlite3_step(stmt)
     }
 
     func updateItem(_ item: Item) throws {
-        let sql = "UPDATE items SET name=?,unit=?,barcode=?,default_cost_price=?,default_selling_price=?,default_price_updated_at=?,low_stock_threshold=?,current_stock=?,last_restock_date=?,is_active=?,sales_count=?,sales_tier=?,hsn_code=?,gst_rate=?,cess_rate=?,alternate_unit_name=?,alternate_unit_factor=?,item_type=? WHERE id=?"
+        let sql = "UPDATE items SET name=?,unit=?,barcode=?,default_cost_price=?,default_selling_price=?,default_price_updated_at=?,low_stock_threshold=?,current_stock=?,last_restock_date=?,is_active=?,sales_count=?,sales_tier=?,hsn_code=?,gst_rate=?,cess_rate=?,alternate_unit_name=?,alternate_unit_factor=?,item_type=?,is_watchlisted=? WHERE id=?"
         guard let stmt = prepare(sql) else {
             throw NSError(domain: "SQLiteDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare UPDATE for items table. Column migration may have failed."])
         }
@@ -1143,7 +1152,8 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindOptText(stmt, 16, item.alternateUnitName)
         bindOptDouble(stmt, 17, item.alternateUnitFactor)
         bindText(stmt, 18, "goods")
-        bindUUID(stmt, 19, item.id)
+        bindBool(stmt, 19, item.isWatchlisted)
+        bindUUID(stmt, 20, item.id)
         sqlite3_step(stmt)
     }
 
@@ -1800,6 +1810,9 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         if sqlite3_open(dbPath, &db) == SQLITE_OK {
             exec("PRAGMA journal_mode=WAL")
             exec("PRAGMA foreign_keys=ON")
+            // A restored backup may predate newer columns, so re-run the additive
+            // migrations before any read/write touches those tables.
+            migrateWatchlistColumns()
         }
     }
 
