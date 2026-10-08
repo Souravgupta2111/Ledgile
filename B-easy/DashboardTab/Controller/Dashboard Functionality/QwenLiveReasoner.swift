@@ -60,7 +60,7 @@ final class QwenLiveReasoner {
             }
         }
         LiveLog.qwen("reply (\(text.count) chars): '\(text.prefix(160))'")
-        let clean = LiveRomanFilter.toRoman(text)
+        let clean = LiveRomanFilter.stripSignOffs(LiveRomanFilter.toRoman(text))
 
         // SQL tool line?
         let trimmed = clean.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -81,13 +81,13 @@ final class QwenLiveReasoner {
 
     static func systemPrompt(shopPack: String) -> String {
         """
-        You are B-easy shop assistant. The shopkeeper speaks Hinglish in Roman script.
+        You are B-easy shop assistant for the shop owner. You speak natural, friendly, conversational Hinglish (or English if spoken to in English) in Roman script.
         RULES (strict):
-        - Reply ONLY in Roman script (Hinglish/English). NEVER use Devanagari.
-        - If user speaks Hindi -> reply Hindi in Roman. English -> English. Hinglish -> Hinglish Roman.
-        - You read the phone ledger. If you need numbers, reply ONE line: SQL: SELECT ... (read-only, tables: transactions, transaction_items, items, daily_summaries, customers, suppliers, customer_payments, supplier_payments).
-        - Else reply directly, short (1-3 lines), then ONE follow-up question.
-        - Never invent numbers. If data missing say: data nahi mila, Stock tab dekho.
+        - NEVER say "Thanks for using <shop name>", "Thank you for choosing...", "Welcome to <shop>", or any robotic sign-offs or customer pleasantries.
+        - Answer directly from the SHOP SNAPSHOT below whenever possible (today's sales, all-time sales, profit, stock, udhaar/credit). Those numbers are already live and calculated for you! Do NOT use SQL if the number is in the snapshot.
+        - Only if the user asks for a specific item, custom date range, or list not in snapshot, reply ONE line: SQL: SELECT ... (read-only SQLite. Key schemas: transactions(type, total_amount, date, customer_name), transaction_items(item_name, quantity, total_price), items(name, current_stock, default_selling_price), customers(name, balance), suppliers(name, balance)). Note: money column in transactions is total_amount (NOT amount).
+        - Speak like a sharp human assistant: warm, confident, and crisp (1-2 lines). say 'Abhi tak koi sale record nahi hui hai' or 'Total sale 5,000 rupaye hai'.
+        - Reply ONLY in Roman script. NEVER use Devanagari.
         SHOP SNAPSHOT:
         \(shopPack.prefix(3500))
         """
@@ -205,5 +205,19 @@ enum LiveRomanFilter {
             out.append(w)
         }
         return out.joined(separator: " ")
+    }
+
+    /// Strips unwanted polite chatbot signoffs like "Thanks for using X", "Thank you for choosing Y", etc.
+    static func stripSignOffs(_ text: String) -> String {
+        var clean = text
+        let patterns = [
+            #"(?i)\b(thanks|thank you)\s+for\s+(using|visiting|choosing|shopping at|shopping with)\s+[^.!?]+[.!?]?"#,
+            #"(?i)\b(thanks|thank you)\s+for\s+(reaching out|contacting us)[.!?]?"#,
+            #"(?i)\bhave a (great|nice|wonderful|good)\s+day\s*(!|\.)?"#
+        ]
+        for pattern in patterns {
+            clean = clean.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+        return clean.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

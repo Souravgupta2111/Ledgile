@@ -1132,6 +1132,11 @@ nonisolated final class DataModel: @unchecked Sendable {
                            .reduce(0) { $0 + $1.totalAmount }
     }
 
+    func getAllTimeRevenue() -> Double {
+        guard let transactions = try? db.getTransactions() else { return 0 }
+        return transactions.filter { $0.type == .sale }.reduce(0) { $0 + $1.totalAmount }
+    }
+
     // Backward-compatible thin wrappers
     func getTodayRevenue() -> Double { getTodayStats().revenue }
     func getTodayProfit() -> Double { getTodayStats().profit }

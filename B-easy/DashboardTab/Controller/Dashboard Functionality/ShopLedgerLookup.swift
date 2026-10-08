@@ -38,6 +38,7 @@ nonisolated enum ShopLedgerLookup {
         lines.append("todayPurchases=\(money(today.purchaseTotal))")
         lines.append("todaySaleCount=\(today.saleCount)")
         lines.append("fyRevenue=\(money(dm.getFinancialYearRevenue()))")
+        lines.append("allTimeSales=\(money(dm.getAllTimeRevenue()))")
         lines.append("fyPurchases=\(money(dm.getFinancialYearInvestment()))")
         lines.append("stockValue=\(money(dm.getTotalInvestment()))")
         lines.append("receivable=\(money(CreditStore.shared.getTotalReceivable()))")

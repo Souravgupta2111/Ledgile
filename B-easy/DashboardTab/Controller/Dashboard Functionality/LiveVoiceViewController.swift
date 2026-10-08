@@ -1,17 +1,5 @@
 import UIKit
 
-/// Capsule label with built-in horizontal and vertical padding to prevent text clipping.
-private final class PaddedPillLabel: UILabel {
-    var insets = UIEdgeInsets(top: 4, left: 14, bottom: 4, right: 14)
-    override func drawText(in rect: CGRect) {
-        super.drawText(in: rect.inset(by: insets))
-    }
-    override var intrinsicContentSize: CGSize {
-        let s = super.intrinsicContentSize
-        return CGSize(width: s.width + insets.left + insets.right,
-                      height: max(28, s.height + insets.top + insets.bottom))
-    }
-}
 
 /// Full-screen voice conversation (ChatGPT-voice style, app theme).
 /// Center orb + ONE status word only — no transcript here.
@@ -29,7 +17,6 @@ final class LiveVoiceViewController: UIViewController {
     private let orb = LiveOrbView()
     private let statusLabel = UILabel()
     private let closeButton = UIButton(type: .system)
-    private let livePill = PaddedPillLabel()
     private let bottomBar = UIView()
     private let askField = UITextField()
     private let muteButton = UIButton(type: .system)
@@ -40,6 +27,7 @@ final class LiveVoiceViewController: UIViewController {
     private var speaker: SarvamBulbulSpeaker?
     private var isMuted = false
     private var isClosing = false
+    private var currentTurnTask: Task<Void, Never>?
 
     init(shopPack: String) {
         self.shopPack = shopPack
@@ -71,15 +59,6 @@ final class LiveVoiceViewController: UIViewController {
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
 
-        // Top-right Live pill.
-        livePill.translatesAutoresizingMaskIntoConstraints = false
-        livePill.text = "●  Live"
-        livePill.font = .preferredFont(forTextStyle: .subheadline)
-        livePill.textColor = .white
-        livePill.textAlignment = .center
-        livePill.backgroundColor = UIColor(named: "Lime Moss") ?? .systemGreen
-        livePill.layer.cornerRadius = 14
-        livePill.clipsToBounds = true
 
         orb.translatesAutoresizingMaskIntoConstraints = false
 
@@ -125,7 +104,6 @@ final class LiveVoiceViewController: UIViewController {
         endButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
 
         view.addSubview(closeButton)
-        view.addSubview(livePill)
         view.addSubview(orb)
         view.addSubview(statusLabel)
         view.addSubview(bottomBar)
@@ -139,17 +117,11 @@ final class LiveVoiceViewController: UIViewController {
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
 
-            livePill.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            livePill.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            livePill.leadingAnchor.constraint(greaterThanOrEqualTo: closeButton.trailingAnchor, constant: 12),
-            livePill.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
 
             orb.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            orb.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40),
             orb.widthAnchor.constraint(equalToConstant: 220),
             orb.heightAnchor.constraint(equalToConstant: 220),
 
-            statusLabel.topAnchor.constraint(equalTo: orb.bottomAnchor, constant: 24),
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
             statusLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomBar.topAnchor, constant: -12),
@@ -176,8 +148,17 @@ final class LiveVoiceViewController: UIViewController {
             endButton.heightAnchor.constraint(equalToConstant: 48)
         ])
 
+        let orbCenter = orb.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40)
+        orbCenter.priority = UILayoutPriority(750)
+        orbCenter.isActive = true
+
+        let statusTop = statusLabel.topAnchor.constraint(equalTo: orb.bottomAnchor, constant: 24)
+        statusTop.priority = UILayoutPriority(750)
+        statusTop.isActive = true
+
         startLoop()
         HotwordListener.shared.pause()
+        LiveLog.ui("═══ LiveVoiceViewController viewDidLoad complete ═══")
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -194,26 +175,34 @@ final class LiveVoiceViewController: UIViewController {
     // MARK: - loop
 
     private func startLoop() {
+        LiveLog.ui("═══ startLoop() ═══")
         reasoner = QwenLiveReasoner()
         reasoner?.reset()
-        if engine == nil { engine = LiveAssistantEngine() }
+        if engine == nil {
+            engine = LiveAssistantEngine()
+            LiveLog.ui("[DIAG] created new LiveAssistantEngine")
+        }
         if speaker == nil {
             speaker = SarvamBulbulSpeaker()
+            LiveLog.ui("[DIAG] created new SarvamBulbulSpeaker")
             speaker?.onLevel = { [weak self] lvl in
                 guard let self else { return }
                 self.orb.level = lvl
             }
             speaker?.onDone = { [weak self] in
-                guard let self, !self.isClosing, !self.isMuted else { return }
+                guard let self, !self.isClosing, !self.isMuted else {
+                    LiveLog.ui("[DIAG] speaker.onDone fired but isClosing=\(self?.isClosing ?? true) isMuted=\(self?.isMuted ?? true) — not re-listening")
+                    return
+                }
+                LiveLog.ui("[DIAG] speaker.onDone — TTS finished, switching back to Listening")
                 self.setStatus(mode: .listening, text: "Listening...")
                 self.engine?.monitorForBargeIn(false)
                 self.engine?.listenAgain()
             }
             speaker?.onError = { [weak self] msg in
                 guard let self, !self.isClosing else { return }
-                LiveLog.ui("TTS error surfaced: \(msg)")
+                LiveLog.ui("❌ TTS error surfaced: \(msg)")
                 self.setStatus(mode: .listening, text: "Voice unavailable — listening...")
-                // Auto-clear after 2s so it doesn't stick.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                     guard let self, !self.isClosing, self.statusLabel.text == "Voice unavailable — listening..." else { return }
                     self.setStatus(mode: .listening, text: "Listening...")
@@ -224,27 +213,44 @@ final class LiveVoiceViewController: UIViewController {
             guard let self, !self.isClosing, self.orb.mode == .listening else { return }
             self.orb.level = lvl
         }
-        engine?.onStatus = { [weak self] _, text in
+        engine?.onStatus = { [weak self] status, text in
             guard let self, !self.isClosing else { return }
+            LiveLog.ui("[DIAG] engine.onStatus: status=\(status) text='\(text)'")
             self.setStatus(mode: .listening, text: text)
         }
         engine?.onMicHint = { [weak self] hint in
             guard let self, !self.isClosing else { return }
-            LiveLog.ui("mic hint (console only): \(hint)")
+            LiveLog.ui("⚠️ mic hint: \(hint)")
+        }
+        engine?.onSpeechStarted = { [weak self] in
+            guard let self, !self.isClosing else { return }
+            // If the user starts speaking while assistant is thinking or speaking,
+            // immediately yield to the user, cancel pending AI generation, and listen!
+            if self.orb.mode == .thinking || self.orb.mode == .speaking {
+                LiveLog.ui("🗣️ [DIAG] User spoke during \(self.orb.mode) -> cancelling pending turn and listening")
+                self.currentTurnTask?.cancel()
+                self.currentTurnTask = nil
+                self.speaker?.stop()
+                self.engine?.monitorForBargeIn(false)
+                self.setStatus(mode: .listening, text: "Listening...")
+            }
         }
         engine?.onFinal = { [weak self] roman in
             guard let self, !self.isClosing else { return }
-            LiveLog.ui("turn heard: '\(roman.prefix(120))'")
+            LiveLog.ui("═══ onFinal: '\(roman.prefix(120))' ═══")
             self.handleTurn(roman)
         }
         engine?.onBargeIn = { [weak self] in
             guard let self, !self.isClosing else { return }
+            LiveLog.ui("[DIAG] barge-in detected — stopping speaker, capturing spoken interruption")
+            self.currentTurnTask?.cancel()
+            self.currentTurnTask = nil
             self.speaker?.stop()
             self.engine?.monitorForBargeIn(false)
             self.setStatus(mode: .listening, text: "Listening...")
-            self.engine?.listenAgain()
         }
         setStatus(mode: .listening, text: "Listening...")
+        LiveLog.ui("[DIAG] calling engine.start()")
         engine?.start()
     }
 
@@ -255,31 +261,50 @@ final class LiveVoiceViewController: UIViewController {
 
     private func handleTurn(_ roman: String) {
         setStatus(mode: .thinking, text: "Thinking...")
-        LiveLog.ui("handleTurn start — asking Qwen")
-        Task { @MainActor in
+        LiveLog.ui("═══ handleTurn start ═══")
+        LiveLog.ui("[DIAG] user text: '\(roman)'")
+        LiveLog.ui("[DIAG] reasoner=\(reasoner != nil ? "exists" : "NIL") speaker=\(speaker != nil ? "exists" : "NIL")")
+
+        currentTurnTask?.cancel()
+        currentTurnTask = Task { @MainActor in
             do {
-                guard let reasoner = self.reasoner, !self.isClosing else { return }
+                guard !Task.isCancelled else { return }
+                guard let reasoner = self.reasoner, !self.isClosing else {
+                    LiveLog.ui("⚠️ [DIAG] handleTurn bailed: reasoner=\(self.reasoner != nil) isClosing=\(self.isClosing)")
+                    return
+                }
+                LiveLog.ui("[DIAG] calling Qwen ask()...")
                 let (answer, sql) = try await reasoner.ask(userText: roman, shopPack: self.shopPack)
-                LiveLog.ui("Qwen answered (\(answer.count) chars)" + (sql != nil ? " + wants SQL" : ""))
+                guard !Task.isCancelled else { return }
+                LiveLog.ui("[DIAG] Qwen returned: answer=\(answer.count) chars, sql=\(sql != nil ? "'\(sql!.prefix(100))'" : "nil")")
                 var final = answer
                 if let sql, !sql.isEmpty {
-                    LiveLog.ui("running shop SQL: \(sql.prefix(160))")
+                    LiveLog.ui("[DIAG] running shop SQL: \(sql.prefix(160))")
                     let result = Self.runShopSQL(sql)
-                    LiveLog.ui("SQL result (\(result.count) chars) — asking Qwen for final")
+                    guard !Task.isCancelled else { return }
+                    LiveLog.ui("[DIAG] SQL result (\(result.count) chars): '\(result.prefix(200))'")
+                    LiveLog.ui("[DIAG] asking Qwen for final answer with SQL result...")
                     final = try await reasoner.answerWithSQLResult(result, shopPack: self.shopPack)
+                    LiveLog.ui("[DIAG] Qwen final answer: \(final.count) chars")
                 }
-                let clean = LiveRomanFilter.toRoman(final)
+                guard !Task.isCancelled else { return }
+                let clean = LiveRomanFilter.stripSignOffs(LiveRomanFilter.toRoman(final))
                 let show = clean.isEmpty ? "No data found." : clean
-                guard !self.isClosing else { return }
+                guard !self.isClosing, !Task.isCancelled else { return }
                 self.history.append((user: roman, assistant: show))
-                self.updatePill()
-                LiveLog.ui("turn #\(self.history.count) done — speaking (\(show.count) chars)")
+                LiveLog.ui("✅ turn #\(self.history.count) done — speaking (\(show.count) chars): '\(show.prefix(200))'")
                 self.setStatus(mode: .speaking, text: "Speaking...")
                 self.engine?.monitorForBargeIn(true)
+                LiveLog.ui("[DIAG] calling speaker.speak()...")
                 self.speaker?.speak(show)
             } catch {
+                guard !Task.isCancelled else {
+                    LiveLog.ui("[DIAG] turn cancelled by user interruption")
+                    return
+                }
                 let msg = (error as NSError).localizedDescription
-                LiveLog.ui("turn FAILED: \(msg)")
+                LiveLog.ui("❌ turn FAILED: \(msg)")
+                LiveLog.ui("[DIAG] error domain=\((error as NSError).domain) code=\((error as NSError).code)")
                 guard !self.isClosing else { return }
                 self.history.append((user: roman, assistant: msg))
                 self.setStatus(mode: .listening, text: "Listening...")
@@ -288,9 +313,6 @@ final class LiveVoiceViewController: UIViewController {
         }
     }
 
-    private func updatePill() {
-        livePill.text = history.isEmpty ? "●  Live" : "●  Live · \(history.count)"
-    }
 
     static func runShopSQL(_ sql: String) -> String {
         do {
@@ -306,6 +328,8 @@ final class LiveVoiceViewController: UIViewController {
     }
 
     private func teardown() {
+        currentTurnTask?.cancel()
+        currentTurnTask = nil
         engine?.stop()
         speaker?.stop()
     }

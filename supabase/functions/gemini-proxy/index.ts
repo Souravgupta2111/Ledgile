@@ -360,7 +360,7 @@ async function sarvamBulbulTTS(body: {
   const audios = parsed.audios as Array<string> | undefined;
   const audioBase64 = (audios && audios[0]) ?? (parsed.audio as string | undefined) ?? "";
   if (!audioBase64) throw new Error("Sarvam TTS returned empty audio");
-  return { audioBase64, format: "wav", speaker, language: target_language_code };
+  return { audioBase64, format: "wav", speaker, language: language_code };
 }
 
 async function openRouterVision(body: {

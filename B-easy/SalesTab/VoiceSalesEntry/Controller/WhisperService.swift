@@ -80,7 +80,7 @@ final class WhisperService {
         let rawMaxAmp = audioFrames.map { abs($0) }.max() ?? 0
         // Balanced dynamic threshold: sensitive enough to capture soft consonants,
         // while trimming dead silence with generous padding to prevent clipped words.
-        let dynamicThreshold = max(0.012, min(0.035, rawMaxAmp * 0.10))
+        let dynamicThreshold = max(0.004, min(0.025, rawMaxAmp * 0.08))
         let trimmedFrames = Self.trimSilence(from: audioFrames, threshold: dynamicThreshold, windowSize: 3200) 
         
         let durationSecs = Double(trimmedFrames.count) / 16000.0
@@ -89,15 +89,14 @@ final class WhisperService {
         print("[WhisperService] ✂️ Dynamic Trim: rawMax=\(String(format: "%.4f", rawMaxAmp)), threshold=\(String(format: "%.4f", dynamicThreshold))")
         print("[WhisperService] 📊 After trim: frames=\(trimmedFrames.count) | duration=\(String(format: "%.2f", durationSecs))s | maxAmp=\(String(format: "%.4f", maxAmplitude)) | avgAmp=\(String(format: "%.4f", avgAmplitude))")
         
-     
-        if maxAmplitude < 0.015 { 
-            print("[WhisperService] ⏭️ Skipping — maxAmplitude \(maxAmplitude) < 0.015 (too quiet)")
+        if maxAmplitude < 0.004 { 
+            print("[WhisperService] ⏭️ Skipping — maxAmplitude \(maxAmplitude) < 0.004 (too quiet)")
             print("[WhisperService] ═══════════════════════════════════════\n")
             return nil
         }
         
-        if durationSecs < 0.3 {
-            print("[WhisperService] ⏭️ Skipping — duration \(String(format: "%.2f", durationSecs))s < 0.3s (too short)")
+        if durationSecs < 0.25 {
+            print("[WhisperService] ⏭️ Skipping — duration \(String(format: "%.2f", durationSecs))s < 0.25s (too short)")
             print("[WhisperService] ═══════════════════════════════════════\n")
             return nil
         }
@@ -123,12 +122,20 @@ final class WhisperService {
             print("[WhisperService] ═══════════════════════════════════════\n")
             return nil
         }
+
+        // Gain-boost soft speech so Whisper features clearly capture phonemes
+        var framesToTranscribe = trimmedFrames
+        if maxAmplitude > 0.004 && maxAmplitude < 0.25 {
+            let scale = min(3.5, 0.40 / maxAmplitude)
+            framesToTranscribe = trimmedFrames.map { $0 * scale }
+            print("[WhisperService] 🔊 Soft speech normalized: gain=\(String(format: "%.1f", scale))x")
+        }
         
         do {
             let inferenceStart = CFAbsoluteTimeGetCurrent()
-            print("[WhisperService] 🧠 Starting Whisper inference on \(trimmedFrames.count) frames...")
+            print("[WhisperService] 🧠 Starting Whisper inference on \(framesToTranscribe.count) frames...")
             
-            let segments = try await whisper.transcribe(audioFrames: trimmedFrames)
+            let segments = try await whisper.transcribe(audioFrames: framesToTranscribe)
             
             let inferenceTime = CFAbsoluteTimeGetCurrent() - inferenceStart
             let totalTime = CFAbsoluteTimeGetCurrent() - totalStart
