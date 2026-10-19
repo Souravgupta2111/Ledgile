@@ -101,6 +101,18 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         setupBackButton()
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // The suggestions dropdown is added to the window, so it outlives this
+        // screen. Tear it down, otherwise it is still floating over the sales
+        // list (or any other screen) after going back.
+        dismissSuggestions()
+    }
+
+    deinit {
+        suggestionsTableView.removeFromSuperview()
+    }
+
     private func setupBackButton() {
         self.navigationItem.hidesBackButton = true
         let newBackButton = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(backButtonTapped))

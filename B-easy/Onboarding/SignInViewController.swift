@@ -67,7 +67,7 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
         phoneField.placeholder = "Phone Number"
         phoneField.keyboardType = .numberPad
         phoneField.delegate = self
-        phoneField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
+        phoneField.addTarget(self, action: #selector(phoneFieldDidChange(_:)), for: .editingChanged)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
         tap.cancelsTouchesInView = false
@@ -83,8 +83,7 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
 
 
     private func isValidPhone(_ phone: String) -> Bool {
-        let digits = phone.filter { $0.isNumber }
-        return digits.count == 10
+        AuthNavigationHelper.isValidPhone(phone, countryCode: selectedCountryCode)
     }
 
     private func updateSendCodeState() {
@@ -98,7 +97,14 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
 
 
 
-    @objc private func textFieldDidChange() {
+    @objc private func phoneFieldDidChange(_ sender: UITextField) {
+        // A paste, dictation or autofill can put characters into the field
+        // without asking the delegate - strip everything that is not a digit.
+        let text = sender.text ?? ""
+        let cleaned = PhoneInput.sanitize(text)
+        if cleaned != text {
+            sender.text = cleaned
+        }
         updateSendCodeState()
     }
 
@@ -123,7 +129,7 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
         if !isValidPhone(phoneField.text ?? "") {
             let alert = UIAlertController(
                 title: "Invalid Input",
-                message: "• Enter a valid 10-digit phone number",
+                message: "• Enter a valid phone number for \(selectedCountryCode)",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "OK", style: .default))
@@ -132,7 +138,7 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
         }
 
         let phone = phoneField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let fullPhone = "\(selectedCountryCode)\(phone)"
+        let fullPhone = PhoneInput.normalize("\(selectedCountryCode)\(phone)")
 
 
         // If Supabase is configured, send OTP via AuthManager
@@ -239,13 +245,13 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
                    replacementString string: String) -> Bool {
 
         if textField == phoneField {
-            let allowed = CharacterSet.decimalDigits
+            let allowed = PhoneInput.allowedCharacters
             if !allowed.isSuperset(of: CharacterSet(charactersIn: string)) && !string.isEmpty {
                 return false
             }
             let current = textField.text ?? ""
             let newLen = current.count + string.count - range.length
-            return newLen <= 10
+            return newLen <= (selectedCountryCode == "+91" ? 10 : 15)
         }
         return true
     }

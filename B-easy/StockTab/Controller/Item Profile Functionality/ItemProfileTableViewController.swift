@@ -183,6 +183,7 @@ class ItemProfileTableViewController: UITableViewController {
                        forCellReuseIdentifier: "LabelDatePickerTableViewCell")
         tableView.register(UINib(nibName: "LabelSwitchTableViewCell", bundle: nil),
                        forCellReuseIdentifier: "LabelSwitchTableViewCell")
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "DeleteItemCell")
         tableView.sectionHeaderHeight = UITableView.automaticDimension
         tableView.estimatedSectionHeaderHeight = 50
         loadStockHistory()
@@ -322,7 +323,7 @@ class ItemProfileTableViewController: UITableViewController {
     }
     
     override func numberOfSections(in tableView: UITableView) -> Int {
-        return 3
+        return 4
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -333,6 +334,8 @@ class ItemProfileTableViewController: UITableViewController {
             return 2
         case 2:
             return stockHistory.count + 1
+        case 3:
+            return 1
         default:
             return 0
         }
@@ -681,10 +684,53 @@ class ItemProfileTableViewController: UITableViewController {
                         cell.fourthLabel.textColor = .gray
                     }
                     return cell
+            case 3:
+                    let cell = tableView.dequeueReusableCell(withIdentifier: "DeleteItemCell", for: indexPath)
+                    cell.textLabel?.text = "Delete Item"
+                    cell.textLabel?.textColor = .systemRed
+                    cell.textLabel?.textAlignment = .center
+                    cell.textLabel?.font = .systemFont(ofSize: 17, weight: .medium)
+                    cell.selectionStyle = .default
+                    cell.backgroundColor = .systemBackground
+                    return cell
         default:
             return UITableViewCell()
         }
     
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        guard indexPath.section == 3 else { return }
+        confirmDeleteItem()
+    }
+
+    // MARK: - Delete Item
+
+    private func confirmDeleteItem() {
+        guard let item, !item.name.isEmpty else { return }
+        let alert = UIAlertController(
+            title: "Delete \(item.name)?",
+            message: "The item is removed from the stock list. Past sales and purchases are kept.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
+            self?.deleteItem()
+        })
+        present(alert, animated: true)
+    }
+
+    private func deleteItem() {
+        guard let itemID = itemID else { return }
+        do {
+            try dm.db.deleteItem(id: itemID)
+            navigationController?.popViewController(animated: true)
+        } catch {
+            let alert = UIAlertController(title: "Could Not Delete Item", message: error.localizedDescription, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+        }
     }
 
     // MARK: - Barcode Scan

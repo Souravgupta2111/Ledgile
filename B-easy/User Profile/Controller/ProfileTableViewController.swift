@@ -586,9 +586,12 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
                 capitalization: .none
             ) { [weak self] text in
                 guard let self, var settings = self.appSettings else { return }
-                settings.businessPhone = text
+                // Only plain digits - the number is shown on the business card
+                // and pushed to the profile in the cloud.
+                let cleaned = PhoneInput.sanitize(text ?? "")
+                settings.businessPhone = cleaned.isEmpty ? nil : cleaned
                 try? self.dataModel.db.updateSettings(settings)
-                AuthManager.shared.updateUserProfile(name: nil, shopName: nil, phone: text)
+                AuthManager.shared.updateUserProfile(name: nil, shopName: nil, phone: cleaned.isEmpty ? nil : cleaned)
             }
         case .address:
             presentCardFieldEditor(

@@ -60,8 +60,12 @@ extension RecentTransactionViewController: UITableViewDataSource, UITableViewDel
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        cell.backgroundColor = .systemBackground
-        cell.contentView.backgroundColor = .systemBackground
+        // The row is a rounded white card on the grey table background. The cell
+        // and its content view have to stay transparent/grey - painting them
+        // white covers the rounded corners of the card with a full width
+        // rectangle and the row looks like a plain rectangle.
+        cell.backgroundColor = .clear
+        cell.contentView.backgroundColor = .systemGray6
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
