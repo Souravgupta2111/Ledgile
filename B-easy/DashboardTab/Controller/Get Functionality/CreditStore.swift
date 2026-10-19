@@ -159,7 +159,10 @@ nonisolated final class CreditStore: @unchecked Sendable {
 
     func addCreditSale(amount: Double, customerName: String?, phone: String? = nil, note: String? = nil, transactionID: UUID? = nil) {
         guard amount > 0 else { return }
-        let customer = ensureCustomer(named: customerName, defaultName: "Customer", phone: phone)
+        // A credit sale has to belong to a customer - without a name the money
+        // that is owed cannot be attributed to anybody.
+        guard let name = customerName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return }
+        let customer = ensureCustomer(named: name, defaultName: "Customer", phone: phone)
         let payment = Payment(
             id: UUID(),
             customerID: customer.id,
@@ -174,7 +177,10 @@ nonisolated final class CreditStore: @unchecked Sendable {
 
     func addCreditPurchase(amount: Double, supplierName: String?, note: String? = nil) {
         guard amount > 0 else { return }
-        let supplier = ensureSupplier(named: supplierName, defaultName: "Supplier")
+        // A credit purchase has to belong to a supplier - without a name the
+        // money that is owed cannot be attributed to anybody.
+        guard let name = supplierName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return }
+        let supplier = ensureSupplier(named: name, defaultName: "Supplier")
         let payment = SupplierPayment(
             id: UUID(),
             supplierID: supplier.id,

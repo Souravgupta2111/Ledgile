@@ -550,14 +550,15 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         if segue.identifier == "show_bill" {
             let details = makeBillingDetails()
             let billVC: BillTableViewController?
-            let detents: [UISheetPresentationController.Detent] = details.items.count <= 2 ? [.medium()] : [.medium(), .large()]
+            // A short bill does not need the bigger detent.
+            let allowsExpansion = details.items.count > 2
             if let nav = segue.destination as? UINavigationController {
                 billVC = nav.topViewController as? BillTableViewController
-                configureBillSheet(nav, detents: detents)
+                configureBillSheet(nav, allowsExpansion: allowsExpansion)
             } else {
                 billVC = segue.destination as? BillTableViewController
                 if let billVC {
-                    configureBillSheet(billVC, detents: detents)
+                    configureBillSheet(billVC, allowsExpansion: allowsExpansion)
                 }
             }
             billVC?.receiveBilling(details: details)

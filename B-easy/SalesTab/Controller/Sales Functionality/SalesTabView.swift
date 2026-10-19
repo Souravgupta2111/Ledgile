@@ -91,6 +91,11 @@ struct SalesTabView: View {
                 modalSheet(availableHeight: availableHeight)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            // The drag of the sheet is handled here and not on the handle: the
+            // handle moves while the sheet is resized, and a translation
+            // measured in the moving handle would feed the movement back into
+            // the gesture and make the sheet vibrate.
+            .simultaneousGesture(dragGesture(availableHeight: availableHeight))
         }
         .ignoresSafeArea(edges: .bottom)
         .onAppear {
@@ -261,7 +266,6 @@ struct SalesTabView: View {
                     toggleSheet()
                 }
                 .frame(maxWidth: .infinity)
-                .gesture(dragGesture(availableHeight: availableHeight))
 
             // Scrollable Sheet Content
             ScrollView(.vertical, showsIndicators: sheetState == .expanded) {
@@ -273,10 +277,18 @@ struct SalesTabView: View {
                 .padding(.bottom, 110)
             }
             .scrollDisabled(sheetState == .collapsed)
+            // The sheet is resized on every frame while it is dragged. A rubber
+            // banding scroll view fights with that and makes the sheet bounce.
+            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(height: currentHeight, alignment: .top)
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial)
+        // A live blur (ultraThinMaterial) has to be rendered again for every
+        // new size of the sheet. While the sheet is dragged that happens on
+        // every frame and the modal stutters and vibrates. The frosted look of
+        // the material is the background of the tab, so that colour is used
+        // directly - the cards and rows on top of it keep their boundaries.
+        .background(Color.screenBackground)
         .clipShape(
             UnevenRoundedRectangle(
                 topLeadingRadius: 28,
@@ -374,18 +386,30 @@ struct SalesTabView: View {
                 .padding(.bottom, Spacing.xxl)
             } else {
                 SectionCard {
-                    ForEach(viewModel.filteredTransactions, id: \.transaction.id) { entry in
-                        TransactionRow(transaction: entry.transaction,
-                                       itemsSummary: entry.itemsSummary) {
-                            actions.onTransactionTapped(entry.transaction)
-                        }
-                    }
+                    SalesTransactionList(
+                        transactions: viewModel.filteredTransactions,
+                        onSelect: { actions.onTransactionTapped($0) }
+                    )
+                    .equatable()
                 }
             }
         }
     }
 
     // MARK: - Sheet Drag & Snap Helpers
+
+    /// The height of the drag handle of the sheet.
+    private static let sheetHandleHeight: CGFloat = 27
+
+    /// True when the touch started on the drag handle of the sheet.
+    ///
+    /// The position is read in the coordinate space of the tab view, which
+    /// never moves - the handle does move, because the sheet is resized while
+    /// it is dragged.
+    private func isDragOnHandle(_ location: CGPoint, availableHeight: CGFloat) -> Bool {
+        let sheetTop = availableHeight - sheetState.height(availableHeight: availableHeight)
+        return location.y >= sheetTop && location.y <= sheetTop + Self.sheetHandleHeight
+    }
 
     private func currentSheetHeight(availableHeight: CGFloat) -> CGFloat {
         let base = sheetState.height(availableHeight: availableHeight)
@@ -395,12 +419,25 @@ struct SalesTabView: View {
         return max(minHeight, min(raw, maxHeight))
     }
 
+    /// The drag of the sheet.
+    ///
+    /// It is attached to the tab view and **not** to the handle: the handle
+    /// moves while the sheet is resized, and SwiftUI measures the translation
+    /// of a drag gesture in the coordinate space of the view the gesture is
+    /// attached to. The sheet would therefore grow a little more with every
+    /// frame, run away from the finger and vibrate violently. In the (still)
+    /// coordinate space of the tab view the translation is stable, so the
+    /// sheet follows the finger exactly.
     private func dragGesture(availableHeight: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
+                // A drag that did not start on the handle belongs to the
+                // content of the sheet (scrolling the list) - leave it alone.
+                guard isDragOnHandle(value.startLocation, availableHeight: availableHeight) else { return }
                 dragOffset = value.translation.height
             }
             .onEnded { value in
+                guard isDragOnHandle(value.startLocation, availableHeight: availableHeight) else { return }
                 let translation = value.translation.height
                 let velocity = value.predictedEndTranslation.height - translation
                 let projected = translation + velocity * 0.3
@@ -446,6 +483,37 @@ struct SalesTabView: View {
     /// Reload data (called by host VC on viewWillAppear).
     func reload() {
         viewModel.loadSalesData()
+    }
+}
+
+// MARK: - Transaction List
+
+/// The list of transactions inside the sheet.
+///
+/// It is `Equatable` and used with `.equatable()`. The sheet is resized on
+/// every frame of a drag, and without this SwiftUI builds every single row of
+/// the list again on every frame - that is what made the sheet stutter and
+/// vibrate while it was dragged.
+struct SalesTransactionList: View, Equatable {
+    let transactions: [(transaction: Transaction, itemsSummary: String)]
+    let onSelect: (Transaction) -> Void
+
+    static func == (lhs: SalesTransactionList, rhs: SalesTransactionList) -> Bool {
+        guard lhs.transactions.count == rhs.transactions.count else { return false }
+        for (left, right) in zip(lhs.transactions, rhs.transactions) {
+            if left.transaction.id != right.transaction.id { return false }
+            if left.itemsSummary != right.itemsSummary { return false }
+        }
+        return true
+    }
+
+    var body: some View {
+        ForEach(transactions, id: \.transaction.id) { entry in
+            TransactionRow(transaction: entry.transaction,
+                           itemsSummary: entry.itemsSummary) {
+                onSelect(entry.transaction)
+            }
+        }
     }
 }
 

@@ -66,19 +66,18 @@ extension UIViewController {
     ///
     /// `prefersScrollingExpandsWhenScrolledToEdge` is switched off on purpose:
     /// the bill is rendered inside a scrollable table view and, when that table
-    /// is allowed to drive the sheet, it competes with the grabber - the modal
-    /// then bounces up and down between the detents when the grabber is touched.
+    /// is allowed to drive the sheet, it competes with the grabber.
     func configureBillSheet(
         _ controller: UIViewController,
-        detents: [UISheetPresentationController.Detent] = [.medium(), .large()]
+        allowsExpansion: Bool = true
     ) {
         controller.modalPresentationStyle = .pageSheet
         guard let sheet = controller.sheetPresentationController else { return }
-        sheet.detents = detents
+        sheet.detents = allowsExpansion ? [.medium(), .large()] : [.medium()]
         sheet.prefersGrabberVisible = true
         sheet.preferredCornerRadius = 20
         sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-        sheet.selectedDetentIdentifier = detents.first?.identifier
+        sheet.selectedDetentIdentifier = sheet.detents.first?.identifier
     }
 
     /// Present a read-only bill sheet for a transaction.

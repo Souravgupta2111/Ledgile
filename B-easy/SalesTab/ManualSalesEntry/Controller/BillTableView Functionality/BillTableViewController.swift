@@ -33,6 +33,10 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.isScrollEnabled = false
+        // The bill is shorter than the sheet, so the table view would rubber
+        // band (bounce up and down) whenever it is dragged. The bill has to
+        // stay still - only the sheet itself may be dragged.
+        tableView.alwaysBounceVertical = false
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.separatorStyle = .none
         tableView.register(UINib(nibName: "BillLabelTableViewCell", bundle: nil),
@@ -341,6 +345,21 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         let db = dm.db
         let capturedDetails = details
 
+        // ── A credit sale has to belong to a customer ──
+        if capturedDetails.isCreditSale {
+            let name = capturedDetails.customerName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                let alert = UIAlertController(
+                    title: "Customer Required",
+                    message: "A credit sale needs a customer name so the amount can be recorded against them.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                present(alert, animated: true)
+                return
+            }
+        }
+
         setSaveInProgress(true)
 
         LedgerIO.run({
@@ -408,10 +427,12 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 let totalAmount = capturedDetails.items.reduce(0.0) { $0 + $1.totalRevenue } - capturedDetails.discount + capturedDetails.adjustment
                 guard totalAmount > 0 else { return }
                 let rawName = capturedDetails.customerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                let resolvedName = rawName.isEmpty ? "Customer" : rawName
+                // A credit sale without a customer name is not recorded - the
+                // money owed cannot be attributed to anybody.
+                guard !rawName.isEmpty else { return }
                 CreditStore.shared.addCreditSale(
                     amount: totalAmount,
-                    customerName: resolvedName,
+                    customerName: rawName,
                     phone: capturedDetails.customerPhone,
                     note: "Credit sale \(capturedDetails.invoiceNumber)",
                     transactionID: transactionID
@@ -531,11 +552,12 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         guard totalAmount > 0 else { return }
 
         let rawName = details.customerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedName = rawName.isEmpty ? "Customer" : rawName
+        // A credit sale without a customer name is not recorded.
+        guard !rawName.isEmpty else { return }
 
         CreditStore.shared.addCreditSale(
             amount: totalAmount,
-            customerName: resolvedName,
+            customerName: rawName,
             phone: details.customerPhone,
             note: "Credit sale \(details.invoiceNumber)",
             transactionID: transactionID
