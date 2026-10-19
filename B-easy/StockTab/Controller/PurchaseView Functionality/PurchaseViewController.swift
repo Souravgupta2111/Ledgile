@@ -111,11 +111,7 @@ extension PurchaseViewController: UITableViewDataSource, UITableViewDelegate {
             billVC.receiveBilling(details: details)
             
             let nav = UINavigationController(rootViewController: billVC)
-            nav.modalPresentationStyle = .pageSheet
-            if let sheet = nav.sheetPresentationController {
-                sheet.detents = [.medium(), .large()]
-                sheet.prefersGrabberVisible = true
-            }
+            configureBillSheet(nav)
             present(nav, animated: true)
         }
 }

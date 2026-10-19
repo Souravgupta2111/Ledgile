@@ -37,8 +37,16 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         AppDataModel.shared.dataModel.generateInvoiceNumber()
     }()
     
+    /// The lines that carry an item name. Empty rows that were added with
+    /// "Add new item" and never filled in are not part of the sale.
+    var billableItems: [TransactionItem] {
+        transactionItems.filter {
+            !$0.itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+    
     var subTotal: Double {
-        Money.round2(transactionItems.reduce(0) { $0 + $1.totalRevenue })
+        Money.round2(billableItems.reduce(0) { $0 + $1.totalRevenue })
     }
     var grandTotal: Double {
         Money.round2(subTotal - discountAmount + adjustmentAmount)
@@ -153,27 +161,36 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         suggestionsTableView.layer.masksToBounds = false
     }
 
+    /// Removes the floating suggestions dropdown from the window and clears the
+    /// data that backs it. The dropdown lives in the window (not in the view
+    /// hierarchy of this controller) so it has to be torn down explicitly,
+    /// otherwise it keeps swallowing taps meant for the table below it.
+    private func dismissSuggestions() {
+        suggestionsTableView.isHidden = true
+        suggestionsTableView.removeFromSuperview()
+        currentSuggestions = []
+        currentUnitSuggestions = []
+        isSuggestingUnits = false
+    }
+
     private func updateSuggestions(for query: String) {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+            dismissSuggestions()
             return
         }
 
         if inventoryCache.isEmpty {
             inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         }
-        currentSuggestions = InventoryMatcher.shared.getSuggestions(for: normalized, against: inventoryCache)
-        guard !currentSuggestions.isEmpty, let field = activeNameField else {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+        let matches = InventoryMatcher.shared.getSuggestions(for: normalized, against: inventoryCache)
+        guard !matches.isEmpty, let field = activeNameField, let window = view.window else {
+            dismissSuggestions()
             return
         }
+        currentSuggestions = matches
+        isSuggestingUnits = false
 
-
-        guard let window = view.window else { return }
-        
 
         let fieldRect = field.convert(field.bounds, to: window)
         
@@ -207,15 +224,19 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         window.bringSubviewToFront(suggestionsTableView)
     }
 
-    private func syncInventoryMatchForItem(at index: Int) {
-        guard index >= 0 && index < transactionItems.count else { return }
+    /// Matches the typed name against the inventory. Returns `true` when the
+    /// selling price of the line changed, so the caller can refresh the totals.
+    @discardableResult
+    private func syncInventoryMatchForItem(at index: Int) -> Bool {
+        guard index >= 0 && index < transactionItems.count else { return false }
         let old = transactionItems[index]
         let typedName = old.itemName.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !typedName.isEmpty else { return }
-        guard let matched = inventoryCache.first(where: { $0.name.caseInsensitiveCompare(typedName) == .orderedSame }) else { return }
+        guard !typedName.isEmpty else { return false }
+        guard let matched = inventoryCache.first(where: { $0.name.caseInsensitiveCompare(typedName) == .orderedSame }) else { return false }
 
         let resolvedPrice = ((old.sellingPricePerUnit ?? 0) > 0) ? old.sellingPricePerUnit : matched.defaultSellingPrice
+        let priceChanged = (old.sellingPricePerUnit ?? 0) != (resolvedPrice ?? 0)
         let updated = TransactionItem(
             id: old.id,
             transactionID: old.transactionID,
@@ -228,11 +249,14 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             createdDate: old.createdDate
         )
         transactionItems[index] = updated
+        return priceChanged
     }
+
 
 
     
     private func addNewItemByEntryMode() {
+        dismissSuggestions()
         switch entryMode {
         case .voice:
             if let sb = storyboard,
@@ -253,6 +277,10 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             scanVC.modalPresentationStyle = .fullScreen
             present(scanVC, animated: true)
         case .manual:
+            // End editing *before* reloading. If a text field is still the first
+            // responder, reloading the table tears its cell down in the middle of
+            // the update, and UIKit raises NSInternalInconsistencyException.
+            view.endEditing(true)
             transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: 0.0, costPricePerUnit: 0.0, createdDate: Date()))
             tableView.reloadData()
         }
@@ -382,6 +410,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             customerName = customer
         }
 
+        view.endEditing(true)
         tableView.reloadData()
         processNextFuzzyMatch()
     }
@@ -389,6 +418,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     // Explicit confirmation UI loop
     private func processNextFuzzyMatch() {
         guard !pendingFuzzyMatches.isEmpty else {
+            view.endEditing(true)
             tableView.reloadData()
             return
         }
@@ -508,23 +538,17 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         if segue.identifier == "show_bill" {
             let details = makeBillingDetails()
             let billVC: BillTableViewController?
+            let detents: [UISheetPresentationController.Detent] = details.items.count <= 2 ? [.medium()] : [.medium(), .large()]
             if let nav = segue.destination as? UINavigationController {
                 billVC = nav.topViewController as? BillTableViewController
-                nav.modalPresentationStyle = .pageSheet
+                configureBillSheet(nav, detents: detents)
             } else {
                 billVC = segue.destination as? BillTableViewController
-                billVC?.modalPresentationStyle = .pageSheet
+                if let billVC {
+                    configureBillSheet(billVC, detents: detents)
+                }
             }
             billVC?.receiveBilling(details: details)
-            if let sheet = billVC?.sheetPresentationController {
-                if details.items.count <= 2 {
-                    sheet.detents = [.medium()]
-                } else {
-                    sheet.detents = [.medium(), .large()]
-                }
-                sheet.prefersGrabberVisible = true
-                sheet.preferredCornerRadius = 20
-            }
                 billVC?.delegate = self
         }
         if segue.identifier == "selectCustomer",
@@ -545,7 +569,10 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         var isInterState = false
         var isCompositionScheme = false
         
-        var finalTxItems = transactionItems
+        // Lines without a name are empty rows that were added with "Add new
+        // item" and never filled in. They are left out of the bill so no empty
+        // item ends up on the invoice or in the stock list.
+        var finalTxItems = billableItems
         
         if let settings = try? AppDataModel.shared.dataModel.db.getSettings(),
            settings.isGSTRegistered, settings.gstScheme != "composition" {
@@ -629,22 +656,17 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
 
 extension SalesEntryTableViewController {
     
-    @objc private func itemEditingDidEnd(_ sender: UITextField) {
-        tableView.reloadSections(
-            IndexSet(integer: SalesSection.summary.rawValue),
-            with: .none
-        )
-    }
-
     @objc private func discountChanged(_ sender: UITextField) {
         discountAmount = Double(sender.text ?? "") ?? 0
-        let indexPath = IndexPath(row: 3, section: SalesSection.summary.rawValue)
+        // The summary section has 3 rows (Subtotal / Discount / Total); row 3
+        // does not exist and reloading it raises NSInternalInconsistencyException.
+        let indexPath = IndexPath(row: 2, section: SalesSection.summary.rawValue)
         tableView.reloadRows(at: [indexPath], with: .none)
     }
 
     @objc private func adjustmentChanged(_ sender: UITextField) {
         adjustmentAmount = Double(sender.text ?? "") ?? 0
-        let indexPath = IndexPath(row: 3, section: SalesSection.summary.rawValue)
+        let indexPath = IndexPath(row: 2, section: SalesSection.summary.rawValue)
         tableView.reloadRows(at: [indexPath], with: .none)
     }
 
@@ -668,12 +690,20 @@ extension SalesEntryTableViewController {
             createdDate: old.createdDate
         )
         transactionItems[index] = updated
-        syncInventoryMatchForItem(at: index)
+        let priceChanged = syncInventoryMatchForItem(at: index)
         if sender.isFirstResponder {
             activeNameField = sender
             updateSuggestions(for: sender.text ?? "")
         }
-        // Removed reloadRows call here per instructions
+        // The totals are refreshed here (and not on editingDidEnd) because
+        // editingDidEnd also fires while a cell is torn down inside a table
+        // update - reloading the table from there crashes the app.
+        if priceChanged {
+            tableView.reloadSections(
+                IndexSet(integer: SalesSection.summary.rawValue),
+                with: .none
+            )
+        }
     }
     
     @objc private func itemPriceChanged(_ sender: UITextField) {
@@ -782,8 +812,10 @@ extension SalesEntryTableViewController {
             let cell = tableView.dequeueReusableCell(withIdentifier: "InventorySuggestionCell", for: indexPath)
             var content = cell.defaultContentConfiguration()
             if isSuggestingUnits {
+                guard indexPath.row < currentUnitSuggestions.count else { return cell }
                 content.text = currentUnitSuggestions[indexPath.row]
             } else {
+                guard indexPath.row < currentSuggestions.count else { return cell }
                 content.text = currentSuggestions[indexPath.row].name
             }
             content.textProperties.font = .systemFont(ofSize: 13, weight: .regular)
@@ -813,6 +845,7 @@ extension SalesEntryTableViewController {
                 cell.textField.font = .systemFont(ofSize: 17)
                 cell.textField.textColor = UIColor(named: "Onyx") ?? .label
                 cell.textField.autocapitalizationType = .allCharacters
+                cell.textField.removeTarget(self, action: nil, for: .allEvents)
                 cell.textField.addTarget(self, action: #selector(buyerGSTINChanged(_:)), for: .editingChanged)
                 return cell
             } else {
@@ -829,12 +862,17 @@ extension SalesEntryTableViewController {
         case .items:
             if transactionItems.isEmpty || indexPath.row == transactionItems.count {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "AddNewItemTableViewCell", for: indexPath) as! AddNewItemTableViewCell
+                // The cell has its own button. Leaving the row selectable would
+                // make a single tap fire both the button action and
+                // tableView(_:didSelectRowAt:) and add the row twice.
+                cell.selectionStyle = .none
                 cell.onAddTapped = { [weak self] in
                     guard let self = self else { return }
                     self.addNewItemByEntryMode()
                 }
                 return cell
             }
+            guard indexPath.row < transactionItems.count else { return UITableViewCell() }
             let item = transactionItems[indexPath.row]
             let cell = tableView.dequeueReusableCell(withIdentifier: "EditSalesItemTableViewCell", for: indexPath) as! EditSalesItemTableViewCell
             cell.selectionStyle = .none
@@ -850,21 +888,27 @@ extension SalesEntryTableViewController {
                 cell.quantityLabel.tag = indexPath.row
                 cell.deleteButton.tag = indexPath.row
                 
+                // Cells are reused, so drop the targets of a previous
+                // configuration first - otherwise every handler is invoked once
+                // per configuration.
+                cell.nameLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.unitLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.priceLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.quantityLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.deleteButton.removeTarget(self, action: nil, for: .allEvents)
+
                 cell.nameLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
                 cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidBegin(_:)), for: .editingDidBegin)
                 cell.nameLabel.addTarget(self, action: #selector(itemNameChanged(_:)), for: .editingChanged)
                 cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidEnd(_:)), for: .editingDidEnd)
-                cell.nameLabel.addTarget(self, action: #selector(itemEditingDidEnd(_:)), for: .editingDidEnd)
                 cell.deleteButton.addTarget(self, action: #selector(deleteItemTapped(_:)), for: .touchUpInside)
                 cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidBegin(_:)), for: .editingDidBegin)
                 cell.unitLabel.addTarget(self, action: #selector(itemUnitChanged(_:)), for: .editingChanged)
                 cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidEnd(_:)), for: .editingDidEnd)
                 cell.priceLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
                 cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
-                cell.priceLabel.addTarget(self, action: #selector(itemEditingDidEnd(_:)), for: .editingDidEnd)
                 cell.quantityLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
                 cell.quantityLabel.addTarget(self, action: #selector(itemQuantityChanged(_:)), for: .editingChanged)
-                cell.quantityLabel.addTarget(self, action: #selector(itemEditingDidEnd(_:)), for: .editingDidEnd)
                 
                 cell.priceLabel.keyboardType = .decimalPad
                 cell.quantityLabel.keyboardType = .decimalPad
@@ -899,9 +943,9 @@ extension SalesEntryTableViewController {
                     cell.textField.keyboardType = .decimalPad
                     cell.textField.text = discountAmount > 0 ? String(format: "%.2f", discountAmount) : ""
                     cell.textField.placeholder = "0.00"
+                    cell.textField.removeTarget(self, action: nil, for: .allEvents)
                     cell.textField.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
                     cell.textField.addTarget(self, action: #selector(discountChanged(_:)), for: .editingChanged)
-                    cell.textField.addTarget(self, action: #selector(discountChanged(_:)), for: .editingDidEnd)
                     return cell
                 }
                 else {
@@ -1026,6 +1070,7 @@ extension SalesEntryTableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         if tableView == suggestionsTableView {
             if isSuggestingUnits {
+                guard indexPath.row < currentUnitSuggestions.count else { return }
                 let unit = currentUnitSuggestions[indexPath.row]
                 guard let field = activeUnitField else { return }
                 
@@ -1045,13 +1090,12 @@ extension SalesEntryTableViewController {
                 )
                 transactionItems[index] = updated
                 field.text = unit
-                suggestionsTableView.isHidden = true
-                suggestionsTableView.removeFromSuperview()
-                isSuggestingUnits = false
+                dismissSuggestions()
                 field.resignFirstResponder()
                 self.tableView.reloadSections(IndexSet([SalesSection.items.rawValue, SalesSection.summary.rawValue]), with: .none)
                 return
             } else {
+                guard indexPath.row < currentSuggestions.count else { return }
                 let item = currentSuggestions[indexPath.row]
                 guard let field = activeNameField else { return }
                 let index = field.tag
@@ -1071,8 +1115,7 @@ extension SalesEntryTableViewController {
                 )
                 transactionItems[index] = updated
                 field.text = item.name
-                suggestionsTableView.isHidden = true
-                suggestionsTableView.removeFromSuperview()
+                dismissSuggestions()
                 field.resignFirstResponder()
                 tableView.deselectRow(at: indexPath, animated: true)
                 self.tableView.reloadSections(IndexSet([SalesSection.items.rawValue, SalesSection.summary.rawValue]), with: .none)
@@ -1089,16 +1132,13 @@ extension SalesEntryTableViewController {
             }
         }
         
-        if SalesSection(rawValue: indexPath.section) == .items {
-            if transactionItems.isEmpty || indexPath.row == transactionItems.count {
-                addNewItemByEntryMode()
-            }
-        }
+        // The rows of the items section are not selectable: the "Add new item"
+        // cell carries its own button, and reacting to the row selection as
+        // well would add a line twice for a single tap.
     }
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView == tableView {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+            dismissSuggestions()
         }
     }
 
@@ -1182,6 +1222,7 @@ extension SalesEntryTableViewController {
 
     @objc private func itemNameEditingDidBegin(_ sender: UITextField) {
         isSuggestingUnits = false
+        activeUnitField = nil
         activeNameField = sender
         updateSuggestions(for: sender.text ?? "")
     }
@@ -1189,25 +1230,23 @@ extension SalesEntryTableViewController {
     @objc private func itemNameEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             if self?.activeNameField == sender {
-                self?.suggestionsTableView.isHidden = true
-                self?.suggestionsTableView.removeFromSuperview()
+                self?.dismissSuggestions()
             }
         }
     }
     
     @objc private func itemUnitEditingDidBegin(_ sender: UITextField) {
         sender.selectAll(nil)
-        activeUnitField = sender
         isSuggestingUnits = true
+        activeNameField = nil
+        activeUnitField = sender
         updateUnitSuggestions(for: sender.text ?? "")
     }
 
     @objc private func itemUnitEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             if self?.activeUnitField == sender {
-                self?.suggestionsTableView.isHidden = true
-                self?.suggestionsTableView.removeFromSuperview()
-                self?.isSuggestingUnits = false
+                self?.dismissSuggestions()
             }
         }
     }
@@ -1222,13 +1261,11 @@ extension SalesEntryTableViewController {
             currentUnitSuggestions = allUnits.filter { $0.lowercased().hasPrefix(normalized) }
         }
         
-        guard !currentUnitSuggestions.isEmpty, let field = activeUnitField else {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+        guard !currentUnitSuggestions.isEmpty, let field = activeUnitField, let window = view.window else {
+            dismissSuggestions()
             return
         }
 
-        guard let window = view.window else { return }
         let fieldRect = field.convert(field.bounds, to: window)
         
         let horizontalPadding: CGFloat = 16
@@ -1281,8 +1318,13 @@ extension SalesEntryTableViewController {
         if let gstin = buyerGSTIN, gstin.count >= 2, let state = IndianStates.stateFromGSTIN(gstin) {
             if buyerStateCode != state.code {
                 buyerStateCode = state.code
+                // The customer section only has a "Place of Supply" row when the
+                // shop is GST registered - reloading row 2 of a one row section
+                // raises NSInternalInconsistencyException.
+                let stateRow = IndexPath(row: 2, section: SalesSection.customer.rawValue)
+                guard tableView.numberOfRows(inSection: SalesSection.customer.rawValue) > stateRow.row else { return }
                 UIView.performWithoutAnimation {
-                    self.tableView.reloadRows(at: [IndexPath(row: 2, section: SalesSection.customer.rawValue)], with: .none)
+                    self.tableView.reloadRows(at: [stateRow], with: .none)
                 }
             }
         }
@@ -1391,10 +1433,13 @@ extension SalesEntryTableViewController: ItemInformationDelegate {
 
 extension SalesEntryTableViewController: saveDelegate{
     func save(isSaved: Bool) {
-        billSaved = true
-        if  billSaved{
+        if isSaved {
+            billSaved = true
             navigationController?.popViewController(animated: true)
-            // or dismiss(animated: true)
+        } else {
+            // The sale was not saved (e.g. not enough stock). Go back to the
+            // sales list, but ask first so the sale is not dropped silently.
+            backButtonTapped()
         }
     }
    

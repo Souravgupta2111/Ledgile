@@ -1,14 +1,14 @@
 import UIKit
 import SafariServices
 
-/// Plan picker + Apple IAP checkout. Matches B-easy Lime Moss / Beige / Onyx.
+/// Plan picker + Apple IAP checkout. Matches B-easy Lime Moss / Beige / Onyx design system.
 final class ProPlanViewController: UIViewController {
 
     var isOnboarding = false
 
     private enum Plan { case yearly, monthly }
 
-    private let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+    private let greenAccent = UIColor(red: 99/255, green: 140/255, blue: 0/255, alpha: 1.0) // #638C00
     private let beige = UIColor(named: "Beige") ?? UIColor(red: 0.91, green: 0.90, blue: 0.76, alpha: 1)
     private let onyx = UIColor(named: "Onyx") ?? UIColor(red: 0.05, green: 0.07, blue: 0, alpha: 1)
 
@@ -32,82 +32,135 @@ final class ProPlanViewController: UIViewController {
         updatePayTitle()
         Task { @MainActor in
             await ProStore.shared.refresh()
-            yearlyPriceLabel.text = "\(ProStore.shared.displayYearlyPrice) per year"
-            monthlyPriceLabel.text = "\(ProStore.shared.displayMonthlyPrice) per month"
+            let yPrice = ProStore.shared.displayYearlyPrice == "₹1999" ? "₹1,999" : ProStore.shared.displayYearlyPrice
+            let mPrice = ProStore.shared.displayMonthlyPrice
+            yearlyPriceLabel.attributedText = makePriceAttributed(price: yPrice, period: " / year")
+            monthlyPriceLabel.attributedText = makePriceAttributed(price: mPrice, period: " / month")
             updatePayTitle()
         }
     }
 
+    private func makePriceAttributed(price: String, period: String) -> NSAttributedString {
+        let attr = NSMutableAttributedString(
+            string: price,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 24, weight: .bold),
+                .foregroundColor: onyx
+            ]
+        )
+        let periodAttr = NSAttributedString(
+            string: period,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 15, weight: .regular),
+                .foregroundColor: UIColor.black.withAlphaComponent(0.55)
+            ]
+        )
+        attr.append(periodAttr)
+        return attr
+    }
+
     private func build() {
+        // Back navigation button
+        let back = UIButton(type: .system)
+        back.translatesAutoresizingMaskIntoConstraints = false
+        back.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+        back.tintColor = onyx
+        back.addTarget(self, action: #selector(goBack), for: .touchUpInside)
+        view.addSubview(back)
+
+        // Scroll view to prevent clipping on smaller devices while keeping layout anchored
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceVertical = true
+        scrollView.showsVerticalScrollIndicator = false
+        view.addSubview(scrollView)
+
+        let contentView = UIView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(contentView)
+
+        // Title & Subtitle
         let title = UILabel()
         title.translatesAutoresizingMaskIntoConstraints = false
-        title.text = "Choose a plan\nPlan chunein"
+        title.text = "Choose a plan"
         title.font = .systemFont(ofSize: 32, weight: .bold)
         title.textColor = onyx
 
         let subtitle = UILabel()
         subtitle.translatesAutoresizingMaskIntoConstraints = false
-        subtitle.text = "You can pay monthly or annually.\nMahine ya saal ka plan le sakte hain."
-        subtitle.font = .systemFont(ofSize: 15, weight: .medium)
-        subtitle.textColor = UIColor.black.withAlphaComponent(0.45)
+        subtitle.text = "You can pay monthly or annually."
+        subtitle.font = .systemFont(ofSize: 16, weight: .regular)
+        subtitle.textColor = UIColor.black.withAlphaComponent(0.55)
+
+        // Plan Cards (Vertical Stack of horizontal rows)
+        yearlyPriceLabel.attributedText = makePriceAttributed(price: "₹1,999", period: " / year")
+        monthlyPriceLabel.attributedText = makePriceAttributed(price: "₹199", period: " / month")
 
         stylePlanCard(
             yearlyCard,
             title: "Annual Plan",
             priceLabel: yearlyPriceLabel,
-            fallbackPrice: "₹\(UsageTracker.yearlyPriceINR) per year",
             check: yearlyCheck,
-            showSave: true
+            isYearly: true
         )
         stylePlanCard(
             monthlyCard,
             title: "Monthly Plan",
             priceLabel: monthlyPriceLabel,
-            fallbackPrice: "₹\(UsageTracker.monthlyPriceINR) per month",
             check: monthlyCheck,
-            showSave: false
+            isYearly: false
         )
         yearlyCard.addTarget(self, action: #selector(selectYearly), for: .touchUpInside)
         monthlyCard.addTarget(self, action: #selector(selectMonthly), for: .touchUpInside)
 
         let plans = UIStackView(arrangedSubviews: [yearlyCard, monthlyCard])
         plans.translatesAutoresizingMaskIntoConstraints = false
-        plans.axis = .horizontal
+        plans.axis = .vertical
         plans.spacing = 12
         plans.distribution = .fillEqually
 
+        // Payment Method Header
         let payLabel = UILabel()
         payLabel.translatesAutoresizingMaskIntoConstraints = false
         payLabel.text = "PAYMENT METHOD"
-        payLabel.font = .systemFont(ofSize: 12, weight: .heavy)
-        payLabel.textColor = UIColor.black.withAlphaComponent(0.4)
+        payLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        payLabel.textColor = UIColor.black.withAlphaComponent(0.45)
 
+        // Payment Method Card
         let payRow = UIView()
         payRow.translatesAutoresizingMaskIntoConstraints = false
         payRow.backgroundColor = .white
-        payRow.layer.cornerRadius = 22
+        payRow.layer.cornerRadius = 18
 
         let appleIcon = UIImageView(image: UIImage(systemName: "apple.logo"))
         appleIcon.translatesAutoresizingMaskIntoConstraints = false
         appleIcon.tintColor = onyx
         appleIcon.contentMode = .scaleAspectFit
 
+        let payTextStack = UIStackView()
+        payTextStack.translatesAutoresizingMaskIntoConstraints = false
+        payTextStack.axis = .vertical
+        payTextStack.spacing = 1
+
         let payTitle = UILabel()
         payTitle.translatesAutoresizingMaskIntoConstraints = false
         payTitle.text = "App Store"
-        payTitle.font = .systemFont(ofSize: 16, weight: .semibold)
+        payTitle.font = .systemFont(ofSize: 15, weight: .semibold)
         payTitle.textColor = onyx
 
         let paySub = UILabel()
         paySub.translatesAutoresizingMaskIntoConstraints = false
         paySub.text = "In-App Purchase · GST included"
-        paySub.font = .systemFont(ofSize: 12, weight: .medium)
-        paySub.textColor = UIColor.black.withAlphaComponent(0.4)
+        paySub.font = .systemFont(ofSize: 12, weight: .regular)
+        paySub.textColor = UIColor.black.withAlphaComponent(0.45)
+
+        payTextStack.addArrangedSubview(payTitle)
+        payTextStack.addArrangedSubview(paySub)
 
         payRow.addSubview(appleIcon)
-        payRow.addSubview(payTitle)
-        payRow.addSubview(paySub)
+        payRow.addSubview(payTextStack)
 
+        // Terms and Consent Row
         let termsRow = UIStackView()
         termsRow.translatesAutoresizingMaskIntoConstraints = false
         termsRow.axis = .horizontal
@@ -116,7 +169,7 @@ final class ProPlanViewController: UIViewController {
 
         agreeButton.translatesAutoresizingMaskIntoConstraints = false
         agreeButton.setImage(UIImage(systemName: "square"), for: .normal)
-        agreeButton.tintColor = onyx
+        agreeButton.tintColor = onyx.withAlphaComponent(0.6)
         agreeButton.addTarget(self, action: #selector(toggleAgree), for: .touchUpInside)
 
         let terms = UITextView()
@@ -128,230 +181,287 @@ final class ProPlanViewController: UIViewController {
         terms.textContainer.lineFragmentPadding = 0
         terms.delegate = self
         terms.attributedText = termsText()
+        terms.linkTextAttributes = [
+            .foregroundColor: UIColor(red: 0/255, green: 122/255, blue: 255/255, alpha: 1.0),
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
 
         termsRow.addArrangedSubview(agreeButton)
         termsRow.addArrangedSubview(terms)
 
+        // Bottom CTA Actions Container
+        let bottomContainer = UIStackView()
+        bottomContainer.translatesAutoresizingMaskIntoConstraints = false
+        bottomContainer.axis = .vertical
+        bottomContainer.spacing = 10
+        bottomContainer.alignment = .fill
+
         payButton.translatesAutoresizingMaskIntoConstraints = false
         payButton.setTitleColor(.white, for: .normal)
-        payButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        payButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
         payButton.backgroundColor = onyx
-        payButton.layer.cornerRadius = 22
+        payButton.layer.cornerRadius = 24
+        payButton.clipsToBounds = true
         payButton.addTarget(self, action: #selector(confirmPay), for: .touchUpInside)
-
-        let restore = UIButton(type: .system)
-        restore.translatesAutoresizingMaskIntoConstraints = false
-        restore.setTitle("Restore purchases", for: .normal)
-        restore.setTitleColor(UIColor.black.withAlphaComponent(0.45), for: .normal)
-        restore.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
-        restore.addTarget(self, action: #selector(restorePurchases), for: .touchUpInside)
 
         let later = UIButton(type: .system)
         later.translatesAutoresizingMaskIntoConstraints = false
         later.setTitle("Continue with Free", for: .normal)
-        later.setTitleColor(UIColor.black.withAlphaComponent(0.45), for: .normal)
-        later.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        later.setTitleColor(onyx, for: .normal)
+        later.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
+        later.backgroundColor = .clear
+        later.layer.cornerRadius = 24
+        later.layer.borderWidth = 1.0
+        later.layer.borderColor = UIColor.black.withAlphaComponent(0.22).cgColor
+        later.clipsToBounds = true
         later.addTarget(self, action: #selector(continueFreeFromOnboarding), for: .touchUpInside)
-        later.isHidden = !isOnboarding
 
-        let back = UIButton(type: .system)
-        back.translatesAutoresizingMaskIntoConstraints = false
-        back.setImage(UIImage(systemName: "chevron.left"), for: .normal)
-        back.tintColor = onyx
-        back.addTarget(self, action: #selector(goBack), for: .touchUpInside)
+        let restore = UIButton(type: .system)
+        restore.translatesAutoresizingMaskIntoConstraints = false
+        restore.setTitle("Restore purchases", for: .normal)
+        restore.setTitleColor(UIColor.black.withAlphaComponent(0.5), for: .normal)
+        restore.titleLabel?.font = .systemFont(ofSize: 14, weight: .regular)
+        restore.addTarget(self, action: #selector(restorePurchases), for: .touchUpInside)
 
-        view.addSubview(back)
-        view.addSubview(title)
-        view.addSubview(subtitle)
-        view.addSubview(plans)
-        view.addSubview(payLabel)
-        view.addSubview(payRow)
-        view.addSubview(termsRow)
-        view.addSubview(payButton)
-        view.addSubview(restore)
-        view.addSubview(later)
+        bottomContainer.addArrangedSubview(payButton)
+        bottomContainer.addArrangedSubview(later)
+        bottomContainer.addArrangedSubview(restore)
 
-        var bottomConstraints: [NSLayoutConstraint] = [
-            agreeButton.widthAnchor.constraint(equalToConstant: 28),
-            agreeButton.heightAnchor.constraint(equalToConstant: 28),
-            payButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            payButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            payButton.heightAnchor.constraint(equalToConstant: 56),
-            restore.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            later.centerXAnchor.constraint(equalTo: view.centerXAnchor)
-        ]
-        if isOnboarding {
-            bottomConstraints.append(contentsOf: [
-                later.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -6),
-                restore.bottomAnchor.constraint(equalTo: later.topAnchor, constant: -2),
-                payButton.bottomAnchor.constraint(equalTo: restore.topAnchor, constant: -8)
-            ])
-        } else {
-            bottomConstraints.append(contentsOf: [
-                restore.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -6),
-                payButton.bottomAnchor.constraint(equalTo: restore.topAnchor, constant: -8)
-            ])
-        }
+        contentView.addSubview(title)
+        contentView.addSubview(subtitle)
+        contentView.addSubview(plans)
+        contentView.addSubview(payLabel)
+        contentView.addSubview(payRow)
+        contentView.addSubview(termsRow)
+        contentView.addSubview(bottomContainer)
+
+        let contentMinHeightConstraint = contentView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor)
+        contentMinHeightConstraint.priority = .defaultLow
 
         NSLayoutConstraint.activate([
-            back.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            // Back button
+            back.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
             back.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             back.widthAnchor.constraint(equalToConstant: 36),
             back.heightAnchor.constraint(equalToConstant: 36),
 
-            title.topAnchor.constraint(equalTo: back.bottomAnchor, constant: 8),
-            title.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            title.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            // Scroll View
+            scrollView.topAnchor.constraint(equalTo: back.bottomAnchor, constant: 4),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
 
-            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 6),
+            contentView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            contentView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            contentView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            contentMinHeightConstraint,
+
+            // Screen Title & Subtitle
+            title.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+            title.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            title.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.trailingAnchor.constraint(equalTo: title.trailingAnchor),
 
-            plans.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 28),
-            plans.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            plans.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            plans.heightAnchor.constraint(equalToConstant: 168),
+            // Plan Cards Stack
+            plans.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 18),
+            plans.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            plans.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
 
-            payLabel.topAnchor.constraint(equalTo: plans.bottomAnchor, constant: 28),
+            yearlyCard.heightAnchor.constraint(equalToConstant: 88),
+            monthlyCard.heightAnchor.constraint(equalToConstant: 88),
+
+            // Payment Method Section
+            payLabel.topAnchor.constraint(equalTo: plans.bottomAnchor, constant: 20),
             payLabel.leadingAnchor.constraint(equalTo: title.leadingAnchor),
 
-            payRow.topAnchor.constraint(equalTo: payLabel.bottomAnchor, constant: 12),
+            payRow.topAnchor.constraint(equalTo: payLabel.bottomAnchor, constant: 8),
             payRow.leadingAnchor.constraint(equalTo: plans.leadingAnchor),
             payRow.trailingAnchor.constraint(equalTo: plans.trailingAnchor),
-            payRow.heightAnchor.constraint(equalToConstant: 72),
+            payRow.heightAnchor.constraint(equalToConstant: 58),
 
-            appleIcon.leadingAnchor.constraint(equalTo: payRow.leadingAnchor, constant: 18),
+            appleIcon.leadingAnchor.constraint(equalTo: payRow.leadingAnchor, constant: 16),
             appleIcon.centerYAnchor.constraint(equalTo: payRow.centerYAnchor),
-            appleIcon.widthAnchor.constraint(equalToConstant: 28),
-            appleIcon.heightAnchor.constraint(equalToConstant: 28),
+            appleIcon.widthAnchor.constraint(equalToConstant: 24),
+            appleIcon.heightAnchor.constraint(equalToConstant: 24),
 
-            payTitle.leadingAnchor.constraint(equalTo: appleIcon.trailingAnchor, constant: 12),
-            payTitle.topAnchor.constraint(equalTo: payRow.topAnchor, constant: 16),
-            paySub.leadingAnchor.constraint(equalTo: payTitle.leadingAnchor),
-            paySub.topAnchor.constraint(equalTo: payTitle.bottomAnchor, constant: 2),
+            payTextStack.leadingAnchor.constraint(equalTo: appleIcon.trailingAnchor, constant: 12),
+            payTextStack.centerYAnchor.constraint(equalTo: payRow.centerYAnchor),
+            payTextStack.trailingAnchor.constraint(lessThanOrEqualTo: payRow.trailingAnchor, constant: -16),
 
-            termsRow.topAnchor.constraint(equalTo: payRow.bottomAnchor, constant: 20),
+            // Terms and Consent
+            termsRow.topAnchor.constraint(equalTo: payRow.bottomAnchor, constant: 16),
             termsRow.leadingAnchor.constraint(equalTo: plans.leadingAnchor),
-            termsRow.trailingAnchor.constraint(equalTo: plans.trailingAnchor)
-        ] + bottomConstraints)
+            termsRow.trailingAnchor.constraint(equalTo: plans.trailingAnchor),
+
+            agreeButton.widthAnchor.constraint(equalToConstant: 22),
+            agreeButton.heightAnchor.constraint(equalToConstant: 22),
+
+            // Bottom Actions (Anchored at bottom with flexible spacing from terms)
+            bottomContainer.topAnchor.constraint(greaterThanOrEqualTo: termsRow.bottomAnchor, constant: 22),
+            bottomContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            bottomContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            bottomContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+
+            payButton.heightAnchor.constraint(equalToConstant: 52),
+            later.heightAnchor.constraint(equalToConstant: 50),
+            restore.heightAnchor.constraint(equalToConstant: 24)
+        ])
     }
 
     private func stylePlanCard(
         _ card: UIControl,
         title: String,
         priceLabel: UILabel,
-        fallbackPrice: String,
         check: UIImageView,
-        showSave: Bool
+        isYearly: Bool
     ) {
         card.translatesAutoresizingMaskIntoConstraints = false
-        card.backgroundColor = UIColor.white.withAlphaComponent(0.55)
-        card.layer.cornerRadius = 24
-        card.layer.borderWidth = 3
-        card.layer.borderColor = UIColor.clear.cgColor
+        card.layer.cornerRadius = 20
+        card.layer.borderWidth = 1
+        card.clipsToBounds = true
 
-        let name = UILabel()
-        name.translatesAutoresizingMaskIntoConstraints = false
-        name.text = title
-        name.font = .systemFont(ofSize: 16, weight: .semibold)
-        name.textColor = onyx
+        // Left text stack (Title + Price)
+        let textStack = UIStackView()
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.axis = .vertical
+        textStack.spacing = 3
+        textStack.alignment = .leading
+        textStack.isUserInteractionEnabled = false
+
+        let nameLabel = UILabel()
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        nameLabel.text = title
+        nameLabel.font = .systemFont(ofSize: 18, weight: .regular)
+        nameLabel.textColor = onyx
 
         priceLabel.translatesAutoresizingMaskIntoConstraints = false
-        priceLabel.text = fallbackPrice
-        priceLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        priceLabel.textColor = UIColor.black.withAlphaComponent(0.45)
-        priceLabel.numberOfLines = 2
+        priceLabel.numberOfLines = 1
+
+        textStack.addArrangedSubview(nameLabel)
+        textStack.addArrangedSubview(priceLabel)
 
         check.translatesAutoresizingMaskIntoConstraints = false
         check.contentMode = .scaleAspectFit
-        check.tintColor = onyx
+        check.isUserInteractionEnabled = false
 
-        card.addSubview(name)
-        card.addSubview(priceLabel)
+        card.addSubview(textStack)
         card.addSubview(check)
 
-        var topAnchor: NSLayoutYAxisAnchor = card.topAnchor
-        var topConstant: CGFloat = 18
+        NSLayoutConstraint.activate([
+            textStack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            textStack.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12),
 
-        if showSave {
+            check.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            check.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            check.widthAnchor.constraint(equalToConstant: 25),
+            check.heightAnchor.constraint(equalToConstant: 25)
+        ])
+
+        if isYearly {
             let badge = UILabel()
             badge.translatesAutoresizingMaskIntoConstraints = false
-            badge.text = "  SAVE \(UsageTracker.yearlySavingsPercent)%  "
-            badge.font = .systemFont(ofSize: 10, weight: .heavy)
-            badge.textColor = onyx
-            badge.backgroundColor = lime
-            badge.layer.cornerRadius = 8
+            badge.text = "SAVE ₹\(UsageTracker.yearlySavingsINR)/YEAR"
+            badge.font = .systemFont(ofSize: 11.5, weight: .bold)
+            badge.textColor = .white
+            badge.backgroundColor = greenAccent
+            badge.textAlignment = .center
+            badge.layer.cornerRadius = 14
+            badge.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMinXMinYCorner]
             badge.clipsToBounds = true
+
             card.addSubview(badge)
             NSLayoutConstraint.activate([
-                badge.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
-                badge.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14)
+                badge.topAnchor.constraint(equalTo: card.topAnchor),
+                badge.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+                badge.heightAnchor.constraint(equalToConstant: 26),
+                badge.widthAnchor.constraint(equalToConstant: 140)
             ])
-            topAnchor = badge.bottomAnchor
-            topConstant = 10
         }
-
-        NSLayoutConstraint.activate([
-            name.topAnchor.constraint(equalTo: topAnchor, constant: topConstant),
-            name.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            name.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            priceLabel.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 6),
-            priceLabel.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            priceLabel.trailingAnchor.constraint(equalTo: name.trailingAnchor),
-            check.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
-            check.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            check.widthAnchor.constraint(equalToConstant: 26),
-            check.heightAnchor.constraint(equalToConstant: 26)
-        ])
     }
 
     private func termsText() -> NSAttributedString {
-        let full = "I have read and agree to B-easy Terms and Conditions and Privacy Policy.\nMaine B-easy ke Niyam aur Privacy Policy padh liye hain."
+        let full = "I have read and agree to B-easy Terms and Conditions and Privacy Policy."
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.minimumLineHeight = 20
+        paragraphStyle.maximumLineHeight = 20
+        paragraphStyle.lineBreakMode = .byWordWrapping
+
         let attr = NSMutableAttributedString(
             string: full,
             attributes: [
-                .font: UIFont.systemFont(ofSize: 13, weight: .regular),
-                .foregroundColor: UIColor.black.withAlphaComponent(0.55)
+                .font: UIFont.systemFont(ofSize: 14, weight: .regular),
+                .foregroundColor: UIColor.black.withAlphaComponent(0.55),
+                .paragraphStyle: paragraphStyle
             ]
         )
         let termsRange = (full as NSString).range(of: "Terms and Conditions")
         let privacyRange = (full as NSString).range(of: "Privacy Policy")
+        let linkBlue = UIColor(red: 0/255, green: 122/255, blue: 255/255, alpha: 1.0)
         attr.addAttributes([
             .link: URL(string: "https://souravgupta2111.github.io/Ledgile/terms.html")!,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
-            .foregroundColor: onyx
+            .foregroundColor: linkBlue
         ], range: termsRange)
         attr.addAttributes([
             .link: URL(string: "https://souravgupta2111.github.io/Ledgile/privacy-policy.html")!,
             .underlineStyle: NSUnderlineStyle.single.rawValue,
-            .foregroundColor: onyx
+            .foregroundColor: linkBlue
         ], range: privacyRange)
         return attr
     }
 
     private func refreshSelection() {
         let yearlyOn = selected == .yearly
-        yearlyCard.layer.borderColor = yearlyOn ? lime.cgColor : UIColor.clear.cgColor
-        monthlyCard.layer.borderColor = yearlyOn ? UIColor.clear.cgColor : lime.cgColor
-        yearlyCard.backgroundColor = yearlyOn ? .white : UIColor.white.withAlphaComponent(0.45)
-        monthlyCard.backgroundColor = yearlyOn ? UIColor.white.withAlphaComponent(0.45) : .white
-        yearlyCheck.image = UIImage(systemName: yearlyOn ? "checkmark.circle.fill" : "circle")
-        monthlyCheck.image = UIImage(systemName: yearlyOn ? "circle" : "checkmark.circle.fill")
+
+        let unselectedBg = UIColor(red: 245/255, green: 243/255, blue: 224/255, alpha: 1.0)
+        let unselectedBorder = UIColor.black.withAlphaComponent(0.08).cgColor
+
+        yearlyCard.backgroundColor = yearlyOn ? .white : unselectedBg
+        yearlyCard.layer.borderWidth = yearlyOn ? 2.0 : 1.0
+        yearlyCard.layer.borderColor = yearlyOn ? greenAccent.cgColor : unselectedBorder
+        
+        let checkConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .regular)
+        yearlyCheck.image = UIImage(
+            systemName: yearlyOn ? "checkmark.circle.fill" : "circle",
+            withConfiguration: checkConfig
+        )
+        yearlyCheck.tintColor = yearlyOn ? greenAccent : UIColor.black.withAlphaComponent(0.35)
+
+        monthlyCard.backgroundColor = yearlyOn ? unselectedBg : .white
+        monthlyCard.layer.borderWidth = yearlyOn ? 1.0 : 2.0
+        monthlyCard.layer.borderColor = yearlyOn ? unselectedBorder : greenAccent.cgColor
+        monthlyCheck.image = UIImage(
+            systemName: yearlyOn ? "circle" : "checkmark.circle.fill",
+            withConfiguration: checkConfig
+        )
+        monthlyCheck.tintColor = yearlyOn ? UIColor.black.withAlphaComponent(0.35) : greenAccent
+
         updatePayTitle()
     }
 
     private func updatePayTitle() {
-        let price = selected == .yearly ? ProStore.shared.displayYearlyPrice : ProStore.shared.displayMonthlyPrice
+        let rawPrice = selected == .yearly ? ProStore.shared.displayYearlyPrice : ProStore.shared.displayMonthlyPrice
+        let price = (selected == .yearly && rawPrice == "₹1999") ? "₹1,999" : rawPrice
         payButton.setTitle("Confirm and pay \(price)", for: .normal)
-        payButton.alpha = agreed ? 1 : 0.45
+        let disabledBg = UIColor(red: 140/255, green: 140/255, blue: 114/255, alpha: 1.0)
+        payButton.backgroundColor = agreed ? onyx : disabledBg
         payButton.isEnabled = agreed
     }
 
     @objc private func selectYearly() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         selected = .yearly
         refreshSelection()
     }
 
     @objc private func selectMonthly() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         selected = .monthly
         refreshSelection()
     }
@@ -360,7 +470,7 @@ final class ProPlanViewController: UIViewController {
         agreed.toggle()
         let image = agreed ? "checkmark.square.fill" : "square"
         agreeButton.setImage(UIImage(systemName: image), for: .normal)
-        agreeButton.tintColor = agreed ? lime : onyx
+        agreeButton.tintColor = agreed ? greenAccent : onyx.withAlphaComponent(0.6)
         updatePayTitle()
     }
 
@@ -369,7 +479,16 @@ final class ProPlanViewController: UIViewController {
     }
 
     @objc private func continueFreeFromOnboarding() {
-        AuthNavigationHelper.finishLaunchPlanAndGoToApp()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if isOnboarding {
+            AuthNavigationHelper.finishLaunchPlanAndGoToApp()
+        } else {
+            if presentingViewController != nil {
+                dismiss(animated: true)
+            } else {
+                navigationController?.popViewController(animated: true)
+            }
+        }
     }
 
     @objc private func restorePurchases() {
