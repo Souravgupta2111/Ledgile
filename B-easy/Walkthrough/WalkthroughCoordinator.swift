@@ -223,7 +223,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         guard let tableView = dashboardVC.tableView else { return nil }
 
         // Scroll to top cell
-        tableView.scrollToRow(at: IndexPath(row: 0, section: 0), at: .top, animated: false)
+        tableView.setContentOffset(.zero, animated: false)
+        tableView.layoutIfNeeded()
 
         guard let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? DashboardTopTileTableViewCell else {
             let rowRect = tableView.rectForRow(at: IndexPath(row: 0, section: 0))
@@ -243,13 +244,14 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         // Scroll so Reports section is in view
         tableView.scrollToRow(at: IndexPath(row: 0, section: 2), at: .middle, animated: false)
+        tableView.layoutIfNeeded()
 
         // Try to find the section 2 header view or rect
         let headerRect = tableView.rectForHeader(inSection: 2)
         if !headerRect.isEmpty {
             let converted = tableView.convert(headerRect, to: overlay)
             // Expand slightly to embrace the View All button nicely
-            return CGRect(x: 16, y: converted.minY - 4, width: overlay.bounds.width - 32, height: max(converted.height, 48) + 8)
+            return CGRect(x: 16, y: converted.minY - 2, width: overlay.bounds.width - 32, height: max(converted.height, 46) + 4)
         }
 
         // Fallback to first row of reports
@@ -261,7 +263,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         guard let dashboardVC = findDashboardViewController(in: tabBar) else { return nil }
         guard let tableView = dashboardVC.tableView else { return nil }
 
-        tableView.scrollToRow(at: IndexPath(row: 0, section: 0), at: .top, animated: false)
+        tableView.setContentOffset(.zero, animated: false)
+        tableView.layoutIfNeeded()
 
         guard let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? DashboardTopTileTableViewCell else {
             return nil
@@ -282,6 +285,11 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
     private func findTabBarItemRect(at index: Int, in tabBar: UITabBarController, overlay: UIView) -> CGRect {
         let bar = tabBar.tabBar
+        bar.layoutIfNeeded()
+
+        let totalItems = CGFloat(max(bar.items?.count ?? 5, 1))
+        let itemWidth = bar.bounds.width / totalItems
+        let itemX = CGFloat(index) * itemWidth
 
         // Look for actual UITabBarButton subviews
         let buttons = bar.subviews
@@ -290,46 +298,42 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         if index < buttons.count {
             let button = buttons[index]
-            return button.convert(button.bounds, to: overlay)
+            var rect = button.convert(button.bounds, to: overlay)
+            rect.size.height = min(rect.height, 52)
+            return rect
         }
 
-        // Fallback: calculate evenly distributed item frame
-        let totalItems = CGFloat(max(bar.items?.count ?? 5, 1))
-        let itemWidth = bar.bounds.width / totalItems
+        // Fallback: calculate evenly distributed item frame (top 48pt of bar)
         let itemFrame = CGRect(
-            x: CGFloat(index) * itemWidth,
-            y: 0,
-            width: itemWidth,
-            height: bar.bounds.height
+            x: itemX + 4,
+            y: 2,
+            width: itemWidth - 8,
+            height: 48
         )
         return bar.convert(itemFrame, to: overlay)
     }
 
     private func findStockActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
-        // Center-bottom region where Scan, Voice, and Manual buttons reside in StockTabView
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
         let actionWidth: CGFloat = min(320, screenWidth - 32)
-        let actionHeight: CGFloat = 175
+        let actionHeight: CGFloat = 160
 
-        // In StockTabView: buttons sit above 228pt spacer + tab bar + safe area bottom
-        let bottomOffset: CGFloat = tabBar.tabBar.bounds.height + overlay.safeAreaInsets.bottom + 200
-        let originY = max(overlay.safeAreaInsets.top + 100, screenHeight - bottomOffset - actionHeight)
+        let bottomOffset: CGFloat = tabBar.tabBar.bounds.height + overlay.safeAreaInsets.bottom + 180
+        let originY = max(overlay.safeAreaInsets.top + 80, screenHeight - bottomOffset - actionHeight)
         let originX = (screenWidth - actionWidth) / 2
 
         return CGRect(x: originX, y: originY, width: actionWidth, height: actionHeight)
     }
 
     private func findSalesActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
-        // Center-bottom region where Scan, Voice, and Manual buttons reside in SalesTabView
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
         let actionWidth: CGFloat = min(320, screenWidth - 32)
-        let actionHeight: CGFloat = 175
+        let actionHeight: CGFloat = 160
 
-        // In SalesTabView: buttons sit above 228pt spacer + tab bar + safe area bottom
-        let bottomOffset: CGFloat = tabBar.tabBar.bounds.height + overlay.safeAreaInsets.bottom + 200
-        let originY = max(overlay.safeAreaInsets.top + 100, screenHeight - bottomOffset - actionHeight)
+        let bottomOffset: CGFloat = tabBar.tabBar.bounds.height + overlay.safeAreaInsets.bottom + 180
+        let originY = max(overlay.safeAreaInsets.top + 80, screenHeight - bottomOffset - actionHeight)
         let originX = (screenWidth - actionWidth) / 2
 
         return CGRect(x: originX, y: originY, width: actionWidth, height: actionHeight)

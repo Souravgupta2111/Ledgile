@@ -18,20 +18,39 @@ final class WalkthroughOverlayView: UIView {
     private let cardView: UIView = {
         let view = UIView()
         view.backgroundColor = .secondarySystemGroupedBackground
-        view.layer.cornerRadius = 22
+        view.layer.cornerRadius = 20
         view.layer.shadowColor = UIColor.black.cgColor
-        view.layer.shadowOpacity = 0.25
-        view.layer.shadowRadius = 16
+        view.layer.shadowOpacity = 0.22
+        view.layer.shadowRadius = 14
         view.layer.shadowOffset = CGSize(width: 0, height: 6)
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
+    }()
+
+    private let contentStackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.alignment = .fill
+        stack.distribution = .fill
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    private let headerStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.distribution = .equalSpacing
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
     }()
 
     private let stepBadgeContainer: UIView = {
         let view = UIView()
         let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.13, green: 0.75, blue: 0.42, alpha: 1.0)
         view.backgroundColor = lime.withAlphaComponent(0.15)
-        view.layer.cornerRadius = 12
+        view.layer.cornerRadius = 10
         view.clipsToBounds = true
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
@@ -58,8 +77,9 @@ final class WalkthroughOverlayView: UIView {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.textColor = .label
-        label.font = .systemFont(ofSize: 19, weight: .bold)
+        label.font = .systemFont(ofSize: 20, weight: .bold)
         label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -69,6 +89,7 @@ final class WalkthroughOverlayView: UIView {
         label.textColor = .secondaryLabel
         label.font = .systemFont(ofSize: 14.5, weight: .regular)
         label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -78,7 +99,7 @@ final class WalkthroughOverlayView: UIView {
         stack.axis = .horizontal
         stack.spacing = 12
         stack.distribution = .fillProportionally
-        stack.alignment = .center
+        stack.alignment = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
     }()
@@ -112,13 +133,10 @@ final class WalkthroughOverlayView: UIView {
         return button
     }()
 
-    // Layout constraints for card position
-    private var cardCenterXConstraint: NSLayoutConstraint?
-    private var cardCenterYConstraint: NSLayoutConstraint?
-    private var cardTopConstraint: NSLayoutConstraint?
-    private var cardBottomConstraint: NSLayoutConstraint?
-    private var cardLeadingConstraint: NSLayoutConstraint?
-    private var cardTrailingConstraint: NSLayoutConstraint?
+    // Pre-created positioning constraints to prevent constraint leaking
+    private var cardCenterYConstraint: NSLayoutConstraint!
+    private var cardTopConstraint: NSLayoutConstraint!
+    private var cardBottomConstraint: NSLayoutConstraint!
 
     private var currentSpotlightRect: CGRect?
 
@@ -152,72 +170,81 @@ final class WalkthroughOverlayView: UIView {
 
         addSubview(cardView)
 
-        cardView.addSubview(stepBadgeContainer)
+        // Setup badge container
         stepBadgeContainer.addSubview(stepBadgeLabel)
-        cardView.addSubview(skipButton)
-        cardView.addSubview(titleLabel)
-        cardView.addSubview(messageLabel)
-        cardView.addSubview(buttonStack)
-
-        buttonStack.addArrangedSubview(backButton)
-        buttonStack.addArrangedSubview(primaryButton)
-
-        setupStaticConstraints()
-        setupActions()
-    }
-
-    private func setupStaticConstraints() {
         NSLayoutConstraint.activate([
-            // Step badge
-            stepBadgeContainer.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 18),
-            stepBadgeContainer.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
             stepBadgeLabel.topAnchor.constraint(equalTo: stepBadgeContainer.topAnchor, constant: 4),
             stepBadgeLabel.bottomAnchor.constraint(equalTo: stepBadgeContainer.bottomAnchor, constant: -4),
             stepBadgeLabel.leadingAnchor.constraint(equalTo: stepBadgeContainer.leadingAnchor, constant: 10),
-            stepBadgeLabel.trailingAnchor.constraint(equalTo: stepBadgeContainer.trailingAnchor, constant: -10),
-
-            // Skip button
-            skipButton.centerYAnchor.constraint(equalTo: stepBadgeContainer.centerYAnchor),
-            skipButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
-
-            // Title
-            titleLabel.topAnchor.constraint(equalTo: stepBadgeContainer.bottomAnchor, constant: 14),
-            titleLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
-            titleLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
-
-            // Message
-            messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
-            messageLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
-            messageLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
-
-            // Button stack
-            buttonStack.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 20),
-            buttonStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
-            buttonStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
-            buttonStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -18),
-            buttonStack.heightAnchor.constraint(equalToConstant: 44),
-
-            backButton.heightAnchor.constraint(equalToConstant: 44),
-            primaryButton.heightAnchor.constraint(equalToConstant: 44)
+            stepBadgeLabel.trailingAnchor.constraint(equalTo: stepBadgeContainer.trailingAnchor, constant: -10)
         ])
 
-        // Width constraints for card
-        cardLeadingConstraint = cardView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20)
-        cardTrailingConstraint = cardView.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -20)
-        cardCenterXConstraint = cardView.centerXAnchor.constraint(equalTo: centerXAnchor)
+        stepBadgeContainer.setContentHuggingPriority(.required, for: .vertical)
+        stepBadgeContainer.setContentCompressionResistancePriority(.required, for: .vertical)
+        stepBadgeContainer.setContentHuggingPriority(.required, for: .horizontal)
+        stepBadgeLabel.setContentHuggingPriority(.required, for: .vertical)
+        stepBadgeLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+
+        // Setup header stack
+        headerStack.addArrangedSubview(stepBadgeContainer)
+        headerStack.addArrangedSubview(skipButton)
+
+        // Setup button stack
+        buttonStack.addArrangedSubview(backButton)
+        buttonStack.addArrangedSubview(primaryButton)
+
+        // Setup vertical content stack
+        contentStackView.addArrangedSubview(headerStack)
+        contentStackView.addArrangedSubview(titleLabel)
+        contentStackView.addArrangedSubview(messageLabel)
+        contentStackView.addArrangedSubview(buttonStack)
+
+        contentStackView.setCustomSpacing(10, after: titleLabel)
+        contentStackView.setCustomSpacing(18, after: messageLabel)
+
+        titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        titleLabel.setContentHuggingPriority(.required, for: .vertical)
+        messageLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        messageLabel.setContentHuggingPriority(.defaultLow, for: .vertical)
+
+        cardView.addSubview(contentStackView)
+        NSLayoutConstraint.activate([
+            contentStackView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 18),
+            contentStackView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
+            contentStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
+            contentStackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -18),
+            buttonStack.heightAnchor.constraint(equalToConstant: 44)
+        ])
+
+        // Card positioning constraints
+        let cardWidth = cardView.widthAnchor.constraint(equalTo: widthAnchor, constant: -40)
+        cardWidth.priority = UILayoutPriority(950)
+        let cardMaxWidth = cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+        let cardMinWidth = cardView.widthAnchor.constraint(greaterThanOrEqualToConstant: 280)
+        let cardCenterX = cardView.centerXAnchor.constraint(equalTo: centerXAnchor)
+
+        // Boundaries to prevent offscreen layout
+        let safeTop = cardView.topAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.topAnchor, constant: 16)
+        let safeBottom = cardView.bottomAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.bottomAnchor, constant: -16)
+
         cardCenterYConstraint = cardView.centerYAnchor.constraint(equalTo: centerYAnchor)
+        cardTopConstraint = cardView.topAnchor.constraint(equalTo: topAnchor, constant: 100)
+        cardBottomConstraint = cardView.bottomAnchor.constraint(equalTo: topAnchor, constant: 400)
 
-        cardLeadingConstraint?.isActive = true
-        cardTrailingConstraint?.isActive = true
-        cardCenterXConstraint?.isActive = true
-        cardCenterYConstraint?.isActive = true
+        NSLayoutConstraint.activate([
+            cardCenterX,
+            cardWidth,
+            cardMaxWidth,
+            cardMinWidth,
+            safeTop,
+            safeBottom
+        ])
 
-        let widthConstraint = cardView.widthAnchor.constraint(equalTo: widthAnchor, constant: -40)
-        widthConstraint.priority = .defaultHigh
-        widthConstraint.isActive = true
+        cardCenterYConstraint.isActive = true
+        cardTopConstraint.isActive = false
+        cardBottomConstraint.isActive = false
 
-        let maxWidthConstraint = cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 420)
-        maxWidthConstraint.isActive = true
+        setupActions()
     }
 
     private func setupActions() {
@@ -321,10 +348,8 @@ final class WalkthroughOverlayView: UIView {
             spotlightGlowLayer.path = glowPath
             spotlightGlowLayer.isHidden = false
 
-            // Position card relative to target
             repositionCard(relativeTo: insetRect, animated: animated)
         } else {
-            // Full screen dimming for modal steps
             if animated {
                 let maskAnim = CABasicAnimation(keyPath: "path")
                 maskAnim.fromValue = dimmingMaskLayer.path
@@ -335,37 +360,47 @@ final class WalkthroughOverlayView: UIView {
             dimmingMaskLayer.path = boundsPath.cgPath
             spotlightGlowLayer.isHidden = true
 
-            // Center card in screen
             centerCard(animated: animated)
         }
     }
 
     private func repositionCard(relativeTo target: CGRect, animated: Bool) {
-        cardCenterYConstraint?.isActive = false
-        cardTopConstraint?.isActive = false
-        cardBottomConstraint?.isActive = false
-
         let screenHeight = bounds.height
-        let screenCenterY = screenHeight / 2
+        let safeTopBound = safeAreaInsets.top + 16
+        let safeBottomBound = screenHeight - safeAreaInsets.bottom - 16
 
-        if target.midY < screenCenterY {
-            // Target is in the upper half -> position card below target
-            let topConstant = max(target.maxY + 16, safeAreaInsets.top + 16)
-            cardTopConstraint = cardView.topAnchor.constraint(equalTo: topAnchor, constant: topConstant)
-            cardTopConstraint?.isActive = true
+        let spaceAbove = target.minY - safeTopBound
+        let spaceBelow = safeBottomBound - target.maxY
+
+        let shouldPlaceBelow: Bool
+        if spaceBelow >= 240 {
+            shouldPlaceBelow = true
+        } else if spaceAbove >= 240 {
+            shouldPlaceBelow = false
         } else {
-            // Target is in the lower half -> position card above target
-            let bottomConstant = min(target.minY - 16, screenHeight - safeAreaInsets.bottom - 16)
-            cardBottomConstraint = cardView.bottomAnchor.constraint(equalTo: topAnchor, constant: bottomConstant)
-            cardBottomConstraint?.isActive = true
+            shouldPlaceBelow = (spaceBelow >= spaceAbove)
+        }
+
+        if shouldPlaceBelow {
+            let topY = target.maxY + 14
+            cardTopConstraint.constant = topY
+            cardBottomConstraint.isActive = false
+            cardCenterYConstraint.isActive = false
+            cardTopConstraint.isActive = true
+        } else {
+            let bottomY = target.minY - 14
+            cardBottomConstraint.constant = bottomY
+            cardTopConstraint.isActive = false
+            cardCenterYConstraint.isActive = false
+            cardBottomConstraint.isActive = true
         }
 
         if animated {
             UIView.animate(
-                withDuration: 0.32,
+                withDuration: 0.28,
                 delay: 0,
-                usingSpringWithDamping: 0.86,
-                initialSpringVelocity: 0.4,
+                usingSpringWithDamping: 0.88,
+                initialSpringVelocity: 0.3,
                 options: [.curveEaseInOut, .beginFromCurrentState],
                 animations: {
                     self.layoutIfNeeded()
@@ -377,17 +412,16 @@ final class WalkthroughOverlayView: UIView {
     }
 
     private func centerCard(animated: Bool) {
-        cardTopConstraint?.isActive = false
-        cardBottomConstraint?.isActive = false
-        cardCenterYConstraint = cardView.centerYAnchor.constraint(equalTo: centerYAnchor)
-        cardCenterYConstraint?.isActive = true
+        cardTopConstraint.isActive = false
+        cardBottomConstraint.isActive = false
+        cardCenterYConstraint.isActive = true
 
         if animated {
             UIView.animate(
-                withDuration: 0.32,
+                withDuration: 0.28,
                 delay: 0,
-                usingSpringWithDamping: 0.86,
-                initialSpringVelocity: 0.4,
+                usingSpringWithDamping: 0.88,
+                initialSpringVelocity: 0.3,
                 options: [.curveEaseInOut, .beginFromCurrentState],
                 animations: {
                     self.layoutIfNeeded()
@@ -402,9 +436,5 @@ final class WalkthroughOverlayView: UIView {
         super.layoutSubviews()
         dimmingMaskLayer.frame = bounds
         spotlightGlowLayer.frame = bounds
-
-        if let rect = currentSpotlightRect {
-            updateSpotlightAndCardPosition(targetRect: rect, isModal: false, animated: false)
-        }
     }
 }

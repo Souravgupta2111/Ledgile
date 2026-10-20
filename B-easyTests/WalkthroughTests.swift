@@ -112,4 +112,53 @@ final class WalkthroughTests: XCTestCase {
         XCTAssertEqual(WalkthroughStep.salesActions.stepIndex, 6)
         XCTAssertNil(WalkthroughStep.completion.stepIndex)
     }
+
+    func testOverlayLayoutDiagnostics() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+        overlay.layoutIfNeeded()
+
+        for step in WalkthroughStep.allCases {
+            let targetRect: CGRect?
+            switch step {
+            case .welcome, .completion:
+                targetRect = nil
+            case .dashboardOverview:
+                targetRect = CGRect(x: 16, y: 120, width: 361, height: 280)
+            case .analytics:
+                targetRect = CGRect(x: 16, y: 460, width: 361, height: 50)
+            case .creditDetails:
+                targetRect = CGRect(x: 16, y: 380, width: 361, height: 120)
+            case .stockTab:
+                targetRect = CGRect(x: 78, y: 769, width: 78, height: 49)
+            case .stockActions, .salesActions:
+                targetRect = CGRect(x: 36, y: 410, width: 320, height: 160)
+            }
+
+            overlay.configure(step: step, targetRect: targetRect, canGoBack: step.rawValue > 0, animated: false)
+            overlay.setNeedsLayout()
+            overlay.layoutIfNeeded()
+
+            let card = overlay.subviews.first { $0 !== overlay && !($0 is UIVisualEffectView) }
+            XCTAssertNotNil(card, "Overlay must contain a cardView")
+
+            if let cardFrame = card?.frame {
+                // Sane height range: not collapsed, not stretched
+                XCTAssertGreaterThan(cardFrame.height, 120, "\(step): card should not collapse")
+                XCTAssertLessThan(cardFrame.height, 380, "\(step): card should not be stretched vertically")
+
+                // Within screen bounds
+                XCTAssertGreaterThanOrEqual(cardFrame.minY, 0, "\(step): card top should be within screen")
+                XCTAssertLessThanOrEqual(cardFrame.maxY, 852, "\(step): card bottom should be within screen")
+                XCTAssertGreaterThanOrEqual(cardFrame.width, 280, "\(step): card width should be reasonable")
+
+                // Verify hierarchy can be rendered without errors
+                let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+                _ = renderer.image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+            }
+        }
+    }
 }
