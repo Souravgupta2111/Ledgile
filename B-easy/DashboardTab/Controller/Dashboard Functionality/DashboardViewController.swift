@@ -50,6 +50,11 @@ class DashboardViewController: UIViewController {
         loadWeeklyChartData()
         showLargeTitleProfileButton()
     }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        WalkthroughCoordinator.shared.checkAndStartWalkthroughIfNeeded(from: self)
+    }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)

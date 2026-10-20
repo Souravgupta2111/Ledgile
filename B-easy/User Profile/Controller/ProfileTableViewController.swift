@@ -40,6 +40,7 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
     private enum PreferencesRow: Int, CaseIterable {
         case appAppearance
         case voiceWakePhrase
+        case walkthroughTour
         case dataBackup
         case cloudBackup
         case importBackup
@@ -47,7 +48,7 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
     }
 
     private var currentPreferencesRows: [PreferencesRow] {
-        return [.appAppearance, .voiceWakePhrase, .dataBackup, .cloudBackup, .importBackup, .restoreCloudBackup]
+        return [.appAppearance, .voiceWakePhrase, .walkthroughTour, .dataBackup, .cloudBackup, .importBackup, .restoreCloudBackup]
     }
 
     private enum LegalRow: Int, CaseIterable {
@@ -302,6 +303,13 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
                     accessoryStyle: .chevron
                 )
 
+            case .walkthroughTour:
+                cell.configure(
+                    icon: UIImage(systemName: "map.fill"),
+                    title: "App Walkthrough Tour",
+                    accessoryStyle: .chevron
+                )
+
             case .dataBackup:
                 cell.configure(
                     icon: UIImage(systemName: "tray.and.arrow.up.fill"),
@@ -439,6 +447,10 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
                 presentAppearancePicker()
             case .voiceWakePhrase:
                 presentWakePhrasePicker()
+            case .walkthroughTour:
+                WalkthroughManager.shared.resetWalkthroughState()
+                navigationController?.popViewController(animated: false)
+                WalkthroughCoordinator.shared.startWalkthrough(from: self, isReplay: true)
             case .dataBackup:
                 exportDataBackup()
             case .cloudBackup:
