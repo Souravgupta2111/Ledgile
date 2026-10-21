@@ -356,19 +356,38 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         if index < buttons.count {
             let button = buttons[index]
-            var rect = button.convert(button.bounds, to: overlay)
-            rect.size.height = min(rect.height, 52)
-            return rect
+            var contentRect: CGRect = .null
+            for sub in button.subviews {
+                let typeName = "\(type(of: sub))"
+                // Only consider image and label subviews, ignoring any platform background platters
+                if typeName.contains("ImageView") || typeName.contains("Label") {
+                    let converted = sub.convert(sub.bounds, to: overlay)
+                    contentRect = contentRect.isNull ? converted : contentRect.union(converted)
+                }
+            }
+
+            if !contentRect.isNull && contentRect.width > 12 && contentRect.height > 12 {
+                // Tightly and naturally frame the icon and label with gentle breathing room
+                let padX: CGFloat = 8
+                let padY: CGFloat = 4
+                return contentRect.insetBy(dx: -padX, dy: -padY)
+            }
+
+            // Clean fallback: centered 60x46 frame inside the tab button
+            let buttonRect = button.convert(button.bounds, to: overlay)
+            let width: CGFloat = 60
+            let height: CGFloat = 46
+            let originX = buttonRect.midX - (width / 2)
+            let originY = buttonRect.midY - (height / 2) - 2
+            return CGRect(x: originX, y: originY, width: width, height: height)
         }
 
-        // Fallback: calculate evenly distributed item frame (top 48pt of bar)
-        let itemFrame = CGRect(
-            x: itemX + 4,
-            y: 2,
-            width: itemWidth - 8,
-            height: 48
-        )
-        return bar.convert(itemFrame, to: overlay)
+        // Fallback: calculate evenly distributed item frame centered around tab item
+        let width: CGFloat = 60
+        let height: CGFloat = 46
+        let originX = itemX + (itemWidth - width) / 2
+        let originY = bar.convert(CGPoint(x: 0, y: 3), to: overlay).y
+        return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
     /// Recalculates and animates the spotlight when view layout finishes or updates.

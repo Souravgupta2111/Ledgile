@@ -10,6 +10,12 @@ final class WalkthroughOverlayView: UIView {
 
     weak var delegate: WalkthroughOverlayViewDelegate?
 
+    // MARK: - Brand Colors
+
+    private static var brandGreen: UIColor {
+        UIColor(named: "Lime Moss") ?? UIColor(red: 105/255, green: 143/255, blue: 0/255, alpha: 1.0)
+    }
+
     // MARK: - Subviews & Layers
 
     private let dimmingMaskLayer = CAShapeLayer()
@@ -18,11 +24,13 @@ final class WalkthroughOverlayView: UIView {
     private let cardView: UIView = {
         let view = UIView()
         view.backgroundColor = .secondarySystemGroupedBackground
-        view.layer.cornerRadius = 20
+        view.layer.cornerRadius = 16
+        view.layer.borderWidth = 0.5
+        view.layer.borderColor = UIColor.separator.withAlphaComponent(0.25).cgColor
         view.layer.shadowColor = UIColor.black.cgColor
-        view.layer.shadowOpacity = 0.22
-        view.layer.shadowRadius = 14
-        view.layer.shadowOffset = CGSize(width: 0, height: 6)
+        view.layer.shadowOpacity = 0.12
+        view.layer.shadowRadius = 16
+        view.layer.shadowOffset = CGSize(width: 0, height: 4)
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -30,7 +38,7 @@ final class WalkthroughOverlayView: UIView {
     private let contentStackView: UIStackView = {
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = 14
+        stack.spacing = 12
         stack.alignment = .fill
         stack.distribution = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -41,16 +49,23 @@ final class WalkthroughOverlayView: UIView {
         let stack = UIStackView()
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.distribution = .equalSpacing
+        stack.distribution = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
     }()
 
+    private let headerSpacer: UIView = {
+        let view = UIView()
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
     private let stepBadgeContainer: UIView = {
         let view = UIView()
-        let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.13, green: 0.75, blue: 0.42, alpha: 1.0)
-        view.backgroundColor = lime.withAlphaComponent(0.15)
-        view.layer.cornerRadius = 10
+        view.backgroundColor = WalkthroughOverlayView.brandGreen.withAlphaComponent(0.12)
+        view.layer.cornerRadius = 11
         view.clipsToBounds = true
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
@@ -58,9 +73,8 @@ final class WalkthroughOverlayView: UIView {
 
     private let stepBadgeLabel: UILabel = {
         let label = UILabel()
-        let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.13, green: 0.75, blue: 0.42, alpha: 1.0)
-        label.textColor = lime
-        label.font = .systemFont(ofSize: 12, weight: .bold)
+        label.textColor = WalkthroughOverlayView.brandGreen
+        label.font = .systemFont(ofSize: 11, weight: .bold)
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -70,6 +84,7 @@ final class WalkthroughOverlayView: UIView {
         button.setTitle("Skip Tour", for: .normal)
         button.setTitleColor(.secondaryLabel, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        button.setContentHuggingPriority(.required, for: .horizontal)
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
@@ -77,7 +92,7 @@ final class WalkthroughOverlayView: UIView {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.textColor = .label
-        label.font = .systemFont(ofSize: 20, weight: .bold)
+        label.font = .systemFont(ofSize: 19, weight: .bold)
         label.numberOfLines = 0
         label.lineBreakMode = .byWordWrapping
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -97,8 +112,8 @@ final class WalkthroughOverlayView: UIView {
     private let buttonStack: UIStackView = {
         let stack = UIStackView()
         stack.axis = .horizontal
-        stack.spacing = 12
-        stack.distribution = .fillProportionally
+        stack.spacing = 10
+        stack.distribution = .fill
         stack.alignment = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
@@ -106,10 +121,11 @@ final class WalkthroughOverlayView: UIView {
 
     private let backButton: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.baseBackgroundColor = .tertiarySystemFill
+        config.baseBackgroundColor = .secondarySystemFill
         config.baseForegroundColor = .label
-        config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 18, bottom: 10, trailing: 18)
+        config.cornerStyle = .fixed
+        config.background.cornerRadius = 12
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
         var titleAttr = AttributedString("Back")
         titleAttr.font = .systemFont(ofSize: 15, weight: .semibold)
         config.attributedTitle = titleAttr
@@ -119,14 +135,14 @@ final class WalkthroughOverlayView: UIView {
     }()
 
     private let primaryButton: UIButton = {
-        let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.13, green: 0.75, blue: 0.42, alpha: 1.0)
         var config = UIButton.Configuration.filled()
-        config.baseBackgroundColor = lime
+        config.baseBackgroundColor = WalkthroughOverlayView.brandGreen
         config.baseForegroundColor = .white
-        config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 24, bottom: 10, trailing: 24)
+        config.cornerStyle = .fixed
+        config.background.cornerRadius = 12
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20)
         var titleAttr = AttributedString("Next")
-        titleAttr.font = .systemFont(ofSize: 15, weight: .bold)
+        titleAttr.font = .systemFont(ofSize: 15, weight: .semibold)
         config.attributedTitle = titleAttr
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -137,6 +153,7 @@ final class WalkthroughOverlayView: UIView {
     private var cardCenterYConstraint: NSLayoutConstraint!
     private var cardTopConstraint: NSLayoutConstraint!
     private var cardBottomConstraint: NSLayoutConstraint!
+    private var backButtonWidthConstraint: NSLayoutConstraint!
 
     private var currentSpotlightRect: CGRect?
     private var currentStep: WalkthroughStep = .welcome
@@ -162,10 +179,9 @@ final class WalkthroughOverlayView: UIView {
         dimmingMaskLayer.fillRule = .evenOdd
         layer.mask = dimmingMaskLayer
 
-        let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.13, green: 0.75, blue: 0.42, alpha: 1.0)
-        spotlightGlowLayer.strokeColor = lime.withAlphaComponent(0.70).cgColor
+        spotlightGlowLayer.strokeColor = Self.brandGreen.withAlphaComponent(0.40).cgColor
         spotlightGlowLayer.fillColor = UIColor.clear.cgColor
-        spotlightGlowLayer.lineWidth = 1.5
+        spotlightGlowLayer.lineWidth = 1.0
         spotlightGlowLayer.lineDashPattern = nil
         spotlightGlowLayer.shadowColor = nil
         spotlightGlowLayer.shadowOpacity = 0
@@ -178,8 +194,8 @@ final class WalkthroughOverlayView: UIView {
         // Setup badge container
         stepBadgeContainer.addSubview(stepBadgeLabel)
         NSLayoutConstraint.activate([
-            stepBadgeLabel.topAnchor.constraint(equalTo: stepBadgeContainer.topAnchor, constant: 4),
-            stepBadgeLabel.bottomAnchor.constraint(equalTo: stepBadgeContainer.bottomAnchor, constant: -4),
+            stepBadgeContainer.heightAnchor.constraint(equalToConstant: 22),
+            stepBadgeLabel.centerYAnchor.constraint(equalTo: stepBadgeContainer.centerYAnchor),
             stepBadgeLabel.leadingAnchor.constraint(equalTo: stepBadgeContainer.leadingAnchor, constant: 10),
             stepBadgeLabel.trailingAnchor.constraint(equalTo: stepBadgeContainer.trailingAnchor, constant: -10)
         ])
@@ -192,11 +208,14 @@ final class WalkthroughOverlayView: UIView {
 
         // Setup header stack
         headerStack.addArrangedSubview(stepBadgeContainer)
+        headerStack.addArrangedSubview(headerSpacer)
         headerStack.addArrangedSubview(skipButton)
 
         // Setup button stack
         buttonStack.addArrangedSubview(backButton)
         buttonStack.addArrangedSubview(primaryButton)
+
+        backButtonWidthConstraint = backButton.widthAnchor.constraint(equalToConstant: 88)
 
         // Setup vertical content stack
         contentStackView.addArrangedSubview(headerStack)
@@ -204,8 +223,8 @@ final class WalkthroughOverlayView: UIView {
         contentStackView.addArrangedSubview(messageLabel)
         contentStackView.addArrangedSubview(buttonStack)
 
-        contentStackView.setCustomSpacing(10, after: titleLabel)
-        contentStackView.setCustomSpacing(18, after: messageLabel)
+        contentStackView.setCustomSpacing(8, after: titleLabel)
+        contentStackView.setCustomSpacing(16, after: messageLabel)
 
         titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         titleLabel.setContentHuggingPriority(.required, for: .vertical)
@@ -224,7 +243,7 @@ final class WalkthroughOverlayView: UIView {
         // Card positioning constraints
         let cardWidth = cardView.widthAnchor.constraint(equalTo: widthAnchor, constant: -40)
         cardWidth.priority = UILayoutPriority(950)
-        let cardMaxWidth = cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 400)
+        let cardMaxWidth = cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 356)
         let cardMinWidth = cardView.widthAnchor.constraint(greaterThanOrEqualToConstant: 280)
         let cardCenterX = cardView.centerXAnchor.constraint(equalTo: centerXAnchor)
 
@@ -293,19 +312,34 @@ final class WalkthroughOverlayView: UIView {
         messageLabel.attributedText = attributedMessage
 
         var titleAttr = AttributedString(step.primaryButtonTitle)
-        titleAttr.font = .systemFont(ofSize: 15, weight: .bold)
+        titleAttr.font = .systemFont(ofSize: 15, weight: .semibold)
         primaryButton.configuration?.attributedTitle = titleAttr
-        backButton.isHidden = !canGoBack
 
+        backButton.isHidden = !canGoBack
+        backButtonWidthConstraint.isActive = canGoBack
+
+        let badgeText: String?
         if let index = step.stepIndex {
-            stepBadgeContainer.isHidden = false
-            stepBadgeLabel.text = "Step \(index) of \(WalkthroughStep.totalGuidedSteps)"
+            badgeText = "STEP \(index) OF \(WalkthroughStep.totalGuidedSteps)"
         } else if step == .welcome {
-            stepBadgeContainer.isHidden = false
-            stepBadgeLabel.text = "✨ Welcome"
+            badgeText = "WELCOME"
         } else if step == .completion {
+            badgeText = "ALL SET"
+        } else {
+            badgeText = nil
+        }
+
+        if let text = badgeText {
             stepBadgeContainer.isHidden = false
-            stepBadgeLabel.text = "🎉 Done"
+            let attr = NSMutableAttributedString(
+                string: text,
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 11, weight: .bold),
+                    .foregroundColor: Self.brandGreen,
+                    .kern: 0.6
+                ]
+            )
+            stepBadgeLabel.attributedText = attr
         } else {
             stepBadgeContainer.isHidden = true
         }
@@ -393,7 +427,7 @@ final class WalkthroughOverlayView: UIView {
             shouldPlaceBelow = (spaceBelow >= spaceAbove)
         }
 
-        let spacing: CGFloat = 12
+        let spacing: CGFloat = 14
 
         if shouldPlaceBelow {
             let topY = target.maxY + spacing

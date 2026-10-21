@@ -27,7 +27,7 @@ enum WalkthroughStep: Int, CaseIterable {
         case .welcome, .completion:
             return 0
         case .stockTab:
-            return 14
+            return 12
         case .dashboardOverview:
             return 16
         case .analytics:
@@ -35,7 +35,7 @@ enum WalkthroughStep: Int, CaseIterable {
         case .creditDetails:
             return 18
         case .stockActions, .salesActions:
-            return 24
+            return 22
         }
     }
 

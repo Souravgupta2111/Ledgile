@@ -219,9 +219,9 @@ final class WalkthroughTests: XCTestCase {
         XCTAssertEqual(WalkthroughStep.dashboardOverview.spotlightCornerRadius, 16)
         XCTAssertEqual(WalkthroughStep.analytics.spotlightCornerRadius, 14)
         XCTAssertEqual(WalkthroughStep.creditDetails.spotlightCornerRadius, 18)
-        XCTAssertEqual(WalkthroughStep.stockTab.spotlightCornerRadius, 14)
-        XCTAssertEqual(WalkthroughStep.stockActions.spotlightCornerRadius, 24)
-        XCTAssertEqual(WalkthroughStep.salesActions.spotlightCornerRadius, 24)
+        XCTAssertEqual(WalkthroughStep.stockTab.spotlightCornerRadius, 12)
+        XCTAssertEqual(WalkthroughStep.stockActions.spotlightCornerRadius, 22)
+        XCTAssertEqual(WalkthroughStep.salesActions.spotlightCornerRadius, 22)
         XCTAssertEqual(WalkthroughStep.welcome.spotlightCornerRadius, 0)
         XCTAssertEqual(WalkthroughStep.completion.spotlightCornerRadius, 0)
     }
