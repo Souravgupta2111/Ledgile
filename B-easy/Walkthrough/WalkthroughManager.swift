@@ -22,6 +22,23 @@ enum WalkthroughStep: Int, CaseIterable {
         }
     }
 
+    var spotlightCornerRadius: CGFloat {
+        switch self {
+        case .welcome, .completion:
+            return 0
+        case .stockTab:
+            return 14
+        case .dashboardOverview:
+            return 16
+        case .analytics:
+            return 14
+        case .creditDetails:
+            return 18
+        case .stockActions, .salesActions:
+            return 24
+        }
+    }
+
     /// 1-based index among guided steps (excluding pure welcome and completion modals)
     var stepIndex: Int? {
         switch self {
@@ -117,6 +134,12 @@ final class WalkthroughManager {
 
     /// Determines whether the first-time walkthrough should automatically appear.
     func shouldShowWalkthrough(for userId: String? = nil) -> Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--force-walkthrough") {
+            return true
+        }
+        #endif
+
         let completedKey = key(for: completedKeyPrefix, userId: userId)
         let skippedKey = key(for: skippedKeyPrefix, userId: userId)
 

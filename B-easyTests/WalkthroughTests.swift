@@ -214,4 +214,15 @@ final class WalkthroughTests: XCTestCase {
         XCTAssertFalse(WalkthroughManager.shared.shouldShowWalkthrough(for: skipUser))
         XCTAssertFalse(WalkthroughManager.shared.hasCompletedWalkthrough(for: skipUser))
     }
+
+    func testSpotlightCornerRadii() {
+        XCTAssertEqual(WalkthroughStep.dashboardOverview.spotlightCornerRadius, 16)
+        XCTAssertEqual(WalkthroughStep.analytics.spotlightCornerRadius, 14)
+        XCTAssertEqual(WalkthroughStep.creditDetails.spotlightCornerRadius, 18)
+        XCTAssertEqual(WalkthroughStep.stockTab.spotlightCornerRadius, 14)
+        XCTAssertEqual(WalkthroughStep.stockActions.spotlightCornerRadius, 24)
+        XCTAssertEqual(WalkthroughStep.salesActions.spotlightCornerRadius, 24)
+        XCTAssertEqual(WalkthroughStep.welcome.spotlightCornerRadius, 0)
+        XCTAssertEqual(WalkthroughStep.completion.spotlightCornerRadius, 0)
+    }
 }

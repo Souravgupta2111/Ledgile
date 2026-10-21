@@ -139,6 +139,7 @@ final class WalkthroughOverlayView: UIView {
     private var cardBottomConstraint: NSLayoutConstraint!
 
     private var currentSpotlightRect: CGRect?
+    private var currentStep: WalkthroughStep = .welcome
 
     // MARK: - Initializer
 
@@ -166,9 +167,9 @@ final class WalkthroughOverlayView: UIView {
         spotlightGlowLayer.fillColor = UIColor.clear.cgColor
         spotlightGlowLayer.lineWidth = 1.5
         spotlightGlowLayer.lineDashPattern = nil
-        spotlightGlowLayer.shadowColor = lime.cgColor
-        spotlightGlowLayer.shadowOpacity = 0.25
-        spotlightGlowLayer.shadowRadius = 4
+        spotlightGlowLayer.shadowColor = nil
+        spotlightGlowLayer.shadowOpacity = 0
+        spotlightGlowLayer.shadowRadius = 0
         spotlightGlowLayer.shadowOffset = .zero
         layer.addSublayer(spotlightGlowLayer)
 
@@ -310,18 +311,21 @@ final class WalkthroughOverlayView: UIView {
         }
 
         skipButton.isHidden = (step == .completion)
+        currentStep = step
 
-        updateSpotlightAndCardPosition(targetRect: targetRect, isModal: step.isModal, animated: animated)
+        updateSpotlightAndCardPosition(targetRect: targetRect, step: step, isModal: step.isModal, animated: animated)
     }
 
     /// Recalculates and smoothly updates the spotlight target frame during runtime without reconfiguring content.
-    func updateTargetRect(_ targetRect: CGRect?, animated: Bool) {
+    func updateTargetRect(_ targetRect: CGRect?, for step: WalkthroughStep? = nil, animated: Bool = true) {
+        let activeStep = step ?? currentStep
         guard targetRect != currentSpotlightRect else { return }
-        updateSpotlightAndCardPosition(targetRect: targetRect, isModal: false, animated: animated)
+        updateSpotlightAndCardPosition(targetRect: targetRect, step: activeStep, isModal: activeStep.isModal, animated: animated)
     }
 
     private func updateSpotlightAndCardPosition(
         targetRect: CGRect?,
+        step: WalkthroughStep,
         isModal: Bool,
         animated: Bool
     ) {
@@ -330,14 +334,11 @@ final class WalkthroughOverlayView: UIView {
         let boundsPath = UIBezierPath(rect: bounds)
 
         if let target = targetRect, !isModal {
-            // Subtle, accurately fitted cutout margin
-            let insetRect = target.insetBy(dx: -4, dy: -4)
-            // Consistent, polished corner radius (12 for compact items like tab buttons, 18 for cards and action panels)
-            let cornerRadius: CGFloat = target.height < 65 ? min(12, insetRect.height / 2) : 18
-            let cutoutPath = UIBezierPath(roundedRect: insetRect, cornerRadius: cornerRadius)
+            let cornerRadius = step.spotlightCornerRadius
+            let cutoutPath = UIBezierPath(roundedRect: target, cornerRadius: cornerRadius)
             boundsPath.append(cutoutPath)
 
-            let glowPath = UIBezierPath(roundedRect: insetRect, cornerRadius: cornerRadius).cgPath
+            let glowPath = UIBezierPath(roundedRect: target, cornerRadius: cornerRadius).cgPath
 
             if animated {
                 let maskAnim = CABasicAnimation(keyPath: "path")
@@ -359,7 +360,7 @@ final class WalkthroughOverlayView: UIView {
             spotlightGlowLayer.path = glowPath
             spotlightGlowLayer.isHidden = false
 
-            repositionCard(relativeTo: insetRect, animated: animated)
+            repositionCard(relativeTo: target, animated: animated)
         } else {
             if animated {
                 let maskAnim = CABasicAnimation(keyPath: "path")
@@ -384,22 +385,24 @@ final class WalkthroughOverlayView: UIView {
         let spaceBelow = safeBottomBound - target.maxY
 
         let shouldPlaceBelow: Bool
-        if spaceBelow >= 240 {
+        if spaceBelow >= 260 {
             shouldPlaceBelow = true
-        } else if spaceAbove >= 240 {
+        } else if spaceAbove >= 260 {
             shouldPlaceBelow = false
         } else {
             shouldPlaceBelow = (spaceBelow >= spaceAbove)
         }
 
+        let spacing: CGFloat = 12
+
         if shouldPlaceBelow {
-            let topY = target.maxY + 14
+            let topY = target.maxY + spacing
             cardTopConstraint.constant = topY
             cardBottomConstraint.isActive = false
             cardCenterYConstraint.isActive = false
             cardTopConstraint.isActive = true
         } else {
-            let bottomY = target.minY - 14
+            let bottomY = target.minY - spacing
             cardBottomConstraint.constant = bottomY
             cardTopConstraint.isActive = false
             cardCenterYConstraint.isActive = false

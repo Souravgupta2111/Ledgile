@@ -129,11 +129,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
 
         case .stockTab:
-            tabBar.selectedIndex = 0
-            if let dashVC = findDashboardViewController(in: tabBar), let tv = dashVC.tableView {
-                tv.setContentOffset(.zero, animated: false)
-            }
             let stockIdx = findStockTabIndex(in: tabBar)
+            tabBar.selectedIndex = stockIdx
             let rect = findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
             overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
 
@@ -386,7 +383,18 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         default:
             return
         }
-        overlay.updateTargetRect(rect, animated: true)
+        overlay.updateTargetRect(rect, for: step, animated: true)
+    }
+
+    /// Tightly fits the spotlight around the actual Scan, Voice, and Manual controls.
+    /// The Voice button's 130x130 circle is centered vertically inside the 150pt row (y=10 to y=140).
+    /// Scan and Manual 54pt circles and labels span vertically within the same height.
+    private func fittedActionPanelRect(from rawRect: CGRect) -> CGRect {
+        let width: CGFloat = min(316, rawRect.width - 12)
+        let height: CGFloat = 134
+        let originX = rawRect.midX - (width / 2)
+        let originY = rawRect.minY + 8
+        return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
     private func findStockActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
@@ -398,21 +406,23 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
             if let globalFrame = stockVC.actionButtonsGlobalFrame,
                globalFrame.width > 50, globalFrame.height > 50 {
-                return overlay.convert(globalFrame, from: nil)
+                let rectInOverlay = overlay.convert(globalFrame, from: nil)
+                return fittedActionPanelRect(from: rectInOverlay)
             }
 
             if let actionRow = findView(withAccessibilityIdentifier: "stock_action_buttons_row", in: stockVC.view) {
-                return actionRow.convert(actionRow.bounds, to: overlay)
+                let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
+                return fittedActionPanelRect(from: rectInOverlay)
             }
         }
 
         // Precise fallback matching StockTabView layout (actionButtonsRow centered above Spacer(228)):
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
-        let width: CGFloat = min(300, screenWidth - 32)
-        let height: CGFloat = 138
+        let width: CGFloat = min(316, screenWidth - 32)
+        let height: CGFloat = 134
         let originX = (screenWidth - width) / 2
-        let originY = screenHeight - 228 - height
+        let originY = screenHeight - 228 - 150 + 8
 
         return CGRect(x: originX, y: originY, width: width, height: height)
     }
@@ -426,21 +436,23 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
             if let globalFrame = salesVC.actionButtonsGlobalFrame,
                globalFrame.width > 50, globalFrame.height > 50 {
-                return overlay.convert(globalFrame, from: nil)
+                let rectInOverlay = overlay.convert(globalFrame, from: nil)
+                return fittedActionPanelRect(from: rectInOverlay)
             }
 
             if let actionRow = findView(withAccessibilityIdentifier: "sales_action_buttons_row", in: salesVC.view) {
-                return actionRow.convert(actionRow.bounds, to: overlay)
+                let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
+                return fittedActionPanelRect(from: rectInOverlay)
             }
         }
 
         // Precise fallback matching SalesTabView layout (actionButtonsRow centered above Spacer(228)):
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
-        let width: CGFloat = min(300, screenWidth - 32)
-        let height: CGFloat = 138
+        let width: CGFloat = min(316, screenWidth - 32)
+        let height: CGFloat = 134
         let originX = (screenWidth - width) / 2
-        let originY = screenHeight - 228 - height
+        let originY = screenHeight - 228 - 150 + 8
 
         return CGRect(x: originX, y: originY, width: width, height: height)
     }
