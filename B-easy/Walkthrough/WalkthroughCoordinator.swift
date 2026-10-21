@@ -70,7 +70,27 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         currentStep = isReplay ? .dashboardOverview : .welcome
         presentStep(currentStep, animated: false)
+
+        #if DEBUG
+        if let intervalArgIndex = ProcessInfo.processInfo.arguments.firstIndex(of: "--auto-advance-walkthrough"),
+           intervalArgIndex + 1 < ProcessInfo.processInfo.arguments.count,
+           let interval = Double(ProcessInfo.processInfo.arguments[intervalArgIndex + 1]) {
+            scheduleAutoAdvance(interval: interval)
+        }
+        #endif
     }
+
+    #if DEBUG
+    private func scheduleAutoAdvance(interval: TimeInterval) {
+        Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] timer in
+            guard let self = self, self.isRunning, let overlay = self.activeOverlay else {
+                timer.invalidate()
+                return
+            }
+            self.walkthroughOverlayDidTapNext(overlay)
+        }
+    }
+    #endif
 
     // MARK: - Step Presentation & Navigation
 
@@ -110,11 +130,13 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         case .stockTab:
             tabBar.selectedIndex = 0
-            let rect = findTabBarItemRect(at: 1, in: tabBar, overlay: overlay)
+            let stockIdx = findStockTabIndex(in: tabBar)
+            let rect = findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
             overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
 
         case .stockActions:
-            tabBar.selectedIndex = 1
+            let stockIdx = findStockTabIndex(in: tabBar)
+            tabBar.selectedIndex = stockIdx
             // Give StockViewController time to load its hosted SwiftUI view
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self, weak overlay, weak tabBar] in
                 guard let self = self, let overlay = overlay, let tabBar = tabBar else { return }
@@ -123,7 +145,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
 
         case .salesActions:
-            tabBar.selectedIndex = 3
+            let salesIdx = findSalesTabIndex(in: tabBar)
+            tabBar.selectedIndex = salesIdx
             // Give SalesViewController time to load its hosted SwiftUI view
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self, weak overlay, weak tabBar] in
                 guard let self = self, let overlay = overlay, let tabBar = tabBar else { return }
@@ -209,6 +232,30 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             completion()
         }
+    }
+
+    private func findStockTabIndex(in tabBar: UITabBarController) -> Int {
+        if let viewControllers = tabBar.viewControllers {
+            for (idx, vc) in viewControllers.enumerated() {
+                let rootVC = (vc as? UINavigationController)?.viewControllers.first ?? vc
+                if rootVC is StockViewController {
+                    return idx
+                }
+            }
+        }
+        return 1
+    }
+
+    private func findSalesTabIndex(in tabBar: UITabBarController) -> Int {
+        if let viewControllers = tabBar.viewControllers {
+            for (idx, vc) in viewControllers.enumerated() {
+                let rootVC = (vc as? UINavigationController)?.viewControllers.first ?? vc
+                if rootVC is SalesViewController {
+                    return idx
+                }
+            }
+        }
+        return 2
     }
 
     private func findDashboardViewController(in tabBar: UITabBarController) -> DashboardViewController? {
@@ -314,28 +361,75 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
     }
 
     private func findStockActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
+        let stockIdx = findStockTabIndex(in: tabBar)
+        if let controllers = tabBar.viewControllers, stockIdx < controllers.count,
+           let nav = controllers[stockIdx] as? UINavigationController,
+           let stockVC = nav.viewControllers.first as? StockViewController {
+            stockVC.view.layoutIfNeeded()
+
+            if let globalFrame = stockVC.actionButtonsGlobalFrame,
+               globalFrame.width > 50, globalFrame.height > 50 {
+                let rectInOverlay = overlay.convert(globalFrame, from: nil)
+                return rectInOverlay.insetBy(dx: -10, dy: -8)
+            }
+
+            if let actionRow = findView(withAccessibilityIdentifier: "stock_action_buttons_row", in: stockVC.view) {
+                let rect = actionRow.convert(actionRow.bounds, to: overlay)
+                return rect.insetBy(dx: -10, dy: -8)
+            }
+        }
+
+        // Precise fallback matching StockTabView layout (actionButtonsRow centered above Spacer(228)):
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
-        let actionWidth: CGFloat = min(320, screenWidth - 32)
-        let actionHeight: CGFloat = 160
+        let width: CGFloat = min(320, screenWidth - 32)
+        let height: CGFloat = 142
+        let originX = (screenWidth - width) / 2
+        let originY = screenHeight - 228 - height
 
-        let bottomOffset: CGFloat = tabBar.tabBar.bounds.height + overlay.safeAreaInsets.bottom + 180
-        let originY = max(overlay.safeAreaInsets.top + 80, screenHeight - bottomOffset - actionHeight)
-        let originX = (screenWidth - actionWidth) / 2
-
-        return CGRect(x: originX, y: originY, width: actionWidth, height: actionHeight)
+        return CGRect(x: originX, y: originY, width: width, height: height).insetBy(dx: -10, dy: -8)
     }
 
     private func findSalesActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
+        let salesIdx = findSalesTabIndex(in: tabBar)
+        if let controllers = tabBar.viewControllers, salesIdx < controllers.count,
+           let nav = controllers[salesIdx] as? UINavigationController,
+           let salesVC = nav.viewControllers.first as? SalesViewController {
+            salesVC.view.layoutIfNeeded()
+
+            if let globalFrame = salesVC.actionButtonsGlobalFrame,
+               globalFrame.width > 50, globalFrame.height > 50 {
+                let rectInOverlay = overlay.convert(globalFrame, from: nil)
+                return rectInOverlay.insetBy(dx: -10, dy: -8)
+            }
+
+            if let actionRow = findView(withAccessibilityIdentifier: "sales_action_buttons_row", in: salesVC.view) {
+                let rect = actionRow.convert(actionRow.bounds, to: overlay)
+                return rect.insetBy(dx: -10, dy: -8)
+            }
+        }
+
+        // Precise fallback matching SalesTabView layout (actionButtonsRow centered above Spacer(228)):
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
-        let actionWidth: CGFloat = min(320, screenWidth - 32)
-        let actionHeight: CGFloat = 160
+        let width: CGFloat = min(320, screenWidth - 32)
+        let height: CGFloat = 142
+        let originX = (screenWidth - width) / 2
+        let originY = screenHeight - 228 - height
 
-        let bottomOffset: CGFloat = tabBar.tabBar.bounds.height + overlay.safeAreaInsets.bottom + 180
-        let originY = max(overlay.safeAreaInsets.top + 80, screenHeight - bottomOffset - actionHeight)
-        let originX = (screenWidth - actionWidth) / 2
+        return CGRect(x: originX, y: originY, width: width, height: height).insetBy(dx: -10, dy: -8)
+    }
 
-        return CGRect(x: originX, y: originY, width: actionWidth, height: actionHeight)
+    /// Recursively walks the UIKit view hierarchy to find a view with the given accessibility identifier.
+    private func findView(withAccessibilityIdentifier identifier: String, in root: UIView) -> UIView? {
+        if root.accessibilityIdentifier == identifier {
+            return root
+        }
+        for subview in root.subviews {
+            if let match = findView(withAccessibilityIdentifier: identifier, in: subview) {
+                return match
+            }
+        }
+        return nil
     }
 }

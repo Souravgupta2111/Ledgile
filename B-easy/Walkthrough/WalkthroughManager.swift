@@ -74,9 +74,9 @@ enum WalkthroughStep: Int, CaseIterable {
         case .stockTab:
             return "Manage your inventory and keep track of the products available in your business here."
         case .stockActions:
-            return "Tap here to add stock to your inventory.\n\n• Voice: Use voice input to add stock.\n• Scan: Use the scan option to add products by scanning.\n• Manual: Enter item details and quantities directly."
+            return "Add stock to your inventory using your preferred method:\n\n• Voice: Tap to speak and record purchases hands-free.\n• Scan: Scan product barcodes or QR codes quickly.\n• Manual: Enter item details and quantities directly."
         case .salesActions:
-            return "Record your sales and access your sales-related features here.\n\n• Voice: Speak customer sales hands-free.\n• Scan: Scan barcodes or QR codes quickly.\n• Manual: Enter sale details and create bills."
+            return "Record your sales using your preferred method:\n\n• Voice: Tap to speak and record sales hands-free.\n• Scan: Scan product barcodes or QR codes quickly.\n• Manual: Enter items, quantities, and prices directly."
         case .completion:
             return "You now know where to find your dashboard insights, manage stock, record sales, and access credit details. Explore B Easy at your own pace."
         }
@@ -87,8 +87,6 @@ enum WalkthroughStep: Int, CaseIterable {
         case .welcome:
             return "Start Tour"
         case .completion:
-            return "Let's Get Started"
-        case .salesActions:
             return "Finish"
         default:
             return "Next"
