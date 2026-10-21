@@ -225,4 +225,57 @@ final class WalkthroughTests: XCTestCase {
         XCTAssertEqual(WalkthroughStep.welcome.spotlightCornerRadius, 0)
         XCTAssertEqual(WalkthroughStep.completion.spotlightCornerRadius, 0)
     }
+
+    func testMultiCutoutsConfiguration() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+        overlay.layoutIfNeeded()
+
+        // Test configuring two cutouts (e.g. Credit Purchase and Credit Sale)
+        let cutouts = [
+            WalkthroughCutout(rect: CGRect(x: 18, y: 380, width: 170, height: 112), cornerRadius: 24),
+            WalkthroughCutout(rect: CGRect(x: 205, y: 380, width: 170, height: 112), cornerRadius: 24)
+        ]
+        overlay.configure(step: .creditDetails, cutouts: cutouts, canGoBack: true, animated: false)
+        overlay.layoutIfNeeded()
+
+        XCTAssertEqual(overlay.activeCutouts.count, 2)
+        XCTAssertEqual(overlay.activeCutouts[0].cornerRadius, 24)
+        XCTAssertEqual(overlay.activeCutouts[1].cornerRadius, 24)
+
+        // Test configuring three cutouts (e.g. Scan, Voice, Manual action controls)
+        let actionCutouts = [
+            WalkthroughCutout(rect: CGRect(x: 40, y: 550, width: 64, height: 80), cornerRadius: 18),
+            WalkthroughCutout(rect: CGRect(x: 130, y: 520, width: 134, height: 134), cornerRadius: 67),
+            WalkthroughCutout(rect: CGRect(x: 290, y: 550, width: 64, height: 80), cornerRadius: 18)
+        ]
+        overlay.configure(step: .stockActions, cutouts: actionCutouts, canGoBack: true, animated: false)
+        overlay.layoutIfNeeded()
+
+        XCTAssertEqual(overlay.activeCutouts.count, 3)
+        XCTAssertEqual(overlay.activeCutouts[1].cornerRadius, 67)
+    }
+
+    func testDynamicCutoutsUpdate() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+        overlay.layoutIfNeeded()
+
+        let initialCutouts = [
+            WalkthroughCutout(rect: CGRect(x: 40, y: 500, width: 64, height: 80), cornerRadius: 18)
+        ]
+        overlay.configure(step: .salesActions, cutouts: initialCutouts, canGoBack: true, animated: false)
+        overlay.layoutIfNeeded()
+        XCTAssertEqual(overlay.activeCutouts.count, 1)
+
+        let updatedCutouts = [
+            WalkthroughCutout(rect: CGRect(x: 40, y: 520, width: 64, height: 80), cornerRadius: 18),
+            WalkthroughCutout(rect: CGRect(x: 130, y: 490, width: 134, height: 134), cornerRadius: 67)
+        ]
+        overlay.updateCutouts(updatedCutouts, animated: false)
+        overlay.layoutIfNeeded()
+        XCTAssertEqual(overlay.activeCutouts.count, 2)
+    }
 }

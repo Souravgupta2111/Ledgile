@@ -68,7 +68,18 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             overlay.alpha = 1
         }
 
+        #if DEBUG
+        if let stepArgIndex = ProcessInfo.processInfo.arguments.firstIndex(of: "--walkthrough-step"),
+           stepArgIndex + 1 < ProcessInfo.processInfo.arguments.count,
+           let stepRaw = Int(ProcessInfo.processInfo.arguments[stepArgIndex + 1]),
+           let requestedStep = WalkthroughStep(rawValue: stepRaw) {
+            currentStep = requestedStep
+        } else {
+            currentStep = isReplay ? .dashboardOverview : .welcome
+        }
+        #else
         currentStep = isReplay ? .dashboardOverview : .welcome
+        #endif
         presentStep(currentStep, animated: false)
 
         #if DEBUG
@@ -102,61 +113,51 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         switch step {
         case .welcome:
             tabBar.selectedIndex = 0
-            overlay.configure(step: step, targetRect: nil, canGoBack: canGoBack, animated: animated)
+            overlay.configure(step: step, cutouts: [], canGoBack: canGoBack, animated: animated)
 
         case .dashboardOverview:
             tabBar.selectedIndex = 0
             ensureDashboardVisible(tabBar: tabBar) { [weak self, weak overlay] in
                 guard let self = self, let overlay = overlay else { return }
-                let rect = self.findDashboardOverviewRect(in: tabBar, overlay: overlay)
-                overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
+                let cutouts = self.resolveDashboardOverviewCutouts(in: tabBar, overlay: overlay)
+                overlay.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
             }
 
         case .analytics:
             tabBar.selectedIndex = 0
             ensureDashboardVisible(tabBar: tabBar) { [weak self, weak overlay] in
                 guard let self = self, let overlay = overlay else { return }
-                let rect = self.findAnalyticsReportsRect(in: tabBar, overlay: overlay)
-                overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
+                self.resolveAnalyticsReportsCutouts(in: tabBar, overlay: overlay) { cutouts in
+                    overlay.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
+                }
             }
 
         case .creditDetails:
             tabBar.selectedIndex = 0
             ensureDashboardVisible(tabBar: tabBar) { [weak self, weak overlay] in
                 guard let self = self, let overlay = overlay else { return }
-                let rect = self.findCreditDetailsRect(in: tabBar, overlay: overlay)
-                overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
+                let cutouts = self.resolveCreditDetailsCutouts(in: tabBar, overlay: overlay)
+                overlay.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
             }
 
         case .stockTab:
-            let stockIdx = findStockTabIndex(in: tabBar)
-            tabBar.selectedIndex = stockIdx
-            let rect = findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
-            overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
+            resolveStockTabCutouts(in: tabBar, overlay: overlay) { [weak overlay] cutouts in
+                overlay?.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
+            }
 
         case .stockActions:
-            let stockIdx = findStockTabIndex(in: tabBar)
-            tabBar.selectedIndex = stockIdx
-            // Give StockViewController time to load its hosted SwiftUI view
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self, weak overlay, weak tabBar] in
-                guard let self = self, let overlay = overlay, let tabBar = tabBar else { return }
-                let rect = self.findStockActionsRect(in: tabBar, overlay: overlay)
-                overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
+            resolveStockActionsCutouts(in: tabBar, overlay: overlay) { [weak overlay] cutouts in
+                overlay?.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
             }
 
         case .salesActions:
-            let salesIdx = findSalesTabIndex(in: tabBar)
-            tabBar.selectedIndex = salesIdx
-            // Give SalesViewController time to load its hosted SwiftUI view
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self, weak overlay, weak tabBar] in
-                guard let self = self, let overlay = overlay, let tabBar = tabBar else { return }
-                let rect = self.findSalesActionsRect(in: tabBar, overlay: overlay)
-                overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
+            resolveSalesActionsCutouts(in: tabBar, overlay: overlay) { [weak overlay] cutouts in
+                overlay?.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
             }
 
         case .completion:
             tabBar.selectedIndex = 0
-            overlay.configure(step: step, targetRect: nil, canGoBack: canGoBack, animated: animated)
+            overlay.configure(step: step, cutouts: [], canGoBack: canGoBack, animated: animated)
         }
     }
 
@@ -171,7 +172,6 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             currentStep = allSteps[nextIndex]
             presentStep(currentStep, animated: true)
         } else {
-            // Finished
             dismissWalkthrough(completed: true)
         }
     }
@@ -217,7 +217,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         }
     }
 
-    // MARK: - Target Rect Resolvers
+    // MARK: - Target Rect & Cutout Resolvers
 
     private func ensureDashboardVisible(tabBar: UITabBarController, completion: @escaping () -> Void) {
         guard let nav = tabBar.viewControllers?.first as? UINavigationController ?? (tabBar.selectedViewController as? UINavigationController) else {
@@ -234,7 +234,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         }
     }
 
-    private func findStockTabIndex(in tabBar: UITabBarController) -> Int {
+    func findStockTabIndex(in tabBar: UITabBarController) -> Int {
         if let viewControllers = tabBar.viewControllers {
             for (idx, vc) in viewControllers.enumerated() {
                 let rootVC = (vc as? UINavigationController)?.viewControllers.first ?? vc
@@ -246,7 +246,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         return 1
     }
 
-    private func findSalesTabIndex(in tabBar: UITabBarController) -> Int {
+    func findSalesTabIndex(in tabBar: UITabBarController) -> Int {
         if let viewControllers = tabBar.viewControllers {
             for (idx, vc) in viewControllers.enumerated() {
                 let rootVC = (vc as? UINavigationController)?.viewControllers.first ?? vc
@@ -265,9 +265,9 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         return tabBar.viewControllers?.first as? DashboardViewController
     }
 
-    private func findDashboardOverviewRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect? {
-        guard let dashboardVC = findDashboardViewController(in: tabBar) else { return nil }
-        guard let tableView = dashboardVC.tableView else { return nil }
+    private func resolveDashboardOverviewCutouts(in tabBar: UITabBarController, overlay: UIView) -> [WalkthroughCutout] {
+        guard let dashboardVC = findDashboardViewController(in: tabBar),
+              let tableView = dashboardVC.tableView else { return [] }
 
         // Scroll to top cell
         tableView.setContentOffset(.zero, animated: false)
@@ -275,71 +275,340 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         guard let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? DashboardTopTileTableViewCell else {
             let rowRect = tableView.rectForRow(at: IndexPath(row: 0, section: 0))
-            return tableView.convert(rowRect, to: overlay)
+            let converted = tableView.convert(rowRect, to: overlay)
+            return [WalkthroughCutout(rect: converted, cornerRadius: 16)]
         }
 
         if let card = cell.segmentedCardBackground {
-            return card.convert(card.bounds, to: overlay)
+            let rect = card.convert(card.bounds, to: overlay)
+            if rect.width > 50 && rect.height > 50 && overlay.bounds.intersects(rect) {
+                return [WalkthroughCutout(rect: rect, cornerRadius: 16)]
+            }
         }
 
-        return cell.convert(cell.bounds, to: overlay)
+        let cellRect = cell.convert(cell.bounds, to: overlay)
+        return [WalkthroughCutout(rect: cellRect, cornerRadius: 16)]
     }
 
-    private func findAnalyticsReportsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect? {
-        guard let dashboardVC = findDashboardViewController(in: tabBar) else { return nil }
-        guard let tableView = dashboardVC.tableView else { return nil }
+    private func resolveAnalyticsReportsCutouts(
+        in tabBar: UITabBarController,
+        overlay: UIView,
+        completion: @escaping ([WalkthroughCutout]) -> Void
+    ) {
+        guard let dashboardVC = findDashboardViewController(in: tabBar),
+              let tableView = dashboardVC.tableView else {
+            completion([])
+            return
+        }
 
-        // Scroll so Reports section is in view
+        // Scroll so Reports section header is in clear view
         tableView.scrollToRow(at: IndexPath(row: 0, section: 2), at: .middle, animated: false)
         tableView.layoutIfNeeded()
 
-        // 1. Precise match on actual header view
-        if let headerView = findView(withAccessibilityIdentifier: "dashboard_reports_header", in: tableView) {
-            let converted = headerView.convert(headerView.bounds, to: overlay)
-            return CGRect(x: 16, y: converted.minY, width: overlay.bounds.width - 32, height: max(converted.height, 44))
-        }
+        DispatchQueue.main.async { [weak self, weak overlay] in
+            guard let self = self, let overlay = overlay else {
+                completion([])
+                return
+            }
+            tableView.layoutIfNeeded()
 
-        // 2. Relative to the first reports table row
-        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 2)) {
-            let converted = cell.convert(cell.bounds, to: overlay)
-            return CGRect(x: 16, y: converted.minY - 48, width: overlay.bounds.width - 32, height: 44)
-        }
+            if let headerView = self.findView(withAccessibilityIdentifier: "dashboard_reports_header", in: tableView) {
+                let titleLabel = self.findFirstSubview(ofType: UILabel.self, in: headerView)
+                let viewAllButton = self.findFirstSubview(ofType: UIButton.self, in: headerView)
 
-        // 3. Fallback to header rect
-        let headerRect = tableView.rectForHeader(inSection: 2)
-        if !headerRect.isEmpty {
-            let converted = tableView.convert(headerRect, to: overlay)
-            return CGRect(x: 16, y: converted.minY - 2, width: overlay.bounds.width - 32, height: max(converted.height, 46) + 4)
-        }
+                if let title = titleLabel, let button = viewAllButton {
+                    let titleRect = title.convert(title.bounds, to: overlay).insetBy(dx: -8, dy: -5)
+                    let buttonRect = button.convert(button.bounds, to: overlay).insetBy(dx: -8, dy: -5)
 
-        // 4. Fallback to row rect
-        let rowRect = tableView.rectForRow(at: IndexPath(row: 0, section: 2))
-        return tableView.convert(rowRect, to: overlay)
+                    if titleRect.width > 20 && buttonRect.width > 20 &&
+                       overlay.bounds.intersects(titleRect) && overlay.bounds.intersects(buttonRect) {
+                        completion([
+                            WalkthroughCutout(rect: titleRect, cornerRadius: 8),
+                            WalkthroughCutout(rect: buttonRect, cornerRadius: 8)
+                        ])
+                        return
+                    }
+                }
+
+                // If individual labels aren't isolated, frame the header compactly with natural insets
+                let converted = headerView.convert(headerView.bounds, to: overlay)
+                let snugRect = CGRect(x: 16, y: converted.minY, width: overlay.bounds.width - 32, height: max(converted.height, 44))
+                completion([WalkthroughCutout(rect: snugRect, cornerRadius: 12)])
+                return
+            }
+
+            // Fallback: table header rect
+            let headerRect = tableView.rectForHeader(inSection: 2)
+            if !headerRect.isEmpty {
+                let converted = tableView.convert(headerRect, to: overlay)
+                if overlay.bounds.intersects(converted) && converted.minY > 0 {
+                    let snugRect = CGRect(x: 16, y: converted.minY, width: overlay.bounds.width - 32, height: max(converted.height, 44))
+                    completion([WalkthroughCutout(rect: snugRect, cornerRadius: 12)])
+                    return
+                }
+            }
+
+            completion([])
+        }
     }
 
-    private func findCreditDetailsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect? {
-        guard let dashboardVC = findDashboardViewController(in: tabBar) else { return nil }
-        guard let tableView = dashboardVC.tableView else { return nil }
+    private func resolveCreditDetailsCutouts(in tabBar: UITabBarController, overlay: UIView) -> [WalkthroughCutout] {
+        guard let dashboardVC = findDashboardViewController(in: tabBar),
+              let tableView = dashboardVC.tableView else { return [] }
 
         tableView.setContentOffset(.zero, animated: false)
         tableView.layoutIfNeeded()
 
         guard let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? DashboardTopTileTableViewCell else {
-            return nil
+            return []
         }
 
-        // Locate credit container via label superview
+        // Locate credit cards via labels superviews
         if let paySuper = cell.youWillPayLabel?.superview,
            let getSuper = cell.youWillGetLabel?.superview {
             let payRect = paySuper.convert(paySuper.bounds, to: overlay)
             let getRect = getSuper.convert(getSuper.bounds, to: overlay)
-            return payRect.union(getRect)
+
+            if payRect.width > 40 && getRect.width > 40 &&
+               overlay.bounds.intersects(payRect) && overlay.bounds.intersects(getRect) {
+                // Two distinct rounded card cutouts preserve the native gap and roundings
+                return [
+                    WalkthroughCutout(rect: payRect, cornerRadius: 24),
+                    WalkthroughCutout(rect: getRect, cornerRadius: 24)
+                ]
+            }
         }
 
-        // Fallback rect within cell
         let cellRect = cell.convert(cell.bounds, to: overlay)
-        return CGRect(x: 16, y: cellRect.maxY - 140, width: cellRect.width - 32, height: 125)
+        let fallback = CGRect(x: 16, y: cellRect.maxY - 140, width: cellRect.width - 32, height: 125)
+        return [WalkthroughCutout(rect: fallback, cornerRadius: 24)]
     }
+
+    private func resolveStockTabCutouts(
+        in tabBar: UITabBarController,
+        overlay: UIView,
+        completion: @escaping ([WalkthroughCutout]) -> Void
+    ) {
+        let stockIdx = findStockTabIndex(in: tabBar)
+        tabBar.selectedIndex = stockIdx
+
+        DispatchQueue.main.async { [weak self, weak overlay] in
+            guard let self = self, let overlay = overlay else {
+                completion([])
+                return
+            }
+            let rect = self.findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
+            if rect.width > 12 && rect.height > 12 && overlay.bounds.intersects(rect) {
+                completion([WalkthroughCutout(rect: rect, cornerRadius: 12)])
+            } else {
+                completion([])
+            }
+        }
+    }
+
+    private func resolveStockActionsCutouts(
+        in tabBar: UITabBarController,
+        overlay: UIView,
+        retryCount: Int = 0,
+        completion: @escaping ([WalkthroughCutout]) -> Void
+    ) {
+        let stockIdx = findStockTabIndex(in: tabBar)
+        if tabBar.selectedIndex != stockIdx {
+            tabBar.selectedIndex = stockIdx
+        }
+
+        guard let controllers = tabBar.viewControllers, stockIdx < controllers.count,
+              let nav = controllers[stockIdx] as? UINavigationController,
+              let stockVC = nav.viewControllers.first as? StockViewController else {
+            completion([])
+            return
+        }
+
+        stockVC.view.layoutIfNeeded()
+
+        // 1. Check if stockVC has reported a valid global frame from SwiftUI
+        if let globalFrame = stockVC.actionButtonsGlobalFrame,
+           globalFrame.width > 100, globalFrame.height > 40 {
+            let rectInOverlay = overlay.convert(globalFrame, from: nil)
+            if isValidActionPanelRect(rectInOverlay, in: overlay) {
+                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
+                completion(cutouts)
+                return
+            }
+        }
+
+        // 2. Check if the accessibility view can be located in the view hierarchy
+        if let actionRow = findView(withAccessibilityIdentifier: "stock_action_buttons_row", in: stockVC.view) {
+            let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
+            if isValidActionPanelRect(rectInOverlay, in: overlay) {
+                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
+                completion(cutouts)
+                return
+            }
+        }
+
+        // 3. Retry while SwiftUI completes first rendering pass
+        if retryCount < 6 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.resolveStockActionsCutouts(
+                    in: tabBar,
+                    overlay: overlay,
+                    retryCount: retryCount + 1,
+                    completion: completion
+                )
+            }
+            return
+        }
+
+        // 4. Safe fallback: derive from stockVC.view bounds
+        let viewRect = stockVC.view.convert(stockVC.view.bounds, to: overlay)
+        let fallback = generateFallbackActionPanelCutouts(in: viewRect, overlay: overlay)
+        completion(fallback)
+    }
+
+    private func resolveSalesActionsCutouts(
+        in tabBar: UITabBarController,
+        overlay: UIView,
+        retryCount: Int = 0,
+        completion: @escaping ([WalkthroughCutout]) -> Void
+    ) {
+        let salesIdx = findSalesTabIndex(in: tabBar)
+        if tabBar.selectedIndex != salesIdx {
+            tabBar.selectedIndex = salesIdx
+        }
+
+        guard let controllers = tabBar.viewControllers, salesIdx < controllers.count,
+              let nav = controllers[salesIdx] as? UINavigationController,
+              let salesVC = nav.viewControllers.first as? SalesViewController else {
+            completion([])
+            return
+        }
+
+        salesVC.view.layoutIfNeeded()
+
+        // 1. Check if salesVC has reported a valid global frame from SwiftUI
+        if let globalFrame = salesVC.actionButtonsGlobalFrame,
+           globalFrame.width > 100, globalFrame.height > 40 {
+            let rectInOverlay = overlay.convert(globalFrame, from: nil)
+            if isValidActionPanelRect(rectInOverlay, in: overlay) {
+                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
+                completion(cutouts)
+                return
+            }
+        }
+
+        // 2. Check if the accessibility view can be located in the view hierarchy
+        if let actionRow = findView(withAccessibilityIdentifier: "sales_action_buttons_row", in: salesVC.view) {
+            let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
+            if isValidActionPanelRect(rectInOverlay, in: overlay) {
+                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
+                completion(cutouts)
+                return
+            }
+        }
+
+        // 3. Retry while SwiftUI completes first rendering pass
+        if retryCount < 6 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.resolveSalesActionsCutouts(
+                    in: tabBar,
+                    overlay: overlay,
+                    retryCount: retryCount + 1,
+                    completion: completion
+                )
+            }
+            return
+        }
+
+        // 4. Safe fallback: derive from salesVC.view bounds
+        let viewRect = salesVC.view.convert(salesVC.view.bounds, to: overlay)
+        let fallback = generateFallbackActionPanelCutouts(in: viewRect, overlay: overlay)
+        completion(fallback)
+    }
+
+    /// Recalculates and animates the spotlight when view layout finishes or updates.
+    func refreshSpotlightIfCurrent(step: WalkthroughStep) {
+        guard isRunning, currentStep == step, let overlay = activeOverlay, let tabBar = hostTabBarController else { return }
+        switch step {
+        case .stockActions:
+            resolveStockActionsCutouts(in: tabBar, overlay: overlay) { [weak overlay] cutouts in
+                overlay?.updateCutouts(cutouts, for: step, animated: true)
+            }
+        case .salesActions:
+            resolveSalesActionsCutouts(in: tabBar, overlay: overlay) { [weak overlay] cutouts in
+                overlay?.updateCutouts(cutouts, for: step, animated: true)
+            }
+        default:
+            return
+        }
+    }
+
+    // MARK: - Action Panel Spotlight Geometry
+
+    private func isValidActionPanelRect(_ rect: CGRect, in overlay: UIView) -> Bool {
+        guard rect.width >= 100, rect.height >= 40 else { return false }
+        guard overlay.bounds.intersects(rect) else { return false }
+        let mid = CGPoint(x: rect.midX, y: rect.midY)
+        guard overlay.bounds.contains(mid) else { return false }
+        guard rect.minY >= overlay.safeAreaInsets.top + 40 else { return false }
+        guard rect.maxY <= overlay.bounds.height - overlay.safeAreaInsets.bottom + 20 else { return false }
+        return true
+    }
+
+    /// Produces distinct, clean circular and rounded-rectangle cutouts for Scan, Voice, and Manual controls.
+    private func generateActionPanelCutouts(from rowRect: CGRect) -> [WalkthroughCutout] {
+        let centerY = rowRect.midY
+
+        // Voice button: circular cutout closely framing the 130x130 mic
+        let voiceDiameter: CGFloat = 134
+        let voiceRect = CGRect(
+            x: rowRect.midX - (voiceDiameter / 2),
+            y: centerY - (voiceDiameter / 2),
+            width: voiceDiameter,
+            height: voiceDiameter
+        )
+        let voiceCutout = WalkthroughCutout(rect: voiceRect, cornerRadius: voiceDiameter / 2)
+
+        // Scan button: circle (54pt) + text ("Scan")
+        let scanWidth: CGFloat = 64
+        let scanHeight: CGFloat = 80
+        let scanCenterX = rowRect.minX + 35
+        let scanRect = CGRect(
+            x: scanCenterX - (scanWidth / 2),
+            y: centerY - 27 - 4,
+            width: scanWidth,
+            height: scanHeight
+        )
+        let scanCutout = WalkthroughCutout(rect: scanRect, cornerRadius: 18)
+
+        // Manual button: circle (54pt) + text ("Manual")
+        let manualWidth: CGFloat = 64
+        let manualHeight: CGFloat = 80
+        let manualCenterX = rowRect.maxX - 35
+        let manualRect = CGRect(
+            x: manualCenterX - (manualWidth / 2),
+            y: centerY - 27 - 4,
+            width: manualWidth,
+            height: manualHeight
+        )
+        let manualCutout = WalkthroughCutout(rect: manualRect, cornerRadius: 18)
+
+        return [scanCutout, voiceCutout, manualCutout]
+    }
+
+    private func generateFallbackActionPanelCutouts(in viewRect: CGRect, overlay: UIView) -> [WalkthroughCutout] {
+        let screenWidth = overlay.bounds.width
+        let rowWidth: CGFloat = min(330, screenWidth - 32)
+        let rowHeight: CGFloat = 150
+        let originX = (screenWidth - rowWidth) / 2
+        // Default position: centered above bottom sheet area
+        let originY = viewRect.maxY - 228 - rowHeight
+
+        let rowRect = CGRect(x: originX, y: originY, width: rowWidth, height: rowHeight)
+        return generateActionPanelCutouts(from: rowRect)
+    }
+
+    // MARK: - Tab Bar Button Geometry
 
     private func findTabBarItemRect(at index: Int, in tabBar: UITabBarController, overlay: UIView) -> CGRect {
         let bar = tabBar.tabBar
@@ -359,7 +628,6 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             var contentRect: CGRect = .null
             for sub in button.subviews {
                 let typeName = "\(type(of: sub))"
-                // Only consider image and label subviews, ignoring any platform background platters
                 if typeName.contains("ImageView") || typeName.contains("Label") {
                     let converted = sub.convert(sub.bounds, to: overlay)
                     contentRect = contentRect.isNull ? converted : contentRect.union(converted)
@@ -367,122 +635,46 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
 
             if !contentRect.isNull && contentRect.width > 12 && contentRect.height > 12 {
-                // Tightly and naturally frame the icon and label with gentle breathing room
-                let padX: CGFloat = 8
+                let padX: CGFloat = 6
                 let padY: CGFloat = 4
                 return contentRect.insetBy(dx: -padX, dy: -padY)
             }
 
-            // Clean fallback: centered 60x46 frame inside the tab button
             let buttonRect = button.convert(button.bounds, to: overlay)
-            let width: CGFloat = 60
-            let height: CGFloat = 46
+            let width: CGFloat = 58
+            let height: CGFloat = 44
             let originX = buttonRect.midX - (width / 2)
-            let originY = buttonRect.midY - (height / 2) - 2
+            let originY = buttonRect.midY - (height / 2)
             return CGRect(x: originX, y: originY, width: width, height: height)
         }
 
-        // Fallback: calculate evenly distributed item frame centered around tab item
-        let width: CGFloat = 60
-        let height: CGFloat = 46
+        let width: CGFloat = 58
+        let height: CGFloat = 44
         let originX = itemX + (itemWidth - width) / 2
-        let originY = bar.convert(CGPoint(x: 0, y: 3), to: overlay).y
+        let originY = bar.convert(CGPoint(x: 0, y: 4), to: overlay).y
         return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
-    /// Recalculates and animates the spotlight when view layout finishes or updates.
-    func refreshSpotlightIfCurrent(step: WalkthroughStep) {
-        guard isRunning, currentStep == step, let overlay = activeOverlay, let tabBar = hostTabBarController else { return }
-        let rect: CGRect?
-        switch step {
-        case .stockActions:
-            rect = findStockActionsRect(in: tabBar, overlay: overlay)
-        case .salesActions:
-            rect = findSalesActionsRect(in: tabBar, overlay: overlay)
-        default:
-            return
-        }
-        overlay.updateTargetRect(rect, for: step, animated: true)
-    }
+    // MARK: - Hierarchy Inspection Helpers
 
-    /// Tightly fits the spotlight around the actual Scan, Voice, and Manual controls.
-    /// The Voice button's 130x130 circle is centered vertically inside the 150pt row (y=10 to y=140).
-    /// Scan and Manual 54pt circles and labels span vertically within the same height.
-    private func fittedActionPanelRect(from rawRect: CGRect) -> CGRect {
-        let width: CGFloat = min(316, rawRect.width - 12)
-        let height: CGFloat = 134
-        let originX = rawRect.midX - (width / 2)
-        let originY = rawRect.minY + 8
-        return CGRect(x: originX, y: originY, width: width, height: height)
-    }
-
-    private func findStockActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
-        let stockIdx = findStockTabIndex(in: tabBar)
-        if let controllers = tabBar.viewControllers, stockIdx < controllers.count,
-           let nav = controllers[stockIdx] as? UINavigationController,
-           let stockVC = nav.viewControllers.first as? StockViewController {
-            stockVC.view.layoutIfNeeded()
-
-            if let globalFrame = stockVC.actionButtonsGlobalFrame,
-               globalFrame.width > 50, globalFrame.height > 50 {
-                let rectInOverlay = overlay.convert(globalFrame, from: nil)
-                return fittedActionPanelRect(from: rectInOverlay)
-            }
-
-            if let actionRow = findView(withAccessibilityIdentifier: "stock_action_buttons_row", in: stockVC.view) {
-                let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
-                return fittedActionPanelRect(from: rectInOverlay)
-            }
-        }
-
-        // Precise fallback matching StockTabView layout (actionButtonsRow centered above Spacer(228)):
-        let screenWidth = overlay.bounds.width
-        let screenHeight = overlay.bounds.height
-        let width: CGFloat = min(316, screenWidth - 32)
-        let height: CGFloat = 134
-        let originX = (screenWidth - width) / 2
-        let originY = screenHeight - 228 - 150 + 8
-
-        return CGRect(x: originX, y: originY, width: width, height: height)
-    }
-
-    private func findSalesActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
-        let salesIdx = findSalesTabIndex(in: tabBar)
-        if let controllers = tabBar.viewControllers, salesIdx < controllers.count,
-           let nav = controllers[salesIdx] as? UINavigationController,
-           let salesVC = nav.viewControllers.first as? SalesViewController {
-            salesVC.view.layoutIfNeeded()
-
-            if let globalFrame = salesVC.actionButtonsGlobalFrame,
-               globalFrame.width > 50, globalFrame.height > 50 {
-                let rectInOverlay = overlay.convert(globalFrame, from: nil)
-                return fittedActionPanelRect(from: rectInOverlay)
-            }
-
-            if let actionRow = findView(withAccessibilityIdentifier: "sales_action_buttons_row", in: salesVC.view) {
-                let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
-                return fittedActionPanelRect(from: rectInOverlay)
-            }
-        }
-
-        // Precise fallback matching SalesTabView layout (actionButtonsRow centered above Spacer(228)):
-        let screenWidth = overlay.bounds.width
-        let screenHeight = overlay.bounds.height
-        let width: CGFloat = min(316, screenWidth - 32)
-        let height: CGFloat = 134
-        let originX = (screenWidth - width) / 2
-        let originY = screenHeight - 228 - 150 + 8
-
-        return CGRect(x: originX, y: originY, width: width, height: height)
-    }
-
-    /// Recursively walks the UIKit view hierarchy to find a view with the given accessibility identifier.
     private func findView(withAccessibilityIdentifier identifier: String, in root: UIView) -> UIView? {
         if root.accessibilityIdentifier == identifier {
             return root
         }
         for subview in root.subviews {
             if let match = findView(withAccessibilityIdentifier: identifier, in: subview) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    private func findFirstSubview<T: UIView>(ofType type: T.Type, in root: UIView) -> T? {
+        if let match = root as? T {
+            return match
+        }
+        for subview in root.subviews {
+            if let match = findFirstSubview(ofType: type, in: subview) {
                 return match
             }
         }

@@ -6,6 +6,17 @@ protocol WalkthroughOverlayViewDelegate: AnyObject {
     func walkthroughOverlayDidTapSkip(_ overlay: WalkthroughOverlayView)
 }
 
+/// Represents an individual spotlight cutout shape in the dimming overlay.
+struct WalkthroughCutout: Equatable {
+    let rect: CGRect
+    let cornerRadius: CGFloat
+
+    init(rect: CGRect, cornerRadius: CGFloat) {
+        self.rect = rect
+        self.cornerRadius = cornerRadius
+    }
+}
+
 final class WalkthroughOverlayView: UIView {
 
     weak var delegate: WalkthroughOverlayViewDelegate?
@@ -19,17 +30,17 @@ final class WalkthroughOverlayView: UIView {
     // MARK: - Subviews & Layers
 
     private let dimmingMaskLayer = CAShapeLayer()
-    private let spotlightGlowLayer = CAShapeLayer()
 
     private let cardView: UIView = {
         let view = UIView()
         view.backgroundColor = .secondarySystemGroupedBackground
-        view.layer.cornerRadius = 16
+        view.layer.cornerRadius = 20
+        view.layer.cornerCurve = .continuous
         view.layer.borderWidth = 0.5
-        view.layer.borderColor = UIColor.separator.withAlphaComponent(0.25).cgColor
+        view.layer.borderColor = UIColor.separator.withAlphaComponent(0.20).cgColor
         view.layer.shadowColor = UIColor.black.cgColor
-        view.layer.shadowOpacity = 0.12
-        view.layer.shadowRadius = 16
+        view.layer.shadowOpacity = 0.10
+        view.layer.shadowRadius = 14
         view.layer.shadowOffset = CGSize(width: 0, height: 4)
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
@@ -66,6 +77,7 @@ final class WalkthroughOverlayView: UIView {
         let view = UIView()
         view.backgroundColor = WalkthroughOverlayView.brandGreen.withAlphaComponent(0.12)
         view.layer.cornerRadius = 11
+        view.layer.cornerCurve = .continuous
         view.clipsToBounds = true
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
@@ -92,7 +104,7 @@ final class WalkthroughOverlayView: UIView {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.textColor = .label
-        label.font = .systemFont(ofSize: 19, weight: .bold)
+        label.font = .systemFont(ofSize: 19.5, weight: .bold)
         label.numberOfLines = 0
         label.lineBreakMode = .byWordWrapping
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -121,15 +133,16 @@ final class WalkthroughOverlayView: UIView {
 
     private let backButton: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.baseBackgroundColor = .secondarySystemFill
+        config.baseBackgroundColor = .tertiarySystemFill
         config.baseForegroundColor = .label
         config.cornerStyle = .fixed
-        config.background.cornerRadius = 12
+        config.background.cornerRadius = 13
         config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
         var titleAttr = AttributedString("Back")
         titleAttr.font = .systemFont(ofSize: 15, weight: .semibold)
         config.attributedTitle = titleAttr
         let button = UIButton(configuration: config)
+        button.layer.cornerCurve = .continuous
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
@@ -139,12 +152,13 @@ final class WalkthroughOverlayView: UIView {
         config.baseBackgroundColor = WalkthroughOverlayView.brandGreen
         config.baseForegroundColor = .white
         config.cornerStyle = .fixed
-        config.background.cornerRadius = 12
+        config.background.cornerRadius = 13
         config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20)
         var titleAttr = AttributedString("Next")
         titleAttr.font = .systemFont(ofSize: 15, weight: .semibold)
         config.attributedTitle = titleAttr
         let button = UIButton(configuration: config)
+        button.layer.cornerCurve = .continuous
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
@@ -155,7 +169,7 @@ final class WalkthroughOverlayView: UIView {
     private var cardBottomConstraint: NSLayoutConstraint!
     private var backButtonWidthConstraint: NSLayoutConstraint!
 
-    private var currentSpotlightRect: CGRect?
+    private(set) var activeCutouts: [WalkthroughCutout] = []
     private var currentStep: WalkthroughStep = .welcome
 
     // MARK: - Initializer
@@ -173,21 +187,11 @@ final class WalkthroughOverlayView: UIView {
     // MARK: - Setup
 
     private func setupView() {
-        backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        backgroundColor = UIColor.black.withAlphaComponent(0.48)
         isUserInteractionEnabled = true
 
         dimmingMaskLayer.fillRule = .evenOdd
         layer.mask = dimmingMaskLayer
-
-        spotlightGlowLayer.strokeColor = Self.brandGreen.withAlphaComponent(0.40).cgColor
-        spotlightGlowLayer.fillColor = UIColor.clear.cgColor
-        spotlightGlowLayer.lineWidth = 1.0
-        spotlightGlowLayer.lineDashPattern = nil
-        spotlightGlowLayer.shadowColor = nil
-        spotlightGlowLayer.shadowOpacity = 0
-        spotlightGlowLayer.shadowRadius = 0
-        spotlightGlowLayer.shadowOffset = .zero
-        layer.addSublayer(spotlightGlowLayer)
 
         addSubview(cardView)
 
@@ -247,7 +251,6 @@ final class WalkthroughOverlayView: UIView {
         let cardMinWidth = cardView.widthAnchor.constraint(greaterThanOrEqualToConstant: 280)
         let cardCenterX = cardView.centerXAnchor.constraint(equalTo: centerXAnchor)
 
-        // Boundaries to prevent offscreen layout
         let safeTop = cardView.topAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.topAnchor, constant: 16)
         let safeBottom = cardView.bottomAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.bottomAnchor, constant: -16)
 
@@ -291,9 +294,26 @@ final class WalkthroughOverlayView: UIView {
 
     // MARK: - Update Content & Spotlight
 
+    /// Backward-compatible configure with single optional targetRect.
     func configure(
         step: WalkthroughStep,
         targetRect: CGRect?,
+        canGoBack: Bool,
+        animated: Bool = true
+    ) {
+        let cutouts: [WalkthroughCutout]
+        if let rect = targetRect, !step.isModal {
+            cutouts = [WalkthroughCutout(rect: rect, cornerRadius: step.spotlightCornerRadius)]
+        } else {
+            cutouts = []
+        }
+        configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
+    }
+
+    /// Full configure method supporting one or multiple precise cutouts.
+    func configure(
+        step: WalkthroughStep,
+        cutouts: [WalkthroughCutout],
         canGoBack: Bool,
         animated: Bool = true
     ) {
@@ -347,32 +367,43 @@ final class WalkthroughOverlayView: UIView {
         skipButton.isHidden = (step == .completion)
         currentStep = step
 
-        updateSpotlightAndCardPosition(targetRect: targetRect, step: step, isModal: step.isModal, animated: animated)
+        updateCutoutsAndCardPosition(cutouts: cutouts, step: step, isModal: step.isModal, animated: animated)
     }
 
-    /// Recalculates and smoothly updates the spotlight target frame during runtime without reconfiguring content.
+    /// Backward-compatible single target rect update.
     func updateTargetRect(_ targetRect: CGRect?, for step: WalkthroughStep? = nil, animated: Bool = true) {
         let activeStep = step ?? currentStep
-        guard targetRect != currentSpotlightRect else { return }
-        updateSpotlightAndCardPosition(targetRect: targetRect, step: activeStep, isModal: activeStep.isModal, animated: animated)
+        let cutouts: [WalkthroughCutout]
+        if let rect = targetRect, !activeStep.isModal {
+            cutouts = [WalkthroughCutout(rect: rect, cornerRadius: activeStep.spotlightCornerRadius)]
+        } else {
+            cutouts = []
+        }
+        updateCutouts(cutouts, for: activeStep, animated: animated)
     }
 
-    private func updateSpotlightAndCardPosition(
-        targetRect: CGRect?,
+    /// Dynamically updates the spotlight cutouts during runtime without resetting content.
+    func updateCutouts(_ cutouts: [WalkthroughCutout], for step: WalkthroughStep? = nil, animated: Bool = true) {
+        let activeStep = step ?? currentStep
+        guard cutouts != activeCutouts else { return }
+        updateCutoutsAndCardPosition(cutouts: cutouts, step: activeStep, isModal: activeStep.isModal, animated: animated)
+    }
+
+    private func updateCutoutsAndCardPosition(
+        cutouts: [WalkthroughCutout],
         step: WalkthroughStep,
         isModal: Bool,
         animated: Bool
     ) {
-        currentSpotlightRect = targetRect
+        activeCutouts = cutouts
 
         let boundsPath = UIBezierPath(rect: bounds)
 
-        if let target = targetRect, !isModal {
-            let cornerRadius = step.spotlightCornerRadius
-            let cutoutPath = UIBezierPath(roundedRect: target, cornerRadius: cornerRadius)
-            boundsPath.append(cutoutPath)
-
-            let glowPath = UIBezierPath(roundedRect: target, cornerRadius: cornerRadius).cgPath
+        if !cutouts.isEmpty && !isModal {
+            for cutout in cutouts {
+                let cutoutPath = UIBezierPath(roundedRect: cutout.rect, cornerRadius: cutout.cornerRadius)
+                boundsPath.append(cutoutPath)
+            }
 
             if animated {
                 let maskAnim = CABasicAnimation(keyPath: "path")
@@ -381,20 +412,13 @@ final class WalkthroughOverlayView: UIView {
                 maskAnim.duration = 0.28
                 maskAnim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 dimmingMaskLayer.add(maskAnim, forKey: "pathAnimation")
-
-                let glowAnim = CABasicAnimation(keyPath: "path")
-                glowAnim.fromValue = spotlightGlowLayer.path
-                glowAnim.toValue = glowPath
-                glowAnim.duration = 0.28
-                glowAnim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                spotlightGlowLayer.add(glowAnim, forKey: "glowAnimation")
             }
 
             dimmingMaskLayer.path = boundsPath.cgPath
-            spotlightGlowLayer.path = glowPath
-            spotlightGlowLayer.isHidden = false
 
-            repositionCard(relativeTo: target, animated: animated)
+            // Position card relative to the composite bounding box of all cutouts
+            let boundingBox = cutouts.reduce(CGRect.null) { $0.isNull ? $1.rect : $0.union($1.rect) }
+            repositionCard(relativeTo: boundingBox, animated: animated)
         } else {
             if animated {
                 let maskAnim = CABasicAnimation(keyPath: "path")
@@ -404,7 +428,6 @@ final class WalkthroughOverlayView: UIView {
                 dimmingMaskLayer.add(maskAnim, forKey: "pathAnimation")
             }
             dimmingMaskLayer.path = boundsPath.cgPath
-            spotlightGlowLayer.isHidden = true
 
             centerCard(animated: animated)
         }
@@ -483,6 +506,5 @@ final class WalkthroughOverlayView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         dimmingMaskLayer.frame = bounds
-        spotlightGlowLayer.frame = bounds
     }
 }
