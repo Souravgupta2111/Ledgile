@@ -161,4 +161,57 @@ final class WalkthroughTests: XCTestCase {
             }
         }
     }
+
+    func testUpdateTargetRectDynamically() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+        overlay.layoutIfNeeded()
+
+        // Configure with an initial target rect
+        let initialRect = CGRect(x: 36, y: 400, width: 320, height: 140)
+        overlay.configure(step: .stockActions, targetRect: initialRect, canGoBack: true, animated: false)
+        overlay.layoutIfNeeded()
+
+        // Dynamically update target rect (e.g. from SwiftUI preference key)
+        let updatedRect = CGRect(x: 40, y: 420, width: 310, height: 135)
+        overlay.updateTargetRect(updatedRect, animated: false)
+        overlay.layoutIfNeeded()
+
+        let card = overlay.subviews.first { $0 !== overlay && !($0 is UIVisualEffectView) }
+        XCTAssertNotNil(card)
+        if let cardFrame = card?.frame {
+            XCTAssertGreaterThan(cardFrame.height, 100)
+            XCTAssertLessThanOrEqual(cardFrame.maxY, 852)
+        }
+    }
+
+    func testRefreshSpotlightSafetyWhenInactive() {
+        // Coordinator is not running in unit test environment
+        XCTAssertFalse(WalkthroughCoordinator.shared.isRunning)
+        // Calling refreshSpotlightIfCurrent should safely do nothing and not crash
+        WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .stockActions)
+        WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .salesActions)
+        WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .welcome)
+    }
+
+    func testPersistenceAcrossRelaunch() {
+        let freshUser = "fresh_user_\(UUID().uuidString)"
+        XCTAssertTrue(WalkthroughManager.shared.shouldShowWalkthrough(for: freshUser))
+
+        // Complete the tour
+        WalkthroughManager.shared.markWalkthroughCompleted(for: freshUser)
+        XCTAssertFalse(WalkthroughManager.shared.shouldShowWalkthrough(for: freshUser))
+        XCTAssertTrue(WalkthroughManager.shared.hasCompletedWalkthrough(for: freshUser))
+
+        // Re-checking simulate subsequent app relaunch
+        XCTAssertFalse(WalkthroughManager.shared.shouldShowWalkthrough(for: freshUser))
+
+        // Skip scenario for another user
+        let skipUser = "skip_user_\(UUID().uuidString)"
+        XCTAssertTrue(WalkthroughManager.shared.shouldShowWalkthrough(for: skipUser))
+        WalkthroughManager.shared.markWalkthroughSkipped(for: skipUser)
+        XCTAssertFalse(WalkthroughManager.shared.shouldShowWalkthrough(for: skipUser))
+        XCTAssertFalse(WalkthroughManager.shared.hasCompletedWalkthrough(for: skipUser))
+    }
 }

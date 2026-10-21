@@ -91,6 +91,7 @@ class SalesViewController: UIViewController {
             onTransactionTapped: { [weak self] tx in self?.presentBillSheet(for: tx) },
             onActionButtonsFrameChanged: { [weak self] frame in
                 self?.actionButtonsGlobalFrame = frame
+                WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .salesActions)
             }
         ), onTranscriptionUpdate: { [weak self] callback in
             self?.onTranscriptionUpdate = callback

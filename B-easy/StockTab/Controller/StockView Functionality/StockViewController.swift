@@ -80,6 +80,7 @@ class StockViewController: UIViewController {
             onInventoryTapped: { [weak self] in self?.openInventoryReport() },
             onActionButtonsFrameChanged: { [weak self] frame in
                 self?.actionButtonsGlobalFrame = frame
+                WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .stockActions)
             }
         ), onTranscriptionUpdate: { [weak self] callback in
             self?.onTranscriptionUpdate = callback

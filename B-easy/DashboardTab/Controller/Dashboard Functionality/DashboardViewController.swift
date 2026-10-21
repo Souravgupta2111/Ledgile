@@ -332,9 +332,11 @@ extension DashboardViewController: UITableViewDataSource, UITableViewDelegate {
         button.tintColor = .limeMoss
 
         if section == 1 {
+            container.accessibilityIdentifier = "dashboard_recent_transactions_header"
             titleLabel.text = "Recent Transactions"
             button.addTarget(self, action: #selector(didTapViewAllTransactions), for: .touchUpInside)
         } else {
+            container.accessibilityIdentifier = "dashboard_reports_header"
             titleLabel.text = "Reports"
             button.addTarget(self, action: #selector(didTapViewAllReports), for: .touchUpInside)
         }

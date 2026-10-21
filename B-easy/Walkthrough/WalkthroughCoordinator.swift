@@ -130,6 +130,9 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         case .stockTab:
             tabBar.selectedIndex = 0
+            if let dashVC = findDashboardViewController(in: tabBar), let tv = dashVC.tableView {
+                tv.setContentOffset(.zero, animated: false)
+            }
             let stockIdx = findStockTabIndex(in: tabBar)
             let rect = findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
             overlay.configure(step: step, targetRect: rect, canGoBack: canGoBack, animated: animated)
@@ -293,15 +296,26 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         tableView.scrollToRow(at: IndexPath(row: 0, section: 2), at: .middle, animated: false)
         tableView.layoutIfNeeded()
 
-        // Try to find the section 2 header view or rect
+        // 1. Precise match on actual header view
+        if let headerView = findView(withAccessibilityIdentifier: "dashboard_reports_header", in: tableView) {
+            let converted = headerView.convert(headerView.bounds, to: overlay)
+            return CGRect(x: 16, y: converted.minY, width: overlay.bounds.width - 32, height: max(converted.height, 44))
+        }
+
+        // 2. Relative to the first reports table row
+        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 2)) {
+            let converted = cell.convert(cell.bounds, to: overlay)
+            return CGRect(x: 16, y: converted.minY - 48, width: overlay.bounds.width - 32, height: 44)
+        }
+
+        // 3. Fallback to header rect
         let headerRect = tableView.rectForHeader(inSection: 2)
         if !headerRect.isEmpty {
             let converted = tableView.convert(headerRect, to: overlay)
-            // Expand slightly to embrace the View All button nicely
             return CGRect(x: 16, y: converted.minY - 2, width: overlay.bounds.width - 32, height: max(converted.height, 46) + 4)
         }
 
-        // Fallback to first row of reports
+        // 4. Fallback to row rect
         let rowRect = tableView.rectForRow(at: IndexPath(row: 0, section: 2))
         return tableView.convert(rowRect, to: overlay)
     }
@@ -360,6 +374,21 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         return bar.convert(itemFrame, to: overlay)
     }
 
+    /// Recalculates and animates the spotlight when view layout finishes or updates.
+    func refreshSpotlightIfCurrent(step: WalkthroughStep) {
+        guard isRunning, currentStep == step, let overlay = activeOverlay, let tabBar = hostTabBarController else { return }
+        let rect: CGRect?
+        switch step {
+        case .stockActions:
+            rect = findStockActionsRect(in: tabBar, overlay: overlay)
+        case .salesActions:
+            rect = findSalesActionsRect(in: tabBar, overlay: overlay)
+        default:
+            return
+        }
+        overlay.updateTargetRect(rect, animated: true)
+    }
+
     private func findStockActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
         let stockIdx = findStockTabIndex(in: tabBar)
         if let controllers = tabBar.viewControllers, stockIdx < controllers.count,
@@ -369,25 +398,23 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
             if let globalFrame = stockVC.actionButtonsGlobalFrame,
                globalFrame.width > 50, globalFrame.height > 50 {
-                let rectInOverlay = overlay.convert(globalFrame, from: nil)
-                return rectInOverlay.insetBy(dx: -10, dy: -8)
+                return overlay.convert(globalFrame, from: nil)
             }
 
             if let actionRow = findView(withAccessibilityIdentifier: "stock_action_buttons_row", in: stockVC.view) {
-                let rect = actionRow.convert(actionRow.bounds, to: overlay)
-                return rect.insetBy(dx: -10, dy: -8)
+                return actionRow.convert(actionRow.bounds, to: overlay)
             }
         }
 
         // Precise fallback matching StockTabView layout (actionButtonsRow centered above Spacer(228)):
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
-        let width: CGFloat = min(320, screenWidth - 32)
-        let height: CGFloat = 142
+        let width: CGFloat = min(300, screenWidth - 32)
+        let height: CGFloat = 138
         let originX = (screenWidth - width) / 2
         let originY = screenHeight - 228 - height
 
-        return CGRect(x: originX, y: originY, width: width, height: height).insetBy(dx: -10, dy: -8)
+        return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
     private func findSalesActionsRect(in tabBar: UITabBarController, overlay: UIView) -> CGRect {
@@ -399,25 +426,23 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
             if let globalFrame = salesVC.actionButtonsGlobalFrame,
                globalFrame.width > 50, globalFrame.height > 50 {
-                let rectInOverlay = overlay.convert(globalFrame, from: nil)
-                return rectInOverlay.insetBy(dx: -10, dy: -8)
+                return overlay.convert(globalFrame, from: nil)
             }
 
             if let actionRow = findView(withAccessibilityIdentifier: "sales_action_buttons_row", in: salesVC.view) {
-                let rect = actionRow.convert(actionRow.bounds, to: overlay)
-                return rect.insetBy(dx: -10, dy: -8)
+                return actionRow.convert(actionRow.bounds, to: overlay)
             }
         }
 
         // Precise fallback matching SalesTabView layout (actionButtonsRow centered above Spacer(228)):
         let screenWidth = overlay.bounds.width
         let screenHeight = overlay.bounds.height
-        let width: CGFloat = min(320, screenWidth - 32)
-        let height: CGFloat = 142
+        let width: CGFloat = min(300, screenWidth - 32)
+        let height: CGFloat = 138
         let originX = (screenWidth - width) / 2
         let originY = screenHeight - 228 - height
 
-        return CGRect(x: originX, y: originY, width: width, height: height).insetBy(dx: -10, dy: -8)
+        return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
     /// Recursively walks the UIKit view hierarchy to find a view with the given accessibility identifier.

@@ -155,17 +155,21 @@ final class WalkthroughOverlayView: UIView {
     // MARK: - Setup
 
     private func setupView() {
-        backgroundColor = UIColor.black.withAlphaComponent(0.65)
+        backgroundColor = UIColor.black.withAlphaComponent(0.55)
         isUserInteractionEnabled = true
 
         dimmingMaskLayer.fillRule = .evenOdd
         layer.mask = dimmingMaskLayer
 
         let lime = UIColor(named: "Lime Moss") ?? UIColor(red: 0.13, green: 0.75, blue: 0.42, alpha: 1.0)
-        spotlightGlowLayer.strokeColor = lime.cgColor
+        spotlightGlowLayer.strokeColor = lime.withAlphaComponent(0.70).cgColor
         spotlightGlowLayer.fillColor = UIColor.clear.cgColor
-        spotlightGlowLayer.lineWidth = 2.5
-        spotlightGlowLayer.lineDashPattern = [6, 4]
+        spotlightGlowLayer.lineWidth = 1.5
+        spotlightGlowLayer.lineDashPattern = nil
+        spotlightGlowLayer.shadowColor = lime.cgColor
+        spotlightGlowLayer.shadowOpacity = 0.25
+        spotlightGlowLayer.shadowRadius = 4
+        spotlightGlowLayer.shadowOffset = .zero
         layer.addSublayer(spotlightGlowLayer)
 
         addSubview(cardView)
@@ -310,6 +314,12 @@ final class WalkthroughOverlayView: UIView {
         updateSpotlightAndCardPosition(targetRect: targetRect, isModal: step.isModal, animated: animated)
     }
 
+    /// Recalculates and smoothly updates the spotlight target frame during runtime without reconfiguring content.
+    func updateTargetRect(_ targetRect: CGRect?, animated: Bool) {
+        guard targetRect != currentSpotlightRect else { return }
+        updateSpotlightAndCardPosition(targetRect: targetRect, isModal: false, animated: animated)
+    }
+
     private func updateSpotlightAndCardPosition(
         targetRect: CGRect?,
         isModal: Bool,
@@ -320,9 +330,10 @@ final class WalkthroughOverlayView: UIView {
         let boundsPath = UIBezierPath(rect: bounds)
 
         if let target = targetRect, !isModal {
-            // Expand cutout slightly for breathing room
-            let insetRect = target.insetBy(dx: -6, dy: -6)
-            let cornerRadius: CGFloat = min(16, insetRect.height / 2)
+            // Subtle, accurately fitted cutout margin
+            let insetRect = target.insetBy(dx: -4, dy: -4)
+            // Consistent, polished corner radius (12 for compact items like tab buttons, 18 for cards and action panels)
+            let cornerRadius: CGFloat = target.height < 65 ? min(12, insetRect.height / 2) : 18
             let cutoutPath = UIBezierPath(roundedRect: insetRect, cornerRadius: cornerRadius)
             boundsPath.append(cutoutPath)
 
