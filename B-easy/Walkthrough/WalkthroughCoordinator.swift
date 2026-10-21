@@ -317,8 +317,22 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
                 let viewAllButton = self.findFirstSubview(ofType: UIButton.self, in: headerView)
 
                 if let title = titleLabel, let button = viewAllButton {
-                    let titleRect = title.convert(title.bounds, to: overlay).insetBy(dx: -8, dy: -5)
-                    let buttonRect = button.convert(button.bounds, to: overlay).insetBy(dx: -8, dy: -5)
+                    let titleConverted = title.convert(title.bounds, to: overlay)
+                    let buttonConverted = button.convert(button.bounds, to: overlay)
+                    let midY = (titleConverted.midY + buttonConverted.midY) / 2
+                    let targetHeight: CGFloat = 34
+                    let titleRect = CGRect(
+                        x: titleConverted.minX - 8,
+                        y: midY - (targetHeight / 2),
+                        width: titleConverted.width + 16,
+                        height: targetHeight
+                    )
+                    let buttonRect = CGRect(
+                        x: buttonConverted.minX - 8,
+                        y: midY - (targetHeight / 2),
+                        width: buttonConverted.width + 16,
+                        height: targetHeight
+                    )
 
                     if titleRect.width > 20 && buttonRect.width > 20 &&
                        overlay.bounds.intersects(titleRect) && overlay.bounds.intersects(buttonRect) {
@@ -371,17 +385,18 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
             if payRect.width > 40 && getRect.width > 40 &&
                overlay.bounds.intersects(payRect) && overlay.bounds.intersects(getRect) {
+                let cardRadius = paySuper.layer.cornerRadius > 0 ? paySuper.layer.cornerRadius : 30
                 // Two distinct rounded card cutouts preserve the native gap and roundings
                 return [
-                    WalkthroughCutout(rect: payRect, cornerRadius: 24),
-                    WalkthroughCutout(rect: getRect, cornerRadius: 24)
+                    WalkthroughCutout(rect: payRect, cornerRadius: cardRadius),
+                    WalkthroughCutout(rect: getRect, cornerRadius: cardRadius)
                 ]
             }
         }
 
         let cellRect = cell.convert(cell.bounds, to: overlay)
         let fallback = CGRect(x: 16, y: cellRect.maxY - 140, width: cellRect.width - 32, height: 125)
-        return [WalkthroughCutout(rect: fallback, cornerRadius: 24)]
+        return [WalkthroughCutout(rect: fallback, cornerRadius: 30)]
     }
 
     private func resolveStockTabCutouts(
@@ -399,7 +414,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
             let rect = self.findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
             if rect.width > 12 && rect.height > 12 && overlay.bounds.intersects(rect) {
-                completion([WalkthroughCutout(rect: rect, cornerRadius: 12)])
+                let radius: CGFloat = min(rect.height / 2, 16)
+                completion([WalkthroughCutout(rect: rect, cornerRadius: radius)])
             } else {
                 completion([])
             }
@@ -635,8 +651,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
 
             if !contentRect.isNull && contentRect.width > 12 && contentRect.height > 12 {
-                let padX: CGFloat = 6
-                let padY: CGFloat = 4
+                let padX: CGFloat = 12
+                let padY: CGFloat = 6
                 return contentRect.insetBy(dx: -padX, dy: -padY)
             }
 
