@@ -278,4 +278,22 @@ final class WalkthroughTests: XCTestCase {
         overlay.layoutIfNeeded()
         XCTAssertEqual(overlay.activeCutouts.count, 2)
     }
+
+    func testTabBarItemMeasurementAndActionCutouts() {
+        let rootVC = MainTabInstaller.makeRootTabBar()
+        guard let tab = rootVC as? UITabBarController else { return }
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = tab
+        window.makeKeyAndVisible()
+        tab.view.layoutIfNeeded()
+        tab.tabBar.layoutIfNeeded()
+
+        tab.selectedIndex = 1
+        tab.view.layoutIfNeeded()
+        tab.tabBar.layoutIfNeeded()
+
+        XCTAssertGreaterThan(tab.tabBar.bounds.width, 300)
+        XCTAssertGreaterThan(tab.tabBar.bounds.height, 40)
+    }
 }

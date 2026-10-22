@@ -318,28 +318,23 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
                 if let title = titleLabel, let button = viewAllButton {
                     let titleConverted = title.convert(title.bounds, to: overlay)
-                    let buttonConverted = button.convert(button.bounds, to: overlay)
-                    let labelRect = button.titleLabel?.convert(button.titleLabel?.bounds ?? button.bounds, to: overlay) ?? buttonConverted
-                    let midY = (titleConverted.midY + labelRect.midY) / 2
-                    let targetHeight: CGFloat = 26
-                    let titleRect = CGRect(
-                        x: titleConverted.minX - 5,
-                        y: midY - (targetHeight / 2),
-                        width: titleConverted.width + 10,
-                        height: targetHeight
-                    )
-                    let buttonRect = CGRect(
-                        x: labelRect.minX - 6,
-                        y: midY - (targetHeight / 2),
-                        width: labelRect.width + 12,
-                        height: targetHeight
-                    )
+                    let label = button.titleLabel ?? button
+                    let buttonConverted = label.convert(label.bounds, to: overlay)
+
+                    // Fit to actual text bounds while preserving enough vertical padding (4pt)
+                    // so ascenders and descenders ('p', 'g', etc.) are never clipped.
+                    // Use a subtle corner radius (3pt) so they read as text highlights,
+                    // not like separate pill buttons.
+                    let vPadding: CGFloat = 4
+                    let hPadding: CGFloat = 5
+                    let titleRect = titleConverted.insetBy(dx: -hPadding, dy: -vPadding)
+                    let buttonRect = buttonConverted.insetBy(dx: -hPadding, dy: -vPadding)
 
                     if titleRect.width > 20 && buttonRect.width > 20 &&
                        overlay.bounds.intersects(titleRect) && overlay.bounds.intersects(buttonRect) {
                         completion([
-                            WalkthroughCutout(rect: titleRect, cornerRadius: 6),
-                            WalkthroughCutout(rect: buttonRect, cornerRadius: 6)
+                            WalkthroughCutout(rect: titleRect, cornerRadius: 3),
+                            WalkthroughCutout(rect: buttonRect, cornerRadius: 3)
                         ])
                         return
                     }
@@ -386,7 +381,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
             if payRect.width > 40 && getRect.width > 40 &&
                overlay.bounds.intersects(payRect) && overlay.bounds.intersects(getRect) {
-                let cardRadius = paySuper.layer.cornerRadius > 0 ? paySuper.layer.cornerRadius : 26
+                let cardRadius = paySuper.layer.cornerRadius > 0 ? paySuper.layer.cornerRadius : 30
                 // Two distinct rounded card cutouts preserve the native gap and roundings
                 return [
                     WalkthroughCutout(rect: payRect, cornerRadius: cardRadius),
@@ -396,8 +391,13 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         }
 
         let cellRect = cell.convert(cell.bounds, to: overlay)
-        let fallback = CGRect(x: 16, y: cellRect.maxY - 140, width: cellRect.width - 32, height: 125)
-        return [WalkthroughCutout(rect: fallback, cornerRadius: 26)]
+        let cardWidth = (cellRect.width - 32 - 12) / 2
+        let card1 = CGRect(x: 16, y: cellRect.maxY - 130, width: cardWidth, height: 112)
+        let card2 = CGRect(x: 16 + cardWidth + 12, y: cellRect.maxY - 130, width: cardWidth, height: 112)
+        return [
+            WalkthroughCutout(rect: card1, cornerRadius: 30),
+            WalkthroughCutout(rect: card2, cornerRadius: 30)
+        ]
     }
 
     private func resolveStockTabCutouts(
@@ -413,10 +413,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
                 completion([])
                 return
             }
-            let rect = self.findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
-            if rect.width > 12 && rect.height > 12 && overlay.bounds.intersects(rect) {
-                let radius: CGFloat = 8
-                completion([WalkthroughCutout(rect: rect, cornerRadius: radius)])
+            if let cutout = self.findTabBarItemCutout(at: stockIdx, in: tabBar, overlay: overlay) {
+                completion([cutout])
             } else {
                 completion([])
             }
@@ -586,29 +584,35 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         )
         let voiceCutout = WalkthroughCutout(rect: voiceRect, cornerRadius: voiceDiameter / 2)
 
-        // Scan button: circle (54pt) + text ("Scan")
-        let scanWidth: CGFloat = 56
-        let scanHeight: CGFloat = 74
+        // Scan and Manual controls:
+        // Each consists of a 54pt circular button on top (centerY - 27 to centerY + 27)
+        // and a 16pt text label below (centerY + 33 to centerY + 49).
+        // With 6pt padding top and bottom:
+        // topY = centerY - 33, height = 88pt.
+        // With width = 66pt (providing balanced padding for both the 54pt circle and text labels),
+        // cornerRadius = 22pt smoothly matches the curvature of the circular button at the top
+        // and cleanly encloses the label without clipping.
+        let buttonWidth: CGFloat = 66
+        let buttonHeight: CGFloat = 88
+        let topY = centerY - 33
+
         let scanCenterX = rowRect.minX + 35
         let scanRect = CGRect(
-            x: scanCenterX - (scanWidth / 2),
-            y: centerY - 27 - 2,
-            width: scanWidth,
-            height: scanHeight
+            x: scanCenterX - (buttonWidth / 2),
+            y: topY,
+            width: buttonWidth,
+            height: buttonHeight
         )
-        let scanCutout = WalkthroughCutout(rect: scanRect, cornerRadius: 14)
+        let scanCutout = WalkthroughCutout(rect: scanRect, cornerRadius: 22)
 
-        // Manual button: circle (54pt) + text ("Manual")
-        let manualWidth: CGFloat = 56
-        let manualHeight: CGFloat = 74
         let manualCenterX = rowRect.maxX - 35
         let manualRect = CGRect(
-            x: manualCenterX - (manualWidth / 2),
-            y: centerY - 27 - 2,
-            width: manualWidth,
-            height: manualHeight
+            x: manualCenterX - (buttonWidth / 2),
+            y: topY,
+            width: buttonWidth,
+            height: buttonHeight
         )
-        let manualCutout = WalkthroughCutout(rect: manualRect, cornerRadius: 14)
+        let manualCutout = WalkthroughCutout(rect: manualRect, cornerRadius: 22)
 
         return [scanCutout, voiceCutout, manualCutout]
     }
@@ -627,53 +631,54 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
     // MARK: - Tab Bar Button Geometry
 
-    private func findTabBarItemRect(at index: Int, in tabBar: UITabBarController, overlay: UIView) -> CGRect {
+    private func findTabBarItemCutout(at index: Int, in tabBar: UITabBarController, overlay: UIView) -> WalkthroughCutout? {
         let bar = tabBar.tabBar
         bar.layoutIfNeeded()
 
-        let totalItems = CGFloat(max(bar.items?.count ?? 5, 1))
-        let itemWidth = bar.bounds.width / totalItems
-        let itemX = CGFloat(index) * itemWidth
-
-        // Look for actual UITabBarButton subviews
-        let buttons = bar.subviews
-            .filter { "\(type(of: $0))".contains("TabBarButton") }
-            .sorted { $0.frame.minX < $1.frame.minX }
-
-        if index < buttons.count {
-            let button = buttons[index]
-            var contentRect: CGRect = .null
-            for sub in button.subviews {
-                let typeName = "\(type(of: sub))"
-                if typeName.contains("ImageView") || typeName.contains("Label") {
-                    let converted = sub.convert(sub.bounds, to: overlay)
-                    contentRect = contentRect.isNull ? converted : contentRect.union(converted)
-                }
+        func findRecursiveViews(in root: UIView, matching: (UIView) -> Bool) -> [UIView] {
+            var views: [UIView] = []
+            if matching(root) { views.append(root) }
+            for sub in root.subviews {
+                views.append(contentsOf: findRecursiveViews(in: sub, matching: matching))
             }
-
-            if !contentRect.isNull && contentRect.width > 12 && contentRect.height > 12 {
-                let padX: CGFloat = 8
-                let padY: CGFloat = 4
-                let width: CGFloat = contentRect.width + (padX * 2)
-                let height: CGFloat = contentRect.height + (padY * 2)
-                let originX = contentRect.midX - (width / 2)
-                let originY = contentRect.midY - (height / 2)
-                return CGRect(x: originX, y: originY, width: width, height: height)
-            }
-
-            let buttonRect = button.convert(button.bounds, to: overlay)
-            let width: CGFloat = 48
-            let height: CGFloat = 44
-            let originX = buttonRect.midX - (width / 2)
-            let originY = buttonRect.midY - (height / 2)
-            return CGRect(x: originX, y: originY, width: width, height: height)
+            return views
         }
 
-        let width: CGFloat = 48
-        let height: CGFloat = 44
-        let originX = itemX + (itemWidth - width) / 2
-        let originY = bar.convert(CGPoint(x: 0, y: 2), to: overlay).y
-        return CGRect(x: originX, y: originY, width: width, height: height)
+        // 1. Check for modern iOS 18 platter item / liquid lens or selection view
+        let selectionViews = findRecursiveViews(in: bar) { view in
+            let name = "\(type(of: view))"
+            return name.contains("LiquidLens") || name.contains("TabSelection") || name.contains("DestOutView")
+        }
+        for selView in selectionViews {
+            let rect = selView.convert(selView.bounds, to: overlay)
+            if rect.width > 30 && rect.height > 20 && overlay.bounds.intersects(rect) {
+                let radius = selView.layer.cornerRadius > 0 ? selView.layer.cornerRadius : (rect.height / 2)
+                return WalkthroughCutout(rect: rect, cornerRadius: radius)
+            }
+        }
+
+        // 2. Look for tab buttons (_UITabButton or UITabBarButton)
+        let tabButtons = findRecursiveViews(in: bar) { view in
+            let name = "\(type(of: view))"
+            return name.contains("TabButton") || name.contains("TabBarButton")
+        }
+        let uniqueButtons = tabButtons
+            .filter { $0.bounds.width > 30 && $0.bounds.height > 20 }
+            .sorted { $0.convert($0.bounds, to: overlay).minX < $1.convert($1.bounds, to: overlay).minX }
+
+        if index < uniqueButtons.count {
+            let button = uniqueButtons[index]
+            let buttonRect = button.convert(button.bounds, to: overlay)
+            let radius = button.layer.cornerRadius > 0 ? button.layer.cornerRadius : (buttonRect.height / 2)
+            return WalkthroughCutout(rect: buttonRect, cornerRadius: radius)
+        }
+
+        // 3. Fallback: calculate natural tab item bounds
+        let totalItems = CGFloat(max(bar.items?.count ?? 4, 1))
+        let itemWidth = bar.bounds.width / totalItems
+        let itemX = CGFloat(index) * itemWidth
+        let fallbackRect = CGRect(x: itemX + 4, y: bar.convert(CGPoint(x: 0, y: 4), to: overlay).y, width: itemWidth - 8, height: 54)
+        return WalkthroughCutout(rect: fallbackRect, cornerRadius: 27)
     }
 
     // MARK: - Hierarchy Inspection Helpers
