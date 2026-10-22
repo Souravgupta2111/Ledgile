@@ -187,7 +187,7 @@ final class WalkthroughOverlayView: UIView {
     // MARK: - Setup
 
     private func setupView() {
-        backgroundColor = UIColor.black.withAlphaComponent(0.48)
+        backgroundColor = UIColor.black.withAlphaComponent(0.54)
         isUserInteractionEnabled = true
 
         dimmingMaskLayer.fillRule = .evenOdd
@@ -397,6 +397,15 @@ final class WalkthroughOverlayView: UIView {
     ) {
         activeCutouts = cutouts
 
+        let targetBgColor = isModal ? UIColor.black.withAlphaComponent(0.54) : UIColor.black.withAlphaComponent(0.44)
+        if animated {
+            UIView.animate(withDuration: 0.28) {
+                self.backgroundColor = targetBgColor
+            }
+        } else {
+            self.backgroundColor = targetBgColor
+        }
+
         let boundsPath = UIBezierPath(rect: bounds)
 
         if !cutouts.isEmpty && !isModal {
@@ -418,7 +427,7 @@ final class WalkthroughOverlayView: UIView {
 
             // Position card relative to the composite bounding box of all cutouts
             let boundingBox = cutouts.reduce(CGRect.null) { $0.isNull ? $1.rect : $0.union($1.rect) }
-            repositionCard(relativeTo: boundingBox, animated: animated)
+            repositionCard(relativeTo: boundingBox, for: step, animated: animated)
         } else {
             if animated {
                 let maskAnim = CABasicAnimation(keyPath: "path")
@@ -433,37 +442,49 @@ final class WalkthroughOverlayView: UIView {
         }
     }
 
-    private func repositionCard(relativeTo target: CGRect, animated: Bool) {
+    private func repositionCard(relativeTo target: CGRect, for step: WalkthroughStep, animated: Bool) {
         let screenHeight = bounds.height
         let safeTopBound = safeAreaInsets.top + 16
-        let safeBottomBound = screenHeight - safeAreaInsets.bottom - 16
+        // Bottom limit accounts for bottom tab bar (49pt) + safeArea bottom + margin (16pt)
+        let safeBottomBound = screenHeight - safeAreaInsets.bottom - 49 - 16
 
-        let spaceAbove = target.minY - safeTopBound
-        let spaceBelow = safeBottomBound - target.maxY
-
-        let shouldPlaceBelow: Bool
-        if spaceBelow >= 260 {
-            shouldPlaceBelow = true
-        } else if spaceAbove >= 260 {
-            shouldPlaceBelow = false
-        } else {
-            shouldPlaceBelow = (spaceBelow >= spaceAbove)
-        }
-
-        let spacing: CGFloat = (target.maxY > bounds.height - 120) ? 18 : 14
-
-        if shouldPlaceBelow {
-            let topY = target.maxY + spacing
-            cardTopConstraint.constant = topY
-            cardBottomConstraint.isActive = false
-            cardCenterYConstraint.isActive = false
-            cardTopConstraint.isActive = true
-        } else {
-            let bottomY = target.minY - spacing
+        if step == .dashboardOverview {
+            // In Dashboard Overview, anchor tooltip cleanly at the bottom above the tab bar
+            // so it never awkwardly slices through the credit cards or crowds the screen.
+            let bottomY = safeBottomBound
             cardBottomConstraint.constant = bottomY
             cardTopConstraint.isActive = false
             cardCenterYConstraint.isActive = false
             cardBottomConstraint.isActive = true
+        } else {
+            let spaceAbove = target.minY - safeTopBound
+            let spaceBelow = safeBottomBound - target.maxY
+
+            // Prefer placing above when target is in the middle or lower section of screen
+            let shouldPlaceBelow: Bool
+            if target.minY < screenHeight * 0.38 && spaceBelow >= 220 {
+                shouldPlaceBelow = true
+            } else if spaceAbove >= 200 {
+                shouldPlaceBelow = false
+            } else {
+                shouldPlaceBelow = (spaceBelow >= spaceAbove)
+            }
+
+            let spacing: CGFloat = (step == .stockTab) ? 12 : 14
+
+            if shouldPlaceBelow {
+                let topY = target.maxY + spacing
+                cardTopConstraint.constant = topY
+                cardBottomConstraint.isActive = false
+                cardCenterYConstraint.isActive = false
+                cardTopConstraint.isActive = true
+            } else {
+                let bottomY = target.minY - spacing
+                cardBottomConstraint.constant = bottomY
+                cardTopConstraint.isActive = false
+                cardCenterYConstraint.isActive = false
+                cardBottomConstraint.isActive = true
+            }
         }
 
         if animated {

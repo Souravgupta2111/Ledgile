@@ -321,25 +321,25 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
                     let buttonConverted = button.convert(button.bounds, to: overlay)
                     let labelRect = button.titleLabel?.convert(button.titleLabel?.bounds ?? button.bounds, to: overlay) ?? buttonConverted
                     let midY = (titleConverted.midY + labelRect.midY) / 2
-                    let targetHeight: CGFloat = 38
+                    let targetHeight: CGFloat = 26
                     let titleRect = CGRect(
-                        x: titleConverted.minX - 10,
+                        x: titleConverted.minX - 5,
                         y: midY - (targetHeight / 2),
-                        width: titleConverted.width + 20,
+                        width: titleConverted.width + 10,
                         height: targetHeight
                     )
                     let buttonRect = CGRect(
-                        x: labelRect.minX - 12,
+                        x: labelRect.minX - 6,
                         y: midY - (targetHeight / 2),
-                        width: labelRect.width + 24,
+                        width: labelRect.width + 12,
                         height: targetHeight
                     )
 
                     if titleRect.width > 20 && buttonRect.width > 20 &&
                        overlay.bounds.intersects(titleRect) && overlay.bounds.intersects(buttonRect) {
                         completion([
-                            WalkthroughCutout(rect: titleRect, cornerRadius: 10),
-                            WalkthroughCutout(rect: buttonRect, cornerRadius: 10)
+                            WalkthroughCutout(rect: titleRect, cornerRadius: 6),
+                            WalkthroughCutout(rect: buttonRect, cornerRadius: 6)
                         ])
                         return
                     }
@@ -386,7 +386,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
             if payRect.width > 40 && getRect.width > 40 &&
                overlay.bounds.intersects(payRect) && overlay.bounds.intersects(getRect) {
-                let cardRadius = paySuper.layer.cornerRadius > 0 ? paySuper.layer.cornerRadius : 30
+                let cardRadius = paySuper.layer.cornerRadius > 0 ? paySuper.layer.cornerRadius : 26
                 // Two distinct rounded card cutouts preserve the native gap and roundings
                 return [
                     WalkthroughCutout(rect: payRect, cornerRadius: cardRadius),
@@ -397,7 +397,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         let cellRect = cell.convert(cell.bounds, to: overlay)
         let fallback = CGRect(x: 16, y: cellRect.maxY - 140, width: cellRect.width - 32, height: 125)
-        return [WalkthroughCutout(rect: fallback, cornerRadius: 30)]
+        return [WalkthroughCutout(rect: fallback, cornerRadius: 26)]
     }
 
     private func resolveStockTabCutouts(
@@ -415,7 +415,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
             let rect = self.findTabBarItemRect(at: stockIdx, in: tabBar, overlay: overlay)
             if rect.width > 12 && rect.height > 12 && overlay.bounds.intersects(rect) {
-                let radius: CGFloat = min(rect.height / 2, 16)
+                let radius: CGFloat = 8
                 completion([WalkthroughCutout(rect: rect, cornerRadius: radius)])
             } else {
                 completion([])
@@ -577,7 +577,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         let centerY = rowRect.midY
 
         // Voice button: circular cutout closely framing the 130x130 mic
-        let voiceDiameter: CGFloat = 134
+        let voiceDiameter: CGFloat = 130
         let voiceRect = CGRect(
             x: rowRect.midX - (voiceDiameter / 2),
             y: centerY - (voiceDiameter / 2),
@@ -587,28 +587,28 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         let voiceCutout = WalkthroughCutout(rect: voiceRect, cornerRadius: voiceDiameter / 2)
 
         // Scan button: circle (54pt) + text ("Scan")
-        let scanWidth: CGFloat = 64
-        let scanHeight: CGFloat = 80
+        let scanWidth: CGFloat = 56
+        let scanHeight: CGFloat = 74
         let scanCenterX = rowRect.minX + 35
         let scanRect = CGRect(
             x: scanCenterX - (scanWidth / 2),
-            y: centerY - 27 - 4,
+            y: centerY - 27 - 2,
             width: scanWidth,
             height: scanHeight
         )
-        let scanCutout = WalkthroughCutout(rect: scanRect, cornerRadius: 18)
+        let scanCutout = WalkthroughCutout(rect: scanRect, cornerRadius: 14)
 
         // Manual button: circle (54pt) + text ("Manual")
-        let manualWidth: CGFloat = 64
-        let manualHeight: CGFloat = 80
+        let manualWidth: CGFloat = 56
+        let manualHeight: CGFloat = 74
         let manualCenterX = rowRect.maxX - 35
         let manualRect = CGRect(
             x: manualCenterX - (manualWidth / 2),
-            y: centerY - 27 - 4,
+            y: centerY - 27 - 2,
             width: manualWidth,
             height: manualHeight
         )
-        let manualCutout = WalkthroughCutout(rect: manualRect, cornerRadius: 18)
+        let manualCutout = WalkthroughCutout(rect: manualRect, cornerRadius: 14)
 
         return [scanCutout, voiceCutout, manualCutout]
     }
@@ -652,25 +652,27 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
 
             if !contentRect.isNull && contentRect.width > 12 && contentRect.height > 12 {
-                let width: CGFloat = max(contentRect.width + 28, 68)
-                let height: CGFloat = 54
+                let padX: CGFloat = 8
+                let padY: CGFloat = 4
+                let width: CGFloat = contentRect.width + (padX * 2)
+                let height: CGFloat = contentRect.height + (padY * 2)
                 let originX = contentRect.midX - (width / 2)
                 let originY = contentRect.midY - (height / 2)
                 return CGRect(x: originX, y: originY, width: width, height: height)
             }
 
             let buttonRect = button.convert(button.bounds, to: overlay)
-            let width: CGFloat = 68
-            let height: CGFloat = 54
+            let width: CGFloat = 48
+            let height: CGFloat = 44
             let originX = buttonRect.midX - (width / 2)
             let originY = buttonRect.midY - (height / 2)
             return CGRect(x: originX, y: originY, width: width, height: height)
         }
 
-        let width: CGFloat = 68
-        let height: CGFloat = 54
+        let width: CGFloat = 48
+        let height: CGFloat = 44
         let originX = itemX + (itemWidth - width) / 2
-        let originY = bar.convert(CGPoint(x: 0, y: 0), to: overlay).y
+        let originY = bar.convert(CGPoint(x: 0, y: 2), to: overlay).y
         return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
