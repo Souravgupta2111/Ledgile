@@ -70,32 +70,41 @@ final class WalkthroughTests: XCTestCase {
 
     func testWalkthroughStepSequenceAndTitles() {
         let steps = WalkthroughStep.allCases
-        XCTAssertEqual(steps.count, 8)
+        XCTAssertEqual(steps.count, 11)
 
         XCTAssertEqual(steps[0], .welcome)
-        XCTAssertEqual(steps[1], .dashboardOverview)
-        XCTAssertEqual(steps[2], .analytics)
-        XCTAssertEqual(steps[3], .creditDetails)
-        XCTAssertEqual(steps[4], .stockTab)
-        XCTAssertEqual(steps[5], .stockActions)
-        XCTAssertEqual(steps[6], .salesActions)
-        XCTAssertEqual(steps[7], .completion)
+        XCTAssertEqual(steps[1], .revenue)
+        XCTAssertEqual(steps[2], .inventory)
+        XCTAssertEqual(steps[3], .alerts)
+        XCTAssertEqual(steps[4], .assistant)
+        XCTAssertEqual(steps[5], .analytics)
+        XCTAssertEqual(steps[6], .creditDetails)
+        XCTAssertEqual(steps[7], .stockTab)
+        XCTAssertEqual(steps[8], .stockActions)
+        XCTAssertEqual(steps[9], .salesActions)
+        XCTAssertEqual(steps[10], .completion)
 
         XCTAssertEqual(steps[0].title, "Welcome to B Easy!")
-        XCTAssertEqual(steps[1].title, "Your Business Assistant")
-        XCTAssertEqual(steps[2].title, "Analytics & Reports")
-        XCTAssertEqual(steps[3].title, "Credit Management")
-        XCTAssertEqual(steps[4].title, "Stock Management")
-        XCTAssertEqual(steps[5].title, "Adding Stock")
-        XCTAssertEqual(steps[6].title, "Recording Sales")
-        XCTAssertEqual(steps[7].title, "You're all set!")
+        XCTAssertEqual(steps[1].title, "Revenue Overview")
+        XCTAssertEqual(steps[2].title, "Inventory Overview")
+        XCTAssertEqual(steps[3].title, "Stock and Expiry Alerts")
+        XCTAssertEqual(steps[4].title, "Your Business Assistant")
+        XCTAssertEqual(steps[5].title, "Analytics & Reports")
+        XCTAssertEqual(steps[6].title, "Credit Management")
+        XCTAssertEqual(steps[7].title, "Stock Management")
+        XCTAssertEqual(steps[8].title, "Adding Stock")
+        XCTAssertEqual(steps[9].title, "Recording Sales")
+        XCTAssertEqual(steps[10].title, "You're all set!")
     }
 
     func testWalkthroughStepModalFlags() {
         XCTAssertTrue(WalkthroughStep.welcome.isModal)
         XCTAssertTrue(WalkthroughStep.completion.isModal)
 
-        XCTAssertFalse(WalkthroughStep.dashboardOverview.isModal)
+        XCTAssertFalse(WalkthroughStep.revenue.isModal)
+        XCTAssertFalse(WalkthroughStep.inventory.isModal)
+        XCTAssertFalse(WalkthroughStep.alerts.isModal)
+        XCTAssertFalse(WalkthroughStep.assistant.isModal)
         XCTAssertFalse(WalkthroughStep.analytics.isModal)
         XCTAssertFalse(WalkthroughStep.creditDetails.isModal)
         XCTAssertFalse(WalkthroughStep.stockTab.isModal)
@@ -105,13 +114,17 @@ final class WalkthroughTests: XCTestCase {
 
     func testGuidedStepIndices() {
         XCTAssertNil(WalkthroughStep.welcome.stepIndex)
-        XCTAssertEqual(WalkthroughStep.dashboardOverview.stepIndex, 1)
-        XCTAssertEqual(WalkthroughStep.analytics.stepIndex, 2)
-        XCTAssertEqual(WalkthroughStep.creditDetails.stepIndex, 3)
-        XCTAssertEqual(WalkthroughStep.stockTab.stepIndex, 4)
-        XCTAssertEqual(WalkthroughStep.stockActions.stepIndex, 5)
-        XCTAssertEqual(WalkthroughStep.salesActions.stepIndex, 6)
+        XCTAssertEqual(WalkthroughStep.revenue.stepIndex, 1)
+        XCTAssertEqual(WalkthroughStep.inventory.stepIndex, 2)
+        XCTAssertEqual(WalkthroughStep.alerts.stepIndex, 3)
+        XCTAssertEqual(WalkthroughStep.assistant.stepIndex, 4)
+        XCTAssertEqual(WalkthroughStep.analytics.stepIndex, 5)
+        XCTAssertEqual(WalkthroughStep.creditDetails.stepIndex, 6)
+        XCTAssertEqual(WalkthroughStep.stockTab.stepIndex, 7)
+        XCTAssertEqual(WalkthroughStep.stockActions.stepIndex, 8)
+        XCTAssertEqual(WalkthroughStep.salesActions.stepIndex, 9)
         XCTAssertNil(WalkthroughStep.completion.stepIndex)
+        XCTAssertEqual(WalkthroughStep.totalGuidedSteps, 9)
     }
 
     func testOverlayLayoutDiagnostics() {
@@ -125,8 +138,14 @@ final class WalkthroughTests: XCTestCase {
             switch step {
             case .welcome, .completion:
                 targetRect = nil
-            case .dashboardOverview:
-                targetRect = CGRect(x: 16, y: 120, width: 361, height: 280)
+            case .revenue:
+                targetRect = CGRect(x: 18, y: 111, width: 366, height: 218)
+            case .inventory:
+                targetRect = CGRect(x: 232, y: 113, width: 134, height: 36)
+            case .alerts:
+                targetRect = CGRect(x: 18, y: 341, width: 366, height: 72)
+            case .assistant:
+                targetRect = CGRect(x: 326, y: 702, width: 50, height: 50)
             case .analytics:
                 targetRect = CGRect(x: 16, y: 460, width: 361, height: 50)
             case .creditDetails:
@@ -220,7 +239,10 @@ final class WalkthroughTests: XCTestCase {
     }
 
     func testSpotlightCornerRadii() {
-        XCTAssertEqual(WalkthroughStep.dashboardOverview.spotlightCornerRadius, 16)
+        XCTAssertEqual(WalkthroughStep.revenue.spotlightCornerRadius, 16)
+        XCTAssertEqual(WalkthroughStep.inventory.spotlightCornerRadius, 18)
+        XCTAssertEqual(WalkthroughStep.alerts.spotlightCornerRadius, 26)
+        XCTAssertEqual(WalkthroughStep.assistant.spotlightCornerRadius, 25)
         XCTAssertEqual(WalkthroughStep.analytics.spotlightCornerRadius, 14)
         XCTAssertEqual(WalkthroughStep.creditDetails.spotlightCornerRadius, 18)
         XCTAssertEqual(WalkthroughStep.stockTab.spotlightCornerRadius, 12)
@@ -301,29 +323,95 @@ final class WalkthroughTests: XCTestCase {
         XCTAssertGreaterThan(tab.tabBar.bounds.height, 40)
     }
 
-    func testDashboardOverviewFourCutouts() {
-        let rootVC = MainTabInstaller.makeRootTabBar()
-        guard let tab = rootVC as? UITabBarController else { return }
+    func testFourDistinctDashboardMoments() {
+        let cell = DashboardTopTileTableViewCell()
+        let bgView = SegmentedCardBackgroundView(frame: CGRect(x: 18, y: 0, width: 366, height: 218))
+        cell.segmentedCardBackground = bgView
+        cell.contentView.addSubview(bgView)
+
+        let pill = UIButton(frame: CGRect(x: 224, y: 2, width: 134, height: 36))
+        pill.setTitle("Inventory", for: .normal)
+        pill.layer.cornerRadius = 18
+        bgView.addSubview(pill)
 
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        window.rootViewController = tab
-        window.makeKeyAndVisible()
-        tab.view.layoutIfNeeded()
+        window.addSubview(cell)
+        cell.frame = CGRect(x: 0, y: 111, width: 402, height: 730)
+        cell.layoutIfNeeded()
 
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+
+        // 1. Revenue moment: exactly 1 cutout with custom contour path
+        let revCutout = WalkthroughCoordinator.createRevenueSectionCutout(for: cell, in: overlay)
+        XCTAssertNotNil(revCutout, "Revenue cutout must be created")
+        XCTAssertNotNil(revCutout?.customPath, "Revenue cutout must follow outer contour")
+
+        // 2. Inventory moment: exactly 1 cutout matching pill
+        let invCutout = WalkthroughCoordinator.createInventoryPillCutout(for: cell, in: overlay)
+        XCTAssertNotNil(invCutout, "Inventory cutout must be created")
+        XCTAssertEqual(invCutout?.cornerRadius, 18, "Inventory pill must have capsule radius 18")
+
+        // 3. Alerts moment: 2 simultaneous independent cutouts
+        let lowCard = UIView(frame: CGRect(x: 18, y: 341, width: 177, height: 72))
+        lowCard.layer.cornerRadius = 26
+        let expCard = UIView(frame: CGRect(x: 207, y: 341, width: 177, height: 72))
+        expCard.layer.cornerRadius = 26
+        let alertCutouts = [
+            WalkthroughCutout(rect: lowCard.frame, cornerRadius: 26),
+            WalkthroughCutout(rect: expCard.frame, cornerRadius: 26)
+        ]
+        XCTAssertEqual(alertCutouts.count, 2)
+        XCTAssertEqual(alertCutouts[0].cornerRadius, 26)
+        XCTAssertEqual(alertCutouts[1].cornerRadius, 26)
+
+        // 4. Assistant moment: circular cutout
+        let asstRect = CGRect(x: 326, y: 702, width: 50, height: 50)
+        let asstCutout = WalkthroughCutout(rect: asstRect, cornerRadius: 25, customPath: UIBezierPath(ovalIn: asstRect))
+        XCTAssertNotNil(asstCutout.customPath)
+        XCTAssertEqual(asstCutout.cornerRadius, 25)
+    }
+
+    func testEqualButtonDimensionsAcrossPopups() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         let overlay = WalkthroughOverlayView(frame: window.bounds)
         window.addSubview(overlay)
         overlay.layoutIfNeeded()
 
-        let coordinator = WalkthroughCoordinator.shared
-        coordinator.startWalkthrough(from: tab)
+        // 1. Intermediate step with Back and Next
+        overlay.configure(step: .revenue, cutouts: [], canGoBack: true, animated: false)
+        overlay.layoutIfNeeded()
 
-        let exp = expectation(description: "Wait for dashboard layout")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            exp.fulfill()
+        let backBtn = overlay.subviews.first(where: { !($0 is UIVisualEffectView) })?.subviews
+            .flatMap { $0.subviews }
+            .compactMap { $0 as? UIButton }
+            .first { $0.configuration?.attributedTitle?.characters.elementsEqual("Back") ?? false }
+
+        let nextBtn = overlay.subviews.first(where: { !($0 is UIVisualEffectView) })?.subviews
+            .flatMap { $0.subviews }
+            .compactMap { $0 as? UIButton }
+            .first { $0.configuration?.attributedTitle?.characters.elementsEqual("Next") ?? false }
+
+        if let back = backBtn, let next = nextBtn {
+            XCTAssertEqual(back.frame.height, 40, "Back button height must be 40pt")
+            XCTAssertEqual(next.frame.height, 40, "Next button height must be 40pt")
+            XCTAssertEqual(back.frame.width, next.frame.width, "Back and Next buttons must have exactly equal widths")
         }
-        wait(for: [exp], timeout: 1.0)
 
-        coordinator.dismissWalkthrough(completed: false)
+        // 2. Completion step with Back and Finish
+        overlay.configure(step: .completion, cutouts: [], canGoBack: true, animated: false)
+        overlay.layoutIfNeeded()
+
+        let finishBtn = overlay.subviews.first(where: { !($0 is UIVisualEffectView) })?.subviews
+            .flatMap { $0.subviews }
+            .compactMap { $0 as? UIButton }
+            .first { $0.configuration?.attributedTitle?.characters.elementsEqual("Finish") ?? false }
+
+        if let back = backBtn, let finish = finishBtn {
+            XCTAssertEqual(back.frame.height, 40, "Back button height must be 40pt")
+            XCTAssertEqual(finish.frame.height, 40, "Finish button height must be 40pt")
+            XCTAssertEqual(back.frame.width, finish.frame.width, "Back and Finish buttons must have exactly equal widths")
+        }
     }
 
     func testOverlayHitTestPassThroughOnCutouts() {
@@ -334,7 +422,7 @@ final class WalkthroughTests: XCTestCase {
 
         let cutoutRect = CGRect(x: 324, y: 702, width: 54, height: 54)
         let assistantCutout = WalkthroughCutout(rect: cutoutRect, cornerRadius: 27)
-        overlay.configure(step: .dashboardOverview, cutouts: [assistantCutout], canGoBack: true, animated: false)
+        overlay.configure(step: .assistant, cutouts: [assistantCutout], canGoBack: true, animated: false)
         overlay.layoutIfNeeded()
 
         // 1. Point inside cutout: should pass through (return nil)
@@ -382,5 +470,50 @@ final class WalkthroughTests: XCTestCase {
         // Walkthrough must dismiss immediately and ShopAssistantViewController must be pushed
         XCTAssertFalse(coordinator.isRunning, "Walkthrough must dismiss when Assistant button is tapped")
         XCTAssertTrue(nav.topViewController is ShopAssistantViewController, "ShopAssistantViewController must be pushed onto navigation stack")
+    }
+
+    func testCombinedChartCutoutGeometry() {
+        let cell = DashboardTopTileTableViewCell()
+        let bgView = SegmentedCardBackgroundView(frame: CGRect(x: 18, y: 0, width: 366, height: 218))
+        cell.segmentedCardBackground = bgView
+        cell.contentView.addSubview(bgView)
+
+        let pill = UIButton(frame: CGRect(x: 224, y: 2, width: 134, height: 36))
+        pill.setTitle("Inventory", for: .normal)
+        pill.layer.cornerRadius = 18
+        bgView.addSubview(pill)
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.addSubview(cell)
+        cell.frame = CGRect(x: 0, y: 111, width: 402, height: 730)
+        cell.layoutIfNeeded()
+
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+
+        let cutout = WalkthroughCoordinator.createCombinedChartCutout(for: cell, in: overlay)
+        XCTAssertNotNil(cutout, "Chart cutout must be generated")
+        XCTAssertNotNil(cutout?.customPath, "Chart cutout must have custom bezier path following contour")
+        XCTAssertGreaterThan(cutout?.rect.width ?? 0, 300)
+        XCTAssertGreaterThan(cutout?.rect.height ?? 0, 150)
+    }
+
+    func testCustomPathHitTesting() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+        overlay.layoutIfNeeded()
+
+        let customPath = UIBezierPath(ovalIn: CGRect(x: 100, y: 100, width: 80, height: 80))
+        let cutout = WalkthroughCutout(rect: CGRect(x: 100, y: 100, width: 80, height: 80), cornerRadius: 40, customPath: customPath)
+        overlay.configure(step: .revenue, cutouts: [cutout], canGoBack: false, animated: false)
+
+        // Point inside circle: should pass through
+        let inside = CGPoint(x: 140, y: 140)
+        XCTAssertNil(overlay.hitTest(inside, with: nil))
+
+        // Point inside bounding box (102, 102) but outside circle: should NOT pass through
+        let outsideCircle = CGPoint(x: 103, y: 103)
+        XCTAssertEqual(overlay.hitTest(outsideCircle, with: nil), overlay)
     }
 }

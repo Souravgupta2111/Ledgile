@@ -10,10 +10,16 @@ protocol WalkthroughOverlayViewDelegate: AnyObject {
 struct WalkthroughCutout: Equatable {
     let rect: CGRect
     let cornerRadius: CGFloat
+    let customPath: UIBezierPath?
 
-    init(rect: CGRect, cornerRadius: CGFloat) {
+    init(rect: CGRect, cornerRadius: CGFloat, customPath: UIBezierPath? = nil) {
         self.rect = rect
         self.cornerRadius = cornerRadius
+        self.customPath = customPath
+    }
+
+    static func == (lhs: WalkthroughCutout, rhs: WalkthroughCutout) -> Bool {
+        lhs.rect == rhs.rect && lhs.cornerRadius == rhs.cornerRadius
     }
 }
 
@@ -125,7 +131,7 @@ final class WalkthroughOverlayView: UIView {
         let stack = UIStackView()
         stack.axis = .horizontal
         stack.spacing = 10
-        stack.distribution = .fill
+        stack.distribution = .fillEqually
         stack.alignment = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
@@ -153,7 +159,7 @@ final class WalkthroughOverlayView: UIView {
         config.baseForegroundColor = .white
         config.cornerStyle = .fixed
         config.background.cornerRadius = 13
-        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
         var titleAttr = AttributedString("Next")
         titleAttr.font = .systemFont(ofSize: 15, weight: .semibold)
         config.attributedTitle = titleAttr
@@ -167,7 +173,6 @@ final class WalkthroughOverlayView: UIView {
     private var cardCenterYConstraint: NSLayoutConstraint!
     private var cardTopConstraint: NSLayoutConstraint!
     private var cardBottomConstraint: NSLayoutConstraint!
-    private var backButtonWidthConstraint: NSLayoutConstraint!
 
     private(set) var activeCutouts: [WalkthroughCutout] = []
     private var currentStep: WalkthroughStep = .welcome
@@ -219,7 +224,12 @@ final class WalkthroughOverlayView: UIView {
         buttonStack.addArrangedSubview(backButton)
         buttonStack.addArrangedSubview(primaryButton)
 
-        backButtonWidthConstraint = backButton.widthAnchor.constraint(equalToConstant: 88)
+        let equalWidth = backButton.widthAnchor.constraint(equalTo: primaryButton.widthAnchor)
+        equalWidth.priority = UILayoutPriority(999)
+        equalWidth.isActive = true
+
+        backButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        primaryButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
 
         // Setup vertical content stack
         contentStackView.addArrangedSubview(headerStack)
@@ -227,8 +237,8 @@ final class WalkthroughOverlayView: UIView {
         contentStackView.addArrangedSubview(messageLabel)
         contentStackView.addArrangedSubview(buttonStack)
 
-        contentStackView.setCustomSpacing(8, after: titleLabel)
-        contentStackView.setCustomSpacing(16, after: messageLabel)
+        contentStackView.setCustomSpacing(6, after: titleLabel)
+        contentStackView.setCustomSpacing(12, after: messageLabel)
 
         titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         titleLabel.setContentHuggingPriority(.required, for: .vertical)
@@ -237,11 +247,11 @@ final class WalkthroughOverlayView: UIView {
 
         cardView.addSubview(contentStackView)
         NSLayoutConstraint.activate([
-            contentStackView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 18),
-            contentStackView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
-            contentStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
-            contentStackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -18),
-            buttonStack.heightAnchor.constraint(equalToConstant: 44)
+            contentStackView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 15),
+            contentStackView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
+            contentStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
+            contentStackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -15),
+            buttonStack.heightAnchor.constraint(equalToConstant: 40)
         ])
 
         // Card positioning constraints
@@ -320,12 +330,12 @@ final class WalkthroughOverlayView: UIView {
         titleLabel.text = step.title
 
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = 3
+        paragraphStyle.lineSpacing = 2.5
         let attributedMessage = NSAttributedString(
             string: step.message,
             attributes: [
                 .paragraphStyle: paragraphStyle,
-                .font: UIFont.systemFont(ofSize: 14.5, weight: .regular),
+                .font: UIFont.systemFont(ofSize: 14, weight: .regular),
                 .foregroundColor: UIColor.secondaryLabel
             ]
         )
@@ -336,7 +346,6 @@ final class WalkthroughOverlayView: UIView {
         primaryButton.configuration?.attributedTitle = titleAttr
 
         backButton.isHidden = !canGoBack
-        backButtonWidthConstraint.isActive = canGoBack
 
         let badgeText: String?
         if let index = step.stepIndex {
@@ -410,8 +419,12 @@ final class WalkthroughOverlayView: UIView {
 
         if !cutouts.isEmpty && !isModal {
             for cutout in cutouts {
-                let cutoutPath = UIBezierPath(roundedRect: cutout.rect, cornerRadius: cutout.cornerRadius)
-                boundsPath.append(cutoutPath)
+                if let custom = cutout.customPath {
+                    boundsPath.append(custom)
+                } else {
+                    let cutoutPath = UIBezierPath(roundedRect: cutout.rect, cornerRadius: cutout.cornerRadius)
+                    boundsPath.append(cutoutPath)
+                }
             }
 
             if animated {
@@ -448,45 +461,38 @@ final class WalkthroughOverlayView: UIView {
         // Bottom limit accounts for bottom tab bar (49pt) + safeArea bottom + margin (16pt)
         let safeBottomBound = screenHeight - safeAreaInsets.bottom - 49 - 16
 
-        if step == .dashboardOverview {
-            // In Dashboard Overview, position the card cleanly in the open vertical space
-            // below the alert cards and above the floating Assistant button, ensuring zero overlap
-            // with the Chart, Alert cards, or Assistant button.
-            let alertsMaxY = activeCutouts.filter { $0.rect.minY < screenHeight * 0.6 }.map { $0.rect.maxY }.max() ?? target.maxY
-            let topY = alertsMaxY + 10
+        let spaceAbove = target.minY - safeTopBound
+        let spaceBelow = safeBottomBound - target.maxY
+
+        let shouldPlaceBelow: Bool
+        if step == .assistant {
+            // Floating Assistant button is near bottom-right; position tooltip comfortably above it
+            shouldPlaceBelow = false
+        } else if step == .revenue || step == .inventory || step == .alerts {
+            // Target is in the upper part of the dashboard; position tooltip cleanly below it
+            shouldPlaceBelow = true
+        } else if target.minY < screenHeight * 0.38 && spaceBelow >= 220 {
+            shouldPlaceBelow = true
+        } else if spaceAbove >= 200 {
+            shouldPlaceBelow = false
+        } else {
+            shouldPlaceBelow = (spaceBelow >= spaceAbove)
+        }
+
+        let spacing: CGFloat = (step == .stockTab) ? 12 : 14
+
+        if shouldPlaceBelow {
+            let topY = target.maxY + spacing
             cardTopConstraint.constant = topY
             cardBottomConstraint.isActive = false
             cardCenterYConstraint.isActive = false
             cardTopConstraint.isActive = true
         } else {
-            let spaceAbove = target.minY - safeTopBound
-            let spaceBelow = safeBottomBound - target.maxY
-
-            // Prefer placing above when target is in the middle or lower section of screen
-            let shouldPlaceBelow: Bool
-            if target.minY < screenHeight * 0.38 && spaceBelow >= 220 {
-                shouldPlaceBelow = true
-            } else if spaceAbove >= 200 {
-                shouldPlaceBelow = false
-            } else {
-                shouldPlaceBelow = (spaceBelow >= spaceAbove)
-            }
-
-            let spacing: CGFloat = (step == .stockTab) ? 12 : 14
-
-            if shouldPlaceBelow {
-                let topY = target.maxY + spacing
-                cardTopConstraint.constant = topY
-                cardBottomConstraint.isActive = false
-                cardCenterYConstraint.isActive = false
-                cardTopConstraint.isActive = true
-            } else {
-                let bottomY = target.minY - spacing
-                cardBottomConstraint.constant = bottomY
-                cardTopConstraint.isActive = false
-                cardCenterYConstraint.isActive = false
-                cardBottomConstraint.isActive = true
-            }
+            let bottomY = target.minY - spacing
+            cardBottomConstraint.constant = bottomY
+            cardTopConstraint.isActive = false
+            cardCenterYConstraint.isActive = false
+            cardBottomConstraint.isActive = true
         }
 
         if animated {
@@ -537,7 +543,11 @@ final class WalkthroughOverlayView: UIView {
 
         // If the tap falls inside any active spotlight cutout, pass the touch through to underlying views
         for cutout in activeCutouts {
-            if cutout.rect.contains(point) {
+            if let customPath = cutout.customPath {
+                if customPath.contains(point) {
+                    return nil
+                }
+            } else if cutout.rect.contains(point) {
                 return nil
             }
         }

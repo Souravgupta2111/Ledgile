@@ -4,7 +4,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
     static let shared = WalkthroughCoordinator()
 
-    private var activeOverlay: WalkthroughOverlayView?
+    private(set) var activeOverlay: WalkthroughOverlayView?
     private(set) var currentStep: WalkthroughStep = .welcome
     private weak var hostTabBarController: UITabBarController?
     private(set) var isRunning: Bool = false
@@ -17,14 +17,14 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
     /// Checks if first-time walkthrough should be presented, and presents it if eligible.
     func checkAndStartWalkthroughIfNeeded(from viewController: UIViewController) {
-        guard !isRunning else { return }
+        guard !isRunning, activeOverlay == nil else { return }
 
         let shouldShow = WalkthroughManager.shared.shouldShowWalkthrough()
         guard shouldShow else { return }
 
         // Start after slight delay so view layout and network fetches stabilize
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self, weak viewController] in
-            guard let self = self, let vc = viewController, !self.isRunning else { return }
+            guard let self = self, let vc = viewController, !self.isRunning, self.activeOverlay == nil else { return }
             guard WalkthroughManager.shared.shouldShowWalkthrough() else { return }
             self.startWalkthrough(from: vc)
         }
@@ -57,6 +57,11 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         // Ensure we start on tab 0 (Dashboard)
         targetTabBar.selectedIndex = 0
 
+        // Remove any existing overlay view from the window or activeOverlay to prevent duplicate overlays
+        window.subviews.compactMap { $0 as? WalkthroughOverlayView }.forEach { $0.removeFromSuperview() }
+        self.activeOverlay?.removeFromSuperview()
+        self.activeOverlay = nil
+
         let overlay = WalkthroughOverlayView(frame: window.bounds)
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         overlay.alpha = 0
@@ -75,10 +80,10 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
            let requestedStep = WalkthroughStep(rawValue: stepRaw) {
             currentStep = requestedStep
         } else {
-            currentStep = isReplay ? .dashboardOverview : .welcome
+            currentStep = isReplay ? .revenue : .welcome
         }
         #else
-        currentStep = isReplay ? .dashboardOverview : .welcome
+        currentStep = isReplay ? .revenue : .welcome
         #endif
         presentStep(currentStep, animated: false)
 
@@ -115,11 +120,35 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             tabBar.selectedIndex = 0
             overlay.configure(step: step, cutouts: [], canGoBack: canGoBack, animated: animated)
 
-        case .dashboardOverview:
+        case .revenue:
             tabBar.selectedIndex = 0
             ensureDashboardVisible(tabBar: tabBar) { [weak self, weak overlay] in
                 guard let self = self, let overlay = overlay else { return }
-                let cutouts = self.resolveDashboardOverviewCutouts(in: tabBar, overlay: overlay)
+                let cutouts = self.resolveRevenueCutout(in: tabBar, overlay: overlay)
+                overlay.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
+            }
+
+        case .inventory:
+            tabBar.selectedIndex = 0
+            ensureDashboardVisible(tabBar: tabBar) { [weak self, weak overlay] in
+                guard let self = self, let overlay = overlay else { return }
+                let cutouts = self.resolveInventoryCutout(in: tabBar, overlay: overlay)
+                overlay.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
+            }
+
+        case .alerts:
+            tabBar.selectedIndex = 0
+            ensureDashboardVisible(tabBar: tabBar) { [weak self, weak overlay] in
+                guard let self = self, let overlay = overlay else { return }
+                let cutouts = self.resolveAlertsCutouts(in: tabBar, overlay: overlay)
+                overlay.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
+            }
+
+        case .assistant:
+            tabBar.selectedIndex = 0
+            ensureDashboardVisible(tabBar: tabBar) { [weak self, weak overlay] in
+                guard let self = self, let overlay = overlay else { return }
+                let cutouts = self.resolveAssistantCutout(in: tabBar, overlay: overlay)
                 overlay.configure(step: step, cutouts: cutouts, canGoBack: canGoBack, animated: animated)
             }
 
@@ -265,11 +294,12 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         return tabBar.viewControllers?.first as? DashboardViewController
     }
 
-    private func resolveDashboardOverviewCutouts(in tabBar: UITabBarController, overlay: UIView) -> [WalkthroughCutout] {
+    // MARK: - Dashboard Step Resolvers (Revenue, Inventory, Alerts, Assistant)
+
+    private func resolveRevenueCutout(in tabBar: UITabBarController, overlay: UIView) -> [WalkthroughCutout] {
         guard let dashboardVC = findDashboardViewController(in: tabBar),
               let tableView = dashboardVC.tableView else { return [] }
 
-        // Scroll to top cell
         tableView.setContentOffset(.zero, animated: false)
         tableView.layoutIfNeeded()
 
@@ -279,17 +309,118 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             return [WalkthroughCutout(rect: converted, cornerRadius: 16)]
         }
 
-        var cutouts: [WalkthroughCutout] = []
+        if let cutout = WalkthroughCoordinator.createRevenueSectionCutout(for: cell, in: overlay) {
+            return [cutout]
+        }
 
-        // 1. Revenue + Inventory chart — one combined spotlight
-        if let card = cell.segmentedCardBackground {
-            let rect = card.convert(card.bounds, to: overlay)
-            if rect.width > 50 && rect.height > 50 && overlay.bounds.intersects(rect) {
-                cutouts.append(WalkthroughCutout(rect: rect, cornerRadius: 16))
+        let cellRect = cell.convert(cell.bounds, to: overlay)
+        return [WalkthroughCutout(rect: cellRect, cornerRadius: 16)]
+    }
+
+    static func createRevenueSectionCutout(for cell: DashboardTopTileTableViewCell, in overlay: UIView) -> WalkthroughCutout? {
+        guard let card = cell.segmentedCardBackground else { return nil }
+        let cardRect = card.convert(card.bounds, to: overlay)
+        guard cardRect.width > 50, cardRect.height > 50, overlay.bounds.intersects(cardRect) else { return nil }
+
+        let w = card.bounds.width
+        let h = card.bounds.height
+        let r = card.cornerRadius
+        let cw = card.cutoutWidth
+        let ch = card.cutoutHeight
+        let slantOffset: CGFloat = 34
+
+        // Exact outer contour of the Revenue section, following its curved transition
+        // and rounded corners while strictly excluding the Inventory pill at top-right
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: 0, y: r))
+        // Top-left corner
+        path.addArc(withCenter: CGPoint(x: r, y: r), radius: r, startAngle: .pi, endAngle: -.pi/2, clockwise: true)
+        // Top edge to start of slant
+        path.addLine(to: CGPoint(x: w - cw - slantOffset, y: 0))
+        // Smooth slanted S-curve down to the lower lip
+        path.addCurve(
+            to: CGPoint(x: w - cw, y: ch),
+            controlPoint1: CGPoint(x: w - cw - slantOffset + 12, y: 0),
+            controlPoint2: CGPoint(x: w - cw - 12, y: ch)
+        )
+        // Lower lip edge
+        path.addLine(to: CGPoint(x: w - r, y: ch))
+        // Corner below cutout
+        path.addArc(withCenter: CGPoint(x: w - r, y: ch + r), radius: r, startAngle: -.pi/2, endAngle: 0, clockwise: true)
+        // Right edge
+        path.addLine(to: CGPoint(x: w, y: h - r))
+        // Bottom-right corner
+        path.addArc(withCenter: CGPoint(x: w - r, y: h - r), radius: r, startAngle: 0, endAngle: .pi/2, clockwise: true)
+        // Bottom edge
+        path.addLine(to: CGPoint(x: r, y: h))
+        // Bottom-left corner
+        path.addArc(withCenter: CGPoint(x: r, y: h - r), radius: r, startAngle: .pi/2, endAngle: .pi, clockwise: true)
+        path.close()
+
+        path.apply(CGAffineTransform(translationX: cardRect.minX, y: cardRect.minY))
+        return WalkthroughCutout(rect: cardRect, cornerRadius: r, customPath: path)
+    }
+
+    private func resolveInventoryCutout(in tabBar: UITabBarController, overlay: UIView) -> [WalkthroughCutout] {
+        guard let dashboardVC = findDashboardViewController(in: tabBar),
+              let tableView = dashboardVC.tableView else { return [] }
+
+        tableView.setContentOffset(.zero, animated: false)
+        tableView.layoutIfNeeded()
+
+        guard let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? DashboardTopTileTableViewCell else {
+            return []
+        }
+
+        if let cutout = WalkthroughCoordinator.createInventoryPillCutout(for: cell, in: overlay) {
+            return [cutout]
+        }
+
+        return []
+    }
+
+    static func createInventoryPillCutout(for cell: DashboardTopTileTableViewCell, in overlay: UIView) -> WalkthroughCutout? {
+        guard let card = cell.segmentedCardBackground else { return nil }
+
+        // Find right pill button ("Inventory")
+        var pillButton: UIButton?
+        for subview in card.subviews {
+            if let btn = subview as? UIButton, btn.title(for: .normal) == "Inventory" || (btn.layer.cornerRadius == 18 && btn.frame.minX > card.bounds.width / 2) {
+                pillButton = btn
+                break
             }
         }
 
-        // 2. Low Stock Alert — one spotlight around the complete card
+        if let btn = pillButton {
+            let rect = btn.convert(btn.bounds, to: overlay)
+            if rect.width > 20 && rect.height > 10 && overlay.bounds.intersects(rect) {
+                let radius = btn.layer.cornerRadius > 0 ? btn.layer.cornerRadius : 18
+                let pillPath = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+                return WalkthroughCutout(rect: rect, cornerRadius: radius, customPath: pillPath)
+            }
+        }
+
+        // Fallback: pill frame relative to card
+        let cardRect = card.convert(card.bounds, to: overlay)
+        let fallbackRect = CGRect(x: cardRect.maxX - 134 - 8, y: cardRect.minY + 2, width: 134, height: 36)
+        let pillPath = UIBezierPath(roundedRect: fallbackRect, cornerRadius: 18)
+        return WalkthroughCutout(rect: fallbackRect, cornerRadius: 18, customPath: pillPath)
+    }
+
+    private func resolveAlertsCutouts(in tabBar: UITabBarController, overlay: UIView) -> [WalkthroughCutout] {
+        guard let dashboardVC = findDashboardViewController(in: tabBar),
+              let tableView = dashboardVC.tableView else { return [] }
+
+        tableView.setContentOffset(.zero, animated: false)
+        tableView.layoutIfNeeded()
+
+        guard let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 0)) as? DashboardTopTileTableViewCell else {
+            return []
+        }
+
+        var cutouts: [WalkthroughCutout] = []
+
+        // 1. Low Stock Alert — complete rounded card
         if let lowStockCard = cell.lowStockButton?.superview {
             let rect = lowStockCard.convert(lowStockCard.bounds, to: overlay)
             if rect.width > 50 && rect.height > 30 && overlay.bounds.intersects(rect) {
@@ -298,7 +429,7 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
         }
 
-        // 3. Expiry Alert — one spotlight around the complete card
+        // 2. Expiry Alert — complete rounded card
         if let expiryCard = cell.expiryAlertButton?.superview {
             let rect = expiryCard.convert(expiryCard.bounds, to: overlay)
             if rect.width > 50 && rect.height > 30 && overlay.bounds.intersects(rect) {
@@ -307,11 +438,33 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
         }
 
-        // 4. Assistant — one circular spotlight around the floating button
+        if cutouts.count == 2 {
+            return cutouts
+        }
+
+        // Fallback: estimated alert card positions
+        let cardRect = cell.convert(cell.bounds, to: overlay)
+        let alertY = cardRect.minY + 230
+        let w = (overlay.bounds.width - 36 - 12) / 2
+        let lowRect = CGRect(x: 18, y: alertY, width: w, height: 72)
+        let expRect = CGRect(x: 18 + w + 12, y: alertY, width: w, height: 72)
+        return [
+            WalkthroughCutout(rect: lowRect, cornerRadius: 26),
+            WalkthroughCutout(rect: expRect, cornerRadius: 26)
+        ]
+    }
+
+    private func resolveAssistantCutout(in tabBar: UITabBarController, overlay: UIView) -> [WalkthroughCutout] {
+        guard let dashboardVC = findDashboardViewController(in: tabBar) else { return [] }
+
+        dashboardVC.view.layoutIfNeeded()
+
         var assistantBtn: UIButton?
         for subview in dashboardVC.view.subviews {
             if let btn = subview as? UIButton,
-               btn.accessibilityLabel == "Assistant" || btn.accessibilityIdentifier == "dashboard_assistant_button" {
+               btn.accessibilityLabel == "Assistant" ||
+               btn.accessibilityIdentifier == "dashboard_assistant_button" ||
+               (btn.layer.cornerRadius == 25 && btn.frame.width == 50) {
                 assistantBtn = btn
                 break
             }
@@ -320,26 +473,146 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         if let btn = assistantBtn {
             let rect = btn.convert(btn.bounds, to: overlay)
             if rect.width > 20 && rect.height > 20 && overlay.bounds.intersects(rect) {
-                let paddedRect = rect.insetBy(dx: -2, dy: -2)
-                let radius = paddedRect.width / 2
-                cutouts.append(WalkthroughCutout(rect: paddedRect, cornerRadius: radius))
+                let radius = rect.width / 2
+                let circlePath = UIBezierPath(ovalIn: rect)
+                return [WalkthroughCutout(rect: rect, cornerRadius: radius, customPath: circlePath)]
             }
+        }
+
+        // Fallback: expected position of floating assistant button
+        let screenWidth = overlay.bounds.width
+        let screenHeight = overlay.bounds.height
+        let btnX = screenWidth - overlay.safeAreaInsets.right - 26 - 50
+        let btnY = screenHeight - 170
+        let fallbackRect = CGRect(x: btnX, y: btnY, width: 50, height: 50)
+        let circlePath = UIBezierPath(ovalIn: fallbackRect)
+        return [WalkthroughCutout(rect: fallbackRect, cornerRadius: 25, customPath: circlePath)]
+    }
+
+    static func createCombinedChartCutout(for cell: DashboardTopTileTableViewCell, in overlay: UIView) -> WalkthroughCutout? {
+        guard let card = cell.segmentedCardBackground else { return nil }
+        let cardRect = card.convert(card.bounds, to: overlay)
+        guard cardRect.width > 50, cardRect.height > 50, overlay.bounds.intersects(cardRect) else { return nil }
+
+        let w = card.bounds.width
+        let h = card.bounds.height
+        let r = card.cornerRadius
+        let cw = card.cutoutWidth
+        let slant: CGFloat = 34
+
+        // Locate pill button inside card
+        var pillButton: UIButton?
+        for subview in card.subviews {
+            if let btn = subview as? UIButton, btn.title(for: .normal) == "Inventory" || btn.layer.cornerRadius == 18 {
+                pillButton = btn
+                break
+            }
+        }
+
+        let combinedPath = UIBezierPath()
+
+        if card.cutoutOnRight {
+            let px = pillButton?.frame.minX ?? (w - cw)
+            let py = pillButton?.frame.minY ?? 2
+            let pw = pillButton?.frame.width ?? 134
+            let pr = pillButton?.layer.cornerRadius ?? 18
+
+            // 1. Top-left corner
+            combinedPath.move(to: CGPoint(x: 0, y: r))
+            combinedPath.addArc(withCenter: CGPoint(x: r, y: r), radius: r, startAngle: .pi, endAngle: -.pi/2, clockwise: true)
+
+            // 2. Top edge of Revenue section
+            combinedPath.addLine(to: CGPoint(x: w - cw - slant, y: 0))
+
+            // 3. Smooth natural bridge from Revenue top into Inventory pill top
+            combinedPath.addCurve(
+                to: CGPoint(x: px + pr, y: py),
+                controlPoint1: CGPoint(x: w - cw - slant + 15, y: 0),
+                controlPoint2: CGPoint(x: px + pr - 15, y: py)
+            )
+
+            // 4. Top edge of Inventory selector pill
+            combinedPath.addLine(to: CGPoint(x: px + pw - pr, y: py))
+
+            // 5. Right cap of Inventory selector pill
+            combinedPath.addArc(withCenter: CGPoint(x: px + pw - pr, y: py + pr), radius: pr, startAngle: -.pi/2, endAngle: 0, clockwise: true)
+
+            // 6. Smooth connection down to card's right boundary
+            combinedPath.addCurve(
+                to: CGPoint(x: w, y: card.cutoutHeight + r),
+                controlPoint1: CGPoint(x: px + pw, y: py + pr + 15),
+                controlPoint2: CGPoint(x: w, y: card.cutoutHeight)
+            )
+
+            // 7. Right edge down to bottom corner
+            combinedPath.addLine(to: CGPoint(x: w, y: h - r))
+
+            // 8. Bottom-right corner
+            combinedPath.addArc(withCenter: CGPoint(x: w - r, y: h - r), radius: r, startAngle: 0, endAngle: .pi/2, clockwise: true)
+
+            // 9. Bottom edge
+            combinedPath.addLine(to: CGPoint(x: r, y: h))
+
+            // 10. Bottom-left corner
+            combinedPath.addArc(withCenter: CGPoint(x: r, y: h - r), radius: r, startAngle: .pi/2, endAngle: .pi, clockwise: true)
+
+            // 11. Left edge back to start
+            combinedPath.addLine(to: CGPoint(x: 0, y: r))
+            combinedPath.close()
         } else {
-            // Fallback: expected position of floating assistant button
-            let screenWidth = overlay.bounds.width
-            let screenHeight = overlay.bounds.height
-            let btnX = screenWidth - overlay.safeAreaInsets.right - 26 - 50
-            let btnY = screenHeight - 120
-            let fallbackRect = CGRect(x: btnX - 2, y: btnY - 2, width: 54, height: 54)
-            cutouts.append(WalkthroughCutout(rect: fallbackRect, cornerRadius: 27))
+            // Cutout on left (when Inventory is the active card)
+            let px = pillButton?.frame.minX ?? 8
+            let py = pillButton?.frame.minY ?? 2
+            let pw = pillButton?.frame.width ?? 134
+            let pr = pillButton?.layer.cornerRadius ?? 18
+
+            // Start at top-right corner
+            combinedPath.move(to: CGPoint(x: w - r, y: 0))
+            combinedPath.addArc(withCenter: CGPoint(x: w - r, y: r), radius: r, startAngle: -.pi/2, endAngle: 0, clockwise: true)
+
+            // Right edge down to bottom
+            combinedPath.addLine(to: CGPoint(x: w, y: h - r))
+
+            // Bottom-right corner
+            combinedPath.addArc(withCenter: CGPoint(x: w - r, y: h - r), radius: r, startAngle: 0, endAngle: .pi/2, clockwise: true)
+
+            // Bottom edge
+            combinedPath.addLine(to: CGPoint(x: r, y: h))
+
+            // Bottom-left corner
+            combinedPath.addArc(withCenter: CGPoint(x: r, y: h - r), radius: r, startAngle: .pi/2, endAngle: .pi, clockwise: true)
+
+            // Left edge up to cutout
+            combinedPath.addLine(to: CGPoint(x: 0, y: card.cutoutHeight + r))
+
+            // Curve to left cap of pill
+            combinedPath.addCurve(
+                to: CGPoint(x: px, y: py + pr),
+                controlPoint1: CGPoint(x: 0, y: card.cutoutHeight),
+                controlPoint2: CGPoint(x: px, y: py + pr + 15)
+            )
+
+            // Left cap of pill
+            combinedPath.addArc(withCenter: CGPoint(x: px + pr, y: py + pr), radius: pr, startAngle: .pi, endAngle: -.pi/2, clockwise: true)
+
+            // Top edge of pill
+            combinedPath.addLine(to: CGPoint(x: px + pw - pr, y: py))
+
+            // Smooth bridge into main card top
+            combinedPath.addCurve(
+                to: CGPoint(x: cw + slant, y: 0),
+                controlPoint1: CGPoint(x: px + pw - pr + 15, y: py),
+                controlPoint2: CGPoint(x: cw + slant - 15, y: 0)
+            )
+
+            combinedPath.addLine(to: CGPoint(x: w - r, y: 0))
+            combinedPath.close()
         }
 
-        if !cutouts.isEmpty {
-            return cutouts
-        }
+        // Apply translation to overlay coordinate space
+        combinedPath.apply(CGAffineTransform(translationX: cardRect.minX, y: cardRect.minY))
 
-        let cellRect = cell.convert(cell.bounds, to: overlay)
-        return [WalkthroughCutout(rect: cellRect, cornerRadius: 16)]
+        return WalkthroughCutout(rect: cardRect, cornerRadius: card.cornerRadius, customPath: combinedPath)
     }
 
     private func resolveAnalyticsReportsCutouts(
@@ -354,8 +627,10 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
         }
 
         // Scroll so Reports section header is in clear view
-        tableView.scrollToRow(at: IndexPath(row: 0, section: 2), at: .middle, animated: false)
-        tableView.layoutIfNeeded()
+        if tableView.numberOfSections > 2 && tableView.numberOfRows(inSection: 2) > 0 {
+            tableView.scrollToRow(at: IndexPath(row: 0, section: 2), at: .middle, animated: false)
+            tableView.layoutIfNeeded()
+        }
 
         DispatchQueue.main.async { [weak self, weak overlay] in
             guard let self = self, let overlay = overlay else {

@@ -5,7 +5,10 @@ import UIKit
 
 enum WalkthroughStep: Int, CaseIterable {
     case welcome
-    case dashboardOverview
+    case revenue
+    case inventory
+    case alerts
+    case assistant
     case analytics
     case creditDetails
     case stockTab
@@ -26,14 +29,20 @@ enum WalkthroughStep: Int, CaseIterable {
         switch self {
         case .welcome, .completion:
             return 0
-        case .stockTab:
-            return 12
-        case .dashboardOverview:
+        case .revenue:
             return 16
+        case .inventory:
+            return 18
+        case .alerts:
+            return 26
+        case .assistant:
+            return 25
         case .analytics:
             return 14
         case .creditDetails:
             return 18
+        case .stockTab:
+            return 12
         case .stockActions, .salesActions:
             return 22
         }
@@ -42,26 +51,35 @@ enum WalkthroughStep: Int, CaseIterable {
     /// 1-based index among guided steps (excluding pure welcome and completion modals)
     var stepIndex: Int? {
         switch self {
-        case .dashboardOverview: return 1
-        case .analytics:         return 2
-        case .creditDetails:     return 3
-        case .stockTab:          return 4
-        case .stockActions:      return 5
-        case .salesActions:      return 6
+        case .revenue:       return 1
+        case .inventory:     return 2
+        case .alerts:        return 3
+        case .assistant:     return 4
+        case .analytics:     return 5
+        case .creditDetails: return 6
+        case .stockTab:      return 7
+        case .stockActions:  return 8
+        case .salesActions:  return 9
         case .welcome, .completion:
             return nil
         }
     }
 
     static var totalGuidedSteps: Int {
-        return 6
+        return 9
     }
 
     var title: String {
         switch self {
         case .welcome:
             return "Welcome to B Easy!"
-        case .dashboardOverview:
+        case .revenue:
+            return "Revenue Overview"
+        case .inventory:
+            return "Inventory Overview"
+        case .alerts:
+            return "Stock and Expiry Alerts"
+        case .assistant:
             return "Your Business Assistant"
         case .analytics:
             return "Analytics & Reports"
@@ -82,7 +100,13 @@ enum WalkthroughStep: Int, CaseIterable {
         switch self {
         case .welcome:
             return "Manage your business, track your stock, record sales, and understand your performance—all in one place. Let's take a quick tour to help you get started."
-        case .dashboardOverview:
+        case .revenue:
+            return "Track your revenue performance and view weekly sales trends directly on the dashboard chart."
+        case .inventory:
+            return "Switch between Revenue and Inventory valuation at a glance to stay on top of your shop's assets."
+        case .alerts:
+            return "Stay informed with real-time alerts for low stock items and nearing expiry dates to prevent losses."
+        case .assistant:
             return "Ask questions about your sales, stock, udhaar, customers, or products. Get insights from your shop’s ledger right from your phone."
         case .analytics:
             return "Want to understand your business better? Tap here to explore your analytics and performance reports."
