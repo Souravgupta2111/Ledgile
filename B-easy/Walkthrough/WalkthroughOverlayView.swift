@@ -450,7 +450,7 @@ final class WalkthroughOverlayView: UIView {
             shouldPlaceBelow = (spaceBelow >= spaceAbove)
         }
 
-        let spacing: CGFloat = 14
+        let spacing: CGFloat = (target.maxY > bounds.height - 120) ? 18 : 14
 
         if shouldPlaceBelow {
             let topY = target.maxY + spacing

@@ -21,4 +21,5 @@ xcuserdata/
 scratch.swift
 test_*.swift
 /*.png
-
+# Build outputs
+build_derived/

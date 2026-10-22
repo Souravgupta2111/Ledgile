@@ -319,26 +319,27 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
                 if let title = titleLabel, let button = viewAllButton {
                     let titleConverted = title.convert(title.bounds, to: overlay)
                     let buttonConverted = button.convert(button.bounds, to: overlay)
-                    let midY = (titleConverted.midY + buttonConverted.midY) / 2
-                    let targetHeight: CGFloat = 34
+                    let labelRect = button.titleLabel?.convert(button.titleLabel?.bounds ?? button.bounds, to: overlay) ?? buttonConverted
+                    let midY = (titleConverted.midY + labelRect.midY) / 2
+                    let targetHeight: CGFloat = 38
                     let titleRect = CGRect(
-                        x: titleConverted.minX - 8,
+                        x: titleConverted.minX - 10,
                         y: midY - (targetHeight / 2),
-                        width: titleConverted.width + 16,
+                        width: titleConverted.width + 20,
                         height: targetHeight
                     )
                     let buttonRect = CGRect(
-                        x: buttonConverted.minX - 8,
+                        x: labelRect.minX - 12,
                         y: midY - (targetHeight / 2),
-                        width: buttonConverted.width + 16,
+                        width: labelRect.width + 24,
                         height: targetHeight
                     )
 
                     if titleRect.width > 20 && buttonRect.width > 20 &&
                        overlay.bounds.intersects(titleRect) && overlay.bounds.intersects(buttonRect) {
                         completion([
-                            WalkthroughCutout(rect: titleRect, cornerRadius: 8),
-                            WalkthroughCutout(rect: buttonRect, cornerRadius: 8)
+                            WalkthroughCutout(rect: titleRect, cornerRadius: 10),
+                            WalkthroughCutout(rect: buttonRect, cornerRadius: 10)
                         ])
                         return
                     }
@@ -651,23 +652,25 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             }
 
             if !contentRect.isNull && contentRect.width > 12 && contentRect.height > 12 {
-                let padX: CGFloat = 12
-                let padY: CGFloat = 6
-                return contentRect.insetBy(dx: -padX, dy: -padY)
+                let width: CGFloat = max(contentRect.width + 28, 68)
+                let height: CGFloat = 54
+                let originX = contentRect.midX - (width / 2)
+                let originY = contentRect.midY - (height / 2)
+                return CGRect(x: originX, y: originY, width: width, height: height)
             }
 
             let buttonRect = button.convert(button.bounds, to: overlay)
-            let width: CGFloat = 58
-            let height: CGFloat = 44
+            let width: CGFloat = 68
+            let height: CGFloat = 54
             let originX = buttonRect.midX - (width / 2)
             let originY = buttonRect.midY - (height / 2)
             return CGRect(x: originX, y: originY, width: width, height: height)
         }
 
-        let width: CGFloat = 58
-        let height: CGFloat = 44
+        let width: CGFloat = 68
+        let height: CGFloat = 54
         let originX = itemX + (itemWidth - width) / 2
-        let originY = bar.convert(CGPoint(x: 0, y: 4), to: overlay).y
+        let originY = bar.convert(CGPoint(x: 0, y: 0), to: overlay).y
         return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
