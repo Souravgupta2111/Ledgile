@@ -113,6 +113,7 @@ class DashboardViewController: UIViewController {
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.accessibilityLabel = "Assistant"
+        button.accessibilityIdentifier = "dashboard_assistant_button"
         button.addTarget(self, action: #selector(openAssistant), for: .touchUpInside)
         view.addSubview(button)
         NSLayoutConstraint.activate([
@@ -125,6 +126,9 @@ class DashboardViewController: UIViewController {
     }
 
     @objc private func openAssistant() {
+        if WalkthroughCoordinator.shared.isRunning {
+            WalkthroughCoordinator.shared.dismissWalkthrough(completed: false)
+        }
         let assistant = ShopAssistantViewController()
         assistant.hidesBottomBarWhenPushed = true
         navigationController?.pushViewController(assistant, animated: true)

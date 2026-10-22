@@ -9,6 +9,7 @@ final class WalkthroughTests: XCTestCase {
 
     override func tearDown() {
         super.tearDown()
+        WalkthroughCoordinator.shared.dismissWalkthrough(completed: false)
         WalkthroughManager.shared.resetWalkthroughState(for: testUserId1)
         WalkthroughManager.shared.resetWalkthroughState(for: testUserId2)
     }
@@ -81,7 +82,7 @@ final class WalkthroughTests: XCTestCase {
         XCTAssertEqual(steps[7], .completion)
 
         XCTAssertEqual(steps[0].title, "Welcome to B Easy!")
-        XCTAssertEqual(steps[1].title, "Dashboard Overview")
+        XCTAssertEqual(steps[1].title, "Your Business Assistant")
         XCTAssertEqual(steps[2].title, "Analytics & Reports")
         XCTAssertEqual(steps[3].title, "Credit Management")
         XCTAssertEqual(steps[4].title, "Stock Management")
@@ -187,6 +188,9 @@ final class WalkthroughTests: XCTestCase {
     }
 
     func testRefreshSpotlightSafetyWhenInactive() {
+        if WalkthroughCoordinator.shared.isRunning {
+            WalkthroughCoordinator.shared.dismissWalkthrough(completed: false)
+        }
         // Coordinator is not running in unit test environment
         XCTAssertFalse(WalkthroughCoordinator.shared.isRunning)
         // Calling refreshSpotlightIfCurrent should safely do nothing and not crash
@@ -295,5 +299,88 @@ final class WalkthroughTests: XCTestCase {
 
         XCTAssertGreaterThan(tab.tabBar.bounds.width, 300)
         XCTAssertGreaterThan(tab.tabBar.bounds.height, 40)
+    }
+
+    func testDashboardOverviewFourCutouts() {
+        let rootVC = MainTabInstaller.makeRootTabBar()
+        guard let tab = rootVC as? UITabBarController else { return }
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = tab
+        window.makeKeyAndVisible()
+        tab.view.layoutIfNeeded()
+
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+        overlay.layoutIfNeeded()
+
+        let coordinator = WalkthroughCoordinator.shared
+        coordinator.startWalkthrough(from: tab)
+
+        let exp = expectation(description: "Wait for dashboard layout")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1.0)
+
+        coordinator.dismissWalkthrough(completed: false)
+    }
+
+    func testOverlayHitTestPassThroughOnCutouts() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let overlay = WalkthroughOverlayView(frame: window.bounds)
+        window.addSubview(overlay)
+        overlay.layoutIfNeeded()
+
+        let cutoutRect = CGRect(x: 324, y: 702, width: 54, height: 54)
+        let assistantCutout = WalkthroughCutout(rect: cutoutRect, cornerRadius: 27)
+        overlay.configure(step: .dashboardOverview, cutouts: [assistantCutout], canGoBack: true, animated: false)
+        overlay.layoutIfNeeded()
+
+        // 1. Point inside cutout: should pass through (return nil)
+        let insidePoint = CGPoint(x: 350, y: 720)
+        let hitInside = overlay.hitTest(insidePoint, with: nil)
+        XCTAssertNil(hitInside, "Touches inside spotlight cutout must pass through to underlying views")
+
+        // 2. Point inside card: should return card view or its subview
+        let cardRect = overlay.cardView.frame
+        let cardPoint = CGPoint(x: cardRect.midX, y: cardRect.midY)
+        let hitCard = overlay.hitTest(cardPoint, with: nil)
+        XCTAssertNotNil(hitCard, "Touches inside the tooltip card must be handled by overlay")
+
+        // 3. Point outside both card and cutouts (on dimmed background): should be intercepted by overlay
+        let dimPoint = CGPoint(x: 20, y: 50)
+        let hitDim = overlay.hitTest(dimPoint, with: nil)
+        XCTAssertEqual(hitDim, overlay, "Touches on dimmed area must be intercepted by overlay")
+    }
+
+    func testTappingAssistantButtonOpensAssistantScreenAndDismissesWalkthrough() {
+        let rootVC = MainTabInstaller.makeRootTabBar()
+        guard let tab = rootVC as? UITabBarController,
+              let nav = tab.viewControllers?.first as? UINavigationController,
+              let dashboardVC = nav.viewControllers.first as? DashboardViewController else {
+            return
+        }
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = tab
+        window.makeKeyAndVisible()
+        tab.view.layoutIfNeeded()
+
+        let coordinator = WalkthroughCoordinator.shared
+        coordinator.startWalkthrough(from: tab)
+        XCTAssertTrue(coordinator.isRunning)
+
+        let btn = dashboardVC.view.subviews.compactMap { $0 as? UIButton }.first {
+            $0.accessibilityLabel == "Assistant" || $0.accessibilityIdentifier == "dashboard_assistant_button"
+        }
+        XCTAssertNotNil(btn, "Assistant button must be present in dashboard view hierarchy")
+
+        // Trigger assistant action
+        btn?.sendActions(for: .touchUpInside)
+
+        // Walkthrough must dismiss immediately and ShopAssistantViewController must be pushed
+        XCTAssertFalse(coordinator.isRunning, "Walkthrough must dismiss when Assistant button is tapped")
+        XCTAssertTrue(nav.topViewController is ShopAssistantViewController, "ShopAssistantViewController must be pushed onto navigation stack")
     }
 }

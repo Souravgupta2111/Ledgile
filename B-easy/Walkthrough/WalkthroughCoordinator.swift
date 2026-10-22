@@ -194,8 +194,8 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
     // MARK: - Dismissal
 
     func dismissWalkthrough(completed: Bool) {
+        isRunning = false
         guard let overlay = activeOverlay else {
-            isRunning = false
             return
         }
 
@@ -279,11 +279,63 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
             return [WalkthroughCutout(rect: converted, cornerRadius: 16)]
         }
 
+        var cutouts: [WalkthroughCutout] = []
+
+        // 1. Revenue + Inventory chart — one combined spotlight
         if let card = cell.segmentedCardBackground {
             let rect = card.convert(card.bounds, to: overlay)
             if rect.width > 50 && rect.height > 50 && overlay.bounds.intersects(rect) {
-                return [WalkthroughCutout(rect: rect, cornerRadius: 16)]
+                cutouts.append(WalkthroughCutout(rect: rect, cornerRadius: 16))
             }
+        }
+
+        // 2. Low Stock Alert — one spotlight around the complete card
+        if let lowStockCard = cell.lowStockButton?.superview {
+            let rect = lowStockCard.convert(lowStockCard.bounds, to: overlay)
+            if rect.width > 50 && rect.height > 30 && overlay.bounds.intersects(rect) {
+                let radius = lowStockCard.layer.cornerRadius > 0 ? lowStockCard.layer.cornerRadius : 26
+                cutouts.append(WalkthroughCutout(rect: rect, cornerRadius: radius))
+            }
+        }
+
+        // 3. Expiry Alert — one spotlight around the complete card
+        if let expiryCard = cell.expiryAlertButton?.superview {
+            let rect = expiryCard.convert(expiryCard.bounds, to: overlay)
+            if rect.width > 50 && rect.height > 30 && overlay.bounds.intersects(rect) {
+                let radius = expiryCard.layer.cornerRadius > 0 ? expiryCard.layer.cornerRadius : 26
+                cutouts.append(WalkthroughCutout(rect: rect, cornerRadius: radius))
+            }
+        }
+
+        // 4. Assistant — one circular spotlight around the floating button
+        var assistantBtn: UIButton?
+        for subview in dashboardVC.view.subviews {
+            if let btn = subview as? UIButton,
+               btn.accessibilityLabel == "Assistant" || btn.accessibilityIdentifier == "dashboard_assistant_button" {
+                assistantBtn = btn
+                break
+            }
+        }
+
+        if let btn = assistantBtn {
+            let rect = btn.convert(btn.bounds, to: overlay)
+            if rect.width > 20 && rect.height > 20 && overlay.bounds.intersects(rect) {
+                let paddedRect = rect.insetBy(dx: -2, dy: -2)
+                let radius = paddedRect.width / 2
+                cutouts.append(WalkthroughCutout(rect: paddedRect, cornerRadius: radius))
+            }
+        } else {
+            // Fallback: expected position of floating assistant button
+            let screenWidth = overlay.bounds.width
+            let screenHeight = overlay.bounds.height
+            let btnX = screenWidth - overlay.safeAreaInsets.right - 26 - 50
+            let btnY = screenHeight - 120
+            let fallbackRect = CGRect(x: btnX - 2, y: btnY - 2, width: 54, height: 54)
+            cutouts.append(WalkthroughCutout(rect: fallbackRect, cornerRadius: 27))
+        }
+
+        if !cutouts.isEmpty {
+            return cutouts
         }
 
         let cellRect = cell.convert(cell.bounds, to: overlay)

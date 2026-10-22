@@ -62,7 +62,7 @@ enum WalkthroughStep: Int, CaseIterable {
         case .welcome:
             return "Welcome to B Easy!"
         case .dashboardOverview:
-            return "Dashboard Overview"
+            return "Your Business Assistant"
         case .analytics:
             return "Analytics & Reports"
         case .creditDetails:
@@ -83,7 +83,7 @@ enum WalkthroughStep: Int, CaseIterable {
         case .welcome:
             return "Manage your business, track your stock, record sales, and understand your performance—all in one place. Let's take a quick tour to help you get started."
         case .dashboardOverview:
-            return "Your business overview is right here. Quickly check how your business is performing from your dashboard."
+            return "Ask questions about your sales, stock, udhaar, customers, or products. Get insights from your shop’s ledger right from your phone."
         case .analytics:
             return "Want to understand your business better? Tap here to explore your analytics and performance reports."
         case .creditDetails:

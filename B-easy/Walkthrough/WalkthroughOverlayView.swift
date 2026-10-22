@@ -31,7 +31,7 @@ final class WalkthroughOverlayView: UIView {
 
     private let dimmingMaskLayer = CAShapeLayer()
 
-    private let cardView: UIView = {
+    let cardView: UIView = {
         let view = UIView()
         view.backgroundColor = .secondarySystemGroupedBackground
         view.layer.cornerRadius = 20
@@ -449,13 +449,15 @@ final class WalkthroughOverlayView: UIView {
         let safeBottomBound = screenHeight - safeAreaInsets.bottom - 49 - 16
 
         if step == .dashboardOverview {
-            // In Dashboard Overview, anchor tooltip cleanly at the bottom above the tab bar
-            // so it never awkwardly slices through the credit cards or crowds the screen.
-            let bottomY = safeBottomBound
-            cardBottomConstraint.constant = bottomY
-            cardTopConstraint.isActive = false
+            // In Dashboard Overview, position the card cleanly in the open vertical space
+            // below the alert cards and above the floating Assistant button, ensuring zero overlap
+            // with the Chart, Alert cards, or Assistant button.
+            let alertsMaxY = activeCutouts.filter { $0.rect.minY < screenHeight * 0.6 }.map { $0.rect.maxY }.max() ?? target.maxY
+            let topY = alertsMaxY + 10
+            cardTopConstraint.constant = topY
+            cardBottomConstraint.isActive = false
             cardCenterYConstraint.isActive = false
-            cardBottomConstraint.isActive = true
+            cardTopConstraint.isActive = true
         } else {
             let spaceAbove = target.minY - safeTopBound
             let spaceBelow = safeBottomBound - target.maxY
@@ -522,6 +524,26 @@ final class WalkthroughOverlayView: UIView {
         } else {
             layoutIfNeeded()
         }
+    }
+
+    // MARK: - Touch Handling & Hit Testing
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // If the tap falls within the cardView or its interactive controls, let the card handle it
+        let cardPoint = convert(point, to: cardView)
+        if cardView.point(inside: cardPoint, with: event) {
+            return cardView.hitTest(cardPoint, with: event)
+        }
+
+        // If the tap falls inside any active spotlight cutout, pass the touch through to underlying views
+        for cutout in activeCutouts {
+            if cutout.rect.contains(point) {
+                return nil
+            }
+        }
+
+        // Otherwise, intercept touch to keep the walkthrough focused and prevent accidental background actions
+        return super.hitTest(point, with: event)
     }
 
     override func layoutSubviews() {
