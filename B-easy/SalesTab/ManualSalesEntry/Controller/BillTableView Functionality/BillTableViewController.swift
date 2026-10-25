@@ -33,6 +33,10 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.isScrollEnabled = false
+        // The bill is shorter than the sheet, so the table view would rubber
+        // band (bounce up and down) whenever it is dragged. The bill has to
+        // stay still - only the sheet itself may be dragged.
+        tableView.alwaysBounceVertical = false
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.separatorStyle = .none
         tableView.register(UINib(nibName: "BillLabelTableViewCell", bundle: nil),
@@ -341,6 +345,21 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         let db = dm.db
         let capturedDetails = details
 
+        // ── A credit sale has to belong to a customer ──
+        if capturedDetails.isCreditSale {
+            let name = capturedDetails.customerName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                let alert = UIAlertController(
+                    title: "Customer Required",
+                    message: "A credit sale needs a customer name so the amount can be recorded against them.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                present(alert, animated: true)
+                return
+            }
+        }
+
         setSaveInProgress(true)
 
         LedgerIO.run({
@@ -354,7 +373,14 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
             let now = Date()
 
             for txItem in capturedDetails.items {
-                let key = txItem.itemName.lowercased()
+                // A line without a name is a leftover from "Add new item" that
+                // was never filled in. It is not a real item, so it is skipped:
+                // otherwise an item with an empty name would be added to the
+                // stock list and would also fail the stock check.
+                let itemName = txItem.itemName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !itemName.isEmpty else { continue }
+
+                let key = itemName.lowercased()
                 let quantity = txItem.quantity
                 let sellingPrice = txItem.sellingPricePerUnit ?? 0
 
@@ -363,7 +389,7 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 } else {
                     let newItem = Item(
                         id: UUID(),
-                        name: txItem.itemName,
+                        name: itemName,
                         unit: txItem.unit,
                         defaultCostPrice: 0,
                         defaultSellingPrice: sellingPrice,
@@ -379,6 +405,10 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                     nameToItem[key] = newItem
                     saleItems.append((itemID: newItem.id, quantity: quantity, sellingPrice: sellingPrice))
                 }
+            }
+
+            guard !saleItems.isEmpty else {
+                throw DataModelError.custom("Add an item name before saving the sale.")
             }
 
             let stateCode = IndianStates.stateByName(capturedDetails.buyerState ?? "")?.code
@@ -397,10 +427,12 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                 let totalAmount = capturedDetails.items.reduce(0.0) { $0 + $1.totalRevenue } - capturedDetails.discount + capturedDetails.adjustment
                 guard totalAmount > 0 else { return }
                 let rawName = capturedDetails.customerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                let resolvedName = rawName.isEmpty ? "Customer" : rawName
+                // A credit sale without a customer name is not recorded - the
+                // money owed cannot be attributed to anybody.
+                guard !rawName.isEmpty else { return }
                 CreditStore.shared.addCreditSale(
                     amount: totalAmount,
-                    customerName: resolvedName,
+                    customerName: rawName,
                     phone: capturedDetails.customerPhone,
                     note: "Credit sale \(capturedDetails.invoiceNumber)",
                     transactionID: transactionID
@@ -440,25 +472,44 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
                     message: "Sale was not saved. Not enough stock for: \(items.joined(separator: ", ")). Add a purchase first.",
                     preferredStyle: .alert
                 )
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+                    // Back to the sales list. The sale itself was not saved, so
+                    // the entry screen asks before throwing the sale away.
+                    self?.closeBillSheet {
+                        self?.delegate?.save(isSaved: false)
+                    }
+                })
                 alert.addAction(UIAlertAction(title: "Go to Stock", style: .default) { [weak self] _ in
-                    self?.dismiss(animated: true) {
-                        if let tabBarController = UIApplication.shared.connectedScenes
-                            .compactMap({ $0 as? UIWindowScene })
-                            .flatMap(\.windows)
-                            .first(where: \.isKeyWindow)?
-                            .rootViewController as? UITabBarController {
-                            tabBarController.selectedIndex = 2
-                        }
+                    self?.closeBillSheet {
+                        MainTabSwitcher.select(.stock)
                     }
                 })
                 self.present(alert, animated: true)
             case .failure(let error):
                 let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
-                    self?.dismiss(animated: true)
-                })
+                // The alert closes itself. The bill sheet stays open so the
+                // problem can be fixed and the sale saved again.
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
                 self.present(alert, animated: true)
+            }
+        }
+    }
+
+    /// Closes the bill sheet.
+    ///
+    /// While an alert action runs, the alert is still the bill's presented view
+    /// controller, so dismissing right away would only close the alert and
+    /// leave the sheet on screen. The dismissal is therefore deferred by one
+    /// run loop pass and the alert is closed first when it is still around.
+    private func closeBillSheet(completion: @escaping () -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let alert = self.presentedViewController as? UIAlertController {
+                alert.dismiss(animated: true) { [weak self] in
+                    self?.dismiss(animated: true, completion: completion)
+                }
+            } else {
+                self.dismiss(animated: true, completion: completion)
             }
         }
     }
@@ -501,11 +552,12 @@ class BillTableViewController: UITableViewController, UIDocumentPickerDelegate {
         guard totalAmount > 0 else { return }
 
         let rawName = details.customerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedName = rawName.isEmpty ? "Customer" : rawName
+        // A credit sale without a customer name is not recorded.
+        guard !rawName.isEmpty else { return }
 
         CreditStore.shared.addCreditSale(
             amount: totalAmount,
-            customerName: resolvedName,
+            customerName: rawName,
             phone: details.customerPhone,
             note: "Credit sale \(details.invoiceNumber)",
             transactionID: transactionID

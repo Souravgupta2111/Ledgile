@@ -509,7 +509,10 @@ nonisolated final class DataModel: @unchecked Sendable {
         
         var settings = try db.getSettings()
         
-        var batches = try db.getBatches(for: itemID)
+        var allBatches = try db.getBatches(for: itemID)
+        // Items that are not tracked in the stock list can still be sold.
+        let isTrackedInStock = !allBatches.isEmpty
+        var batches = allBatches
             .filter { $0.quantityRemaining > 0 }
             .sorted { batch1, batch2 in
                 if let exp1 = batch1.expiryDate, let exp2 = batch2.expiryDate {
@@ -524,11 +527,13 @@ nonisolated final class DataModel: @unchecked Sendable {
             }
         
         let totalAvailable = batches.reduce(0) { $0 + $1.quantityRemaining }
-        guard totalAvailable >= quantity else {
-            throw DataModelError.insufficientStock(
-                available: totalAvailable,
-                requested: quantity
-            )
+        if isTrackedInStock {
+            guard totalAvailable >= quantity else {
+                throw DataModelError.insufficientStock(
+                    available: totalAvailable,
+                    requested: quantity
+                )
+            }
         }
         
         var remainingToSell = quantity
@@ -861,11 +866,17 @@ nonisolated final class DataModel: @unchecked Sendable {
 
             // Skip stock pre-check for service items (No longer applicable)
 
-            var batches = try preCheckBatches[saleItem.itemID] ?? db.getBatches(for: saleItem.itemID).filter { $0.quantityRemaining > 0 }
+            let storedBatches = try db.getBatches(for: saleItem.itemID)
+            // An item that has no stock record at all is not tracked in the
+            // stock list - the shop may still have it on the shelf. Such an
+            // item can always be sold, only items that are tracked in stock
+            // are held to the quantity that is available.
+            let isTrackedInStock = !storedBatches.isEmpty
+            var batches = preCheckBatches[saleItem.itemID] ?? storedBatches.filter { $0.quantityRemaining > 0 }
             let totalAvailable = batches.reduce(0) { $0 + $1.quantityRemaining }
             
             if totalAvailable < saleItem.quantity {
-                if let item = try db.getItem(id: saleItem.itemID) {
+                if isTrackedInStock, let item = try db.getItem(id: saleItem.itemID) {
                     outOfStockItemNames.append(item.name)
                 }
             } else {
@@ -919,7 +930,9 @@ nonisolated final class DataModel: @unchecked Sendable {
                     itemCost += lineRupees(quantity: consumeQty, rate: batches[i].costPrice)
                     remaining -= consumeQty
                 }
-                avgCostPrice = saleItem.quantity > 0 ? itemCost / saleItem.quantity : 0
+                // When the item has no stock record there is no batch to take
+                // the cost from - fall back to the cost price of the item.
+                avgCostPrice = itemCost > 0 ? (itemCost / saleItem.quantity) : item.defaultCostPrice
                 inMemoryBatches[saleItem.itemID] = batches
 
             var txItem = TransactionItem(
@@ -984,7 +997,7 @@ nonisolated final class DataModel: @unchecked Sendable {
                         batchExpiryDate: consumption.batch.expiryDate
                     ))
                 }
-                item.currentStock -= saleItem.quantity
+                item.currentStock = max(0, item.currentStock - saleItem.quantity)
             }
 
             item.salesCount = (item.salesCount ?? 0) + saleItem.quantity

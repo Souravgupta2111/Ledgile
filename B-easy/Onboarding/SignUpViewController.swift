@@ -90,7 +90,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         phoneField.placeholder = "Phone Number"
         phoneField.keyboardType = .numberPad
         phoneField.delegate = self
-        phoneField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
+        phoneField.addTarget(self, action: #selector(phoneFieldDidChange(_:)), for: .editingChanged)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
         tap.cancelsTouchesInView = false
@@ -138,6 +138,17 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         updateSendCodeState()
     }
 
+    @objc private func phoneFieldDidChange(_ sender: UITextField) {
+        // A paste, dictation or autofill can put characters into the field
+        // without asking the delegate - strip everything that is not a digit.
+        let text = sender.text ?? ""
+        let cleaned = PhoneInput.sanitize(text)
+        if cleaned != text {
+            sender.text = cleaned
+        }
+        updateSendCodeState()
+    }
+
     @objc private func dismissKeyboard() {
         view.endEditing(true)
     }
@@ -177,7 +188,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
         let trimmedName = personNameField.text?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedShop = shopNameField.text?.trimmingCharacters(in: .whitespacesAndNewlines)
         let phone = phoneField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let fullPhone = "\(selectedCountryCode)\(phone)"
+        let fullPhone = PhoneInput.normalize("\(selectedCountryCode)\(phone)")
         let displayPhone = "\(selectedCountryCode) \(phone)"
 
 
@@ -298,7 +309,7 @@ class SignupViewController: UIViewController, UITextFieldDelegate {
                    replacementString string: String) -> Bool {
 
         if textField == phoneField {
-            let allowed = CharacterSet.decimalDigits
+            let allowed = PhoneInput.allowedCharacters
             if !allowed.isSuperset(of: CharacterSet(charactersIn: string)) && !string.isEmpty {
                 return false
             }

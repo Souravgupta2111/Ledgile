@@ -623,9 +623,11 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             }
 
             if payLater, transaction.totalAmount > 0 {
+                // A credit purchase without a supplier name is not recorded -
+                // the amount cannot be attributed to anybody.
                 CreditStore.shared.addCreditPurchase(
                     amount: transaction.totalAmount,
-                    supplierName: finalSupplier ?? "Supplier",
+                    supplierName: finalSupplier,
                     note: "Credit purchase \(transaction.invoiceNumber)"
                 )
             }

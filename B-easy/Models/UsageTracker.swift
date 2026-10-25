@@ -27,6 +27,10 @@ final class UsageTracker {
         return Int((Double(monthlyCost - yearlyPriceINR) / Double(monthlyCost) * 100).rounded())
     }
 
+    static var yearlySavingsINR: Int {
+        (monthlyPriceINR * 12) - yearlyPriceINR
+    }
+
     private let geminiUsageCountKey = "geminiUsageCount"
     private let isProUserKey = "isProUser"
     private let voiceMonthCountKey = "proVoiceMonthCount"

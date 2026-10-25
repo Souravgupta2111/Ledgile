@@ -8,7 +8,8 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
     @IBOutlet weak var topItemLabel: UILabel!
     @IBOutlet weak var barChartView: BarChartView!
     @IBOutlet weak var itemsSoldCount: UILabel!
-    private lazy var currencyMarker = makeMarker()
+    private lazy var currencyMarker = makeMarker(isCurrency: true)
+    private lazy var countMarker = makeMarker(isCurrency: false)
     
     
     override func awakeFromNib() {
@@ -22,19 +23,19 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
         
     func setupCharts() {
         // --- Main chart ---
-        configureBarChartDefaults(lineChartView)
+        configureBarChartDefaults(lineChartView, marker: currencyMarker)
 
         // --- Bottom bar chart ---
-        configureBarChartDefaults(barChartView)
+        configureBarChartDefaults(barChartView, marker: countMarker)
         barChartView.setViewPortOffsets(left: 4, top: 4, right: 4, bottom: 24)
     }
 
-    private func configureBarChartDefaults(_ chart: BarChartView) {
+    private func configureBarChartDefaults(_ chart: BarChartView, marker: ChartTooltipMarker) {
         chart.rightAxis.enabled = false
         chart.leftAxis.enabled = true
         chart.legend.enabled = false
         chart.chartDescription.enabled = false
-        chart.marker = currencyMarker
+        chart.marker = marker
         chart.highlightPerTapEnabled = true
         chart.highlightPerDragEnabled = false
         chart.drawMarkers = true
@@ -75,7 +76,7 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
         configureMainChart(lineChartPoints)
 
         // --- Bottom bar chart (item-level) ---
-        configureBottomChart(barChartValues, barChartLabels)
+        configureBottomChart(barChartValues, barChartLabels, period: period)
     }
 
     private func configureMainChart(_ points: [ChartDataProvider.ChartPoint]) {
@@ -99,7 +100,7 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
         barData.barWidth = 0.5
 
         lineChartView.data = barData
-        updateMarker(for: lineChartView)
+        updateMarker(for: lineChartView, isCurrency: true)
 
         // X-Axis: force show ALL labels
         let xAxis = lineChartView.xAxis
@@ -133,7 +134,7 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
         lineChartView.notifyDataSetChanged()
     }
 
-    private func configureBottomChart(_ values: [Double], _ labels: [String]) {
+    private func configureBottomChart(_ values: [Double], _ labels: [String], period: ChartDataProvider.Period) {
         let count = labels.count
         let filledValues: [Double] = labels.enumerated().map { i in
             i.offset < values.count ? values[i.offset] : 0
@@ -149,13 +150,13 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
         let barData = BarChartData(dataSet: barSet)
         barData.barWidth = 0.3
         barChartView.data = barData
-        updateMarker(for: barChartView)
+        updateMarker(for: barChartView, isCurrency: false)
 
-        let shortLabels = labels.map { String($0.prefix(1)) }
-
-        // X-Axis: force show ALL labels
+        // X-Axis: the chart is small, so the labels are shortened to keep them
+        // from overlapping. Cutting every label to a single character is not
+        // possible - "Q1" would become "Q" and every year "2".
         let xAxis = barChartView.xAxis
-        xAxis.valueFormatter = IndexAxisValueFormatter(values: shortLabels)
+        xAxis.valueFormatter = IndexAxisValueFormatter(values: labels.map { shortAxisLabel($0, period: period) })
         xAxis.granularity = 1
         xAxis.granularityEnabled = true
         xAxis.centerAxisLabelsEnabled = false
@@ -182,7 +183,24 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
         barChartView.notifyDataSetChanged()
     }
 
-    private func makeMarker() -> ChartTooltipMarker {
+    /// Shortens a label of the "Items Sold" axis so that the labels do not
+    /// overlap each other on the small chart.
+    ///
+    /// - daily: only the first letter of the weekday ("Mon" -> "M")
+    /// - yearly: only the last two digits of the year ("2024" -> "24")
+    /// - monthly and quarterly are already short ("J", "Q1")
+    private func shortAxisLabel(_ label: String, period: ChartDataProvider.Period) -> String {
+        switch period {
+        case .daily:
+            return String(label.prefix(1))
+        case .yearly:
+            return String(label.suffix(2))
+        case .monthly, .quarterly:
+            return label
+        }
+    }
+
+    private func makeMarker(isCurrency: Bool) -> ChartTooltipMarker {
         let marker = ChartTooltipMarker(
             color: UIColor.systemBackground.withAlphaComponent(0.95),
             font: .systemFont(ofSize: 12, weight: .semibold),
@@ -191,17 +209,18 @@ class SalesByItemTopTileTableViewCell: UITableViewCell {
         )
         marker.minimumSize = CGSize(width: 56, height: 32)
         marker.textProvider = { [weak self] entry in
-            self?.currencyText(for: entry.y) ?? "₹0"
+            guard let self else { return isCurrency ? "₹0" : "0" }
+            return isCurrency ? self.currencyText(for: entry.y) : "\(Int(entry.y.rounded()))"
         }
         return marker
     }
 
-    private func updateMarker(for chartView: ChartViewBase) {
+    private func updateMarker(for chartView: ChartViewBase, isCurrency: Bool) {
         guard let marker = chartView.marker as? ChartTooltipMarker else { return }
         chartView.highlightValue(nil)
 
         let firstValue = chartView.data?.dataSets.first?.entryForIndex(0)?.y ?? 0
-        marker.setLabel(currencyText(for: firstValue))
+        marker.setLabel(isCurrency ? currencyText(for: firstValue) : "\(Int(firstValue.rounded()))")
     }
 
     private func currencyText(for value: Double) -> String {

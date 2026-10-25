@@ -1,5 +1,41 @@
 import UIKit
 
+/// Rules for the phone number and OTP fields.
+///
+/// Only plain ASCII digits (0-9) are allowed. `CharacterSet.decimalDigits`
+/// also contains the digits of other scripts (Arabic-Indic, Devanagari, ...)
+/// and text fields can receive characters that never went through the
+/// delegate (paste, dictation, autofill) - both are filtered out here.
+enum PhoneInput {
+
+    /// The characters that may be typed into a phone number or OTP field.
+    static let allowedCharacters = CharacterSet(charactersIn: "0123456789")
+
+    /// Keeps only the ASCII digits of the given text.
+    static func digits(_ text: String) -> String {
+        String(text.filter { $0.isASCII && $0.isNumber })
+    }
+
+    /// True when the text holds anything that is not an ASCII digit.
+    static func hasInvalidCharacters(_ text: String) -> Bool {
+        !text.isEmpty && digits(text) != text
+    }
+
+    /// Removes every character that is not an ASCII digit from the text.
+    static func sanitize(_ text: String) -> String {
+        digits(text)
+    }
+
+    /// Normalises a phone number for the sign-in service: a leading "+" and
+    /// the digits, nothing else.
+    static func normalize(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasPlus = trimmed.hasPrefix("+")
+        let digits = digits(trimmed)
+        return hasPlus ? "+" + digits : digits
+    }
+}
+
 enum AuthNavigationHelper {
 
     static let profileCompleteKey = "userDidCompleteProfileDetails"
@@ -33,9 +69,20 @@ enum AuthNavigationHelper {
     }
 
     static func isValidPhone(_ phone: String, countryCode: String) -> Bool {
-        let digits = phone.filter(\.isNumber)
+        let digits = PhoneInput.digits(phone)
         if countryCode == "+91" { return digits.count == 10 }
         return (7...15).contains(digits.count)
+    }
+
+    /// Validates a phone number that already carries its country code,
+    /// e.g. "+91 9876543210".
+    static func isValidPhoneWithCountryCode(_ phone: String) -> Bool {
+        let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("+") else { return false }
+        let digits = PhoneInput.digits(String(trimmed.dropFirst()))
+        guard !digits.isEmpty else { return false }
+        // Country code (1-3 digits) plus the local number (7-15 digits).
+        return (8...18).contains(digits.count)
     }
 
     static func isLocalProfileComplete() -> Bool {

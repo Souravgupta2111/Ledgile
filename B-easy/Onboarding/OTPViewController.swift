@@ -70,8 +70,21 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
             field.clipsToBounds = true
             field.tintColor = .systemBlue
             field.backgroundColor = .systemBackground
+            field.addTarget(self, action: #selector(otpFieldChanged(_:)), for: .editingChanged)
         }
         otpField1.becomeFirstResponder()
+    }
+
+    /// Removes anything that is not a plain digit. The delegate already blocks
+    /// those while typing, but a paste, dictation or autofill can put them in
+    /// without asking the delegate.
+    @objc private func otpFieldChanged(_ sender: UITextField) {
+        let text = sender.text ?? ""
+        let cleaned = PhoneInput.sanitize(text)
+        guard cleaned != text else { return }
+        // Only the newest character is kept - every box holds a single digit.
+        sender.text = String(cleaned.suffix(1))
+        updateVerifyState()
     }
 
     private func highlightField(_ field: UITextField, active: Bool) {
@@ -134,8 +147,10 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
             return false
         }
 
+        // Only plain digits are accepted - no letters, no symbols and no
+        // digits of other scripts.
         guard string.count == 1,
-              CharacterSet.decimalDigits.isSuperset(of: CharacterSet(charactersIn: string)) else {
+              PhoneInput.allowedCharacters.isSuperset(of: CharacterSet(charactersIn: string)) else {
             return false
         }
 
@@ -168,10 +183,16 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
 
     @IBAction func verifyTapped(_ sender: UIButton) {
         let otp = allFields.compactMap { $0.text }.joined()
-        guard otp.count == 6 else { return }
+        guard otp.count == 6, !PhoneInput.hasInvalidCharacters(otp) else {
+            showError(title: "Invalid Code", message: "Enter the 6 digit code that was sent to your phone.")
+            return
+        }
 
-        let cleanPhone = phoneNumber.replacingOccurrences(of: " ", with: "")
-
+        let cleanPhone = PhoneInput.normalize(phoneNumber)
+        guard AuthNavigationHelper.isValidPhoneWithCountryCode(cleanPhone) else {
+            showError(title: "Invalid Number", message: "\(phoneNumber) is not a valid phone number. Go back and enter it again.")
+            return
+        }
 
         if AuthManager.shared.isConfigured {
             setLoading(true)
@@ -192,9 +213,26 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
                 }
             }
         } else {
-
-            navigateToMainApp()
+            // The sign-in service is not reachable, so the code cannot be
+            // checked. The user is not signed in silently - they have to
+            // confirm that they want to continue without a verification.
+            let alert = UIAlertController(
+                title: "Cannot Verify Code",
+                message: "The sign-in service is not available right now, so the code cannot be checked.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            alert.addAction(UIAlertAction(title: "Continue without signing in", style: .default) { [weak self] _ in
+                self?.navigateToMainApp()
+            })
+            navigationController?.present(alert, animated: true)
         }
+    }
+
+    private func showError(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        navigationController?.present(alert, animated: true)
     }
 
     private func navigateToMainApp() {
@@ -283,7 +321,11 @@ class OTPViewController: UIViewController, UITextFieldDelegate {
         otpField1.becomeFirstResponder()
         startResendTimer()
 
-        let cleanPhone = phoneNumber.replacingOccurrences(of: " ", with: "")
+        let cleanPhone = PhoneInput.normalize(phoneNumber)
+        guard AuthNavigationHelper.isValidPhoneWithCountryCode(cleanPhone) else {
+            showError(title: "Invalid Number", message: "\(phoneNumber) is not a valid phone number. Go back and enter it again.")
+            return
+        }
 
         // If Supabase is configured, resend OTP
         if AuthManager.shared.isConfigured {

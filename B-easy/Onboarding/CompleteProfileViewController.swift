@@ -164,7 +164,7 @@ class CompleteProfileViewController: UIViewController, UITextFieldDelegate {
 
         phoneField.keyboardType = .numberPad
         phoneField.delegate = self
-        phoneField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
+        phoneField.addTarget(self, action: #selector(phoneFieldDidChange(_:)), for: .editingChanged)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
         tap.cancelsTouchesInView = false
@@ -184,13 +184,13 @@ class CompleteProfileViewController: UIViewController, UITextFieldDelegate {
 
     private func applyPhonePrefill(_ rawPhone: String?) {
         guard let raw = cleaned(rawPhone) else { return }
-        let digitsOnly = raw.filter { $0.isNumber }
+        let digitsOnly = PhoneInput.digits(raw)
 
         if let match = countryCodes.first(where: { raw.hasPrefix($0.code) }) {
             selectedCountryCode = match.code
             selectedFlag = match.flag
             countryCodeButton.setTitle("\(match.flag) \(match.code) ▾", for: .normal)
-            let local = String(digitsOnly.dropFirst(match.code.filter { $0.isNumber }.count))
+            let local = String(digitsOnly.dropFirst(PhoneInput.digits(match.code).count))
             phoneField.text = String(local.prefix(10))
             return
         }
@@ -253,6 +253,17 @@ class CompleteProfileViewController: UIViewController, UITextFieldDelegate {
     }
 
     @objc private func textFieldDidChange() {
+        updateContinueState()
+    }
+
+    @objc private func phoneFieldDidChange(_ sender: UITextField) {
+        // A paste, dictation or autofill can put characters into the field
+        // without asking the delegate - strip everything that is not a digit.
+        let text = sender.text ?? ""
+        let cleaned = PhoneInput.sanitize(text)
+        if cleaned != text {
+            sender.text = cleaned
+        }
         updateContinueState()
     }
 
@@ -342,7 +353,7 @@ class CompleteProfileViewController: UIViewController, UITextFieldDelegate {
                    shouldChangeCharactersIn range: NSRange,
                    replacementString string: String) -> Bool {
         if textField == phoneField {
-            let allowed = CharacterSet.decimalDigits
+            let allowed = PhoneInput.allowedCharacters
             if !allowed.isSuperset(of: CharacterSet(charactersIn: string)) && !string.isEmpty {
                 return false
             }

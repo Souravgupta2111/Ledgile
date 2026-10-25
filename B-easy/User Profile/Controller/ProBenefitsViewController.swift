@@ -25,7 +25,7 @@ final class ProBenefitsViewController: UIViewController {
     private let features: [FeatureItem] = [
         FeatureItem(
             iconName: "doc.text.fill",
-            title: "Billing & Udhar Khata",
+            title: "Billing & Credit Ledger",
             subtitle: "Create bills, track sales & manage credit",
             freeAccess: .included,
             proAccess: .included
@@ -110,7 +110,7 @@ final class ProBenefitsViewController: UIViewController {
         upgradeButton.setTitle("See Pro plans", for: .normal)
         upgradeButton.setTitleColor(.white, for: .normal)
         upgradeButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
-        upgradeButton.layer.cornerRadius = 20
+        upgradeButton.layer.cornerRadius = 24
         upgradeButton.clipsToBounds = true
         upgradeButton.addTarget(self, action: #selector(choosePlan), for: .touchUpInside)
 
@@ -124,8 +124,13 @@ final class ProBenefitsViewController: UIViewController {
         let notNowButton = UIButton(type: .system)
         notNowButton.translatesAutoresizingMaskIntoConstraints = false
         notNowButton.setTitle("Continue with Free", for: .normal)
-        notNowButton.setTitleColor(UIColor.black.withAlphaComponent(0.65), for: .normal)
-        notNowButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        notNowButton.setTitleColor(onyx, for: .normal)
+        notNowButton.titleLabel?.font = .systemFont(ofSize: 16.5, weight: .bold)
+        notNowButton.backgroundColor = .clear
+        notNowButton.layer.cornerRadius = 24
+        notNowButton.layer.borderWidth = 1.0
+        notNowButton.layer.borderColor = UIColor.black.withAlphaComponent(0.25).cgColor
+        notNowButton.clipsToBounds = true
         notNowButton.addTarget(self, action: #selector(dismissSelf), for: .touchUpInside)
 
         bottomContainer.addSubview(upgradeButton)
@@ -136,14 +141,14 @@ final class ProBenefitsViewController: UIViewController {
         let titleLabel = UILabel()
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.text = "How do you want to use\nB-easy?"
-        titleLabel.font = .systemFont(ofSize: 26, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
         titleLabel.textColor = onyx
         titleLabel.numberOfLines = 2
 
         let subtitleLabel = UILabel()
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        subtitleLabel.text = "The ledger is free. Voice and photo scans are limited unless you choose Pro."
-        subtitleLabel.font = .systemFont(ofSize: 13.5, weight: .regular)
+        subtitleLabel.text = "Manage your shop for free. Upgrade to Pro for\nmore scans and extra features."
+        subtitleLabel.font = .systemFont(ofSize: 14.5, weight: .regular)
         subtitleLabel.textColor = UIColor.black.withAlphaComponent(0.55)
         subtitleLabel.numberOfLines = 2
 
@@ -151,7 +156,7 @@ final class ProBenefitsViewController: UIViewController {
         let cardView = UIView()
         cardView.translatesAutoresizingMaskIntoConstraints = false
         cardView.backgroundColor = .white
-        cardView.layer.cornerRadius = 22
+        cardView.layer.cornerRadius = 24
         cardView.layer.shadowColor = UIColor.black.cgColor
         cardView.layer.shadowOpacity = 0.05
         cardView.layer.shadowOffset = CGSize(width: 0, height: 3)
@@ -216,16 +221,20 @@ final class ProBenefitsViewController: UIViewController {
             }
         }
 
+        // --- Legend Bar inside Card ---
+        let legendBar = makeLegendBar()
+
         cardView.addSubview(headerRow)
         cardView.addSubview(headerDivider)
         cardView.addSubview(featuresStack)
+        cardView.addSubview(legendBar)
 
         contentView.addSubview(titleLabel)
         contentView.addSubview(subtitleLabel)
         contentView.addSubview(cardView)
 
-        let colUnlimitedWidth: CGFloat = 56
-        let colStarterWidth: CGFloat = 48
+        let colUnlimitedWidth: CGFloat = 54
+        let colStarterWidth: CGFloat = 52
 
         NSLayoutConstraint.activate([
             // Dismiss Button
@@ -234,29 +243,31 @@ final class ProBenefitsViewController: UIViewController {
             dismissButton.widthAnchor.constraint(equalToConstant: 32),
             dismissButton.heightAnchor.constraint(equalToConstant: 32),
 
-            // Bottom Container (lowered down to give maximum space to table)
+            // Bottom Container
             bottomContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             bottomContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            bottomContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -2),
+            bottomContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
 
             upgradeButton.topAnchor.constraint(equalTo: bottomContainer.topAnchor),
             upgradeButton.leadingAnchor.constraint(equalTo: bottomContainer.leadingAnchor),
             upgradeButton.trailingAnchor.constraint(equalTo: bottomContainer.trailingAnchor),
-            upgradeButton.heightAnchor.constraint(equalToConstant: 50),
+            upgradeButton.heightAnchor.constraint(equalToConstant: 52),
 
-            priceNote.topAnchor.constraint(equalTo: upgradeButton.bottomAnchor, constant: 5),
-            priceNote.centerXAnchor.constraint(equalTo: bottomContainer.centerXAnchor),
+            priceNote.topAnchor.constraint(equalTo: upgradeButton.bottomAnchor, constant: 12),
+            priceNote.leadingAnchor.constraint(equalTo: bottomContainer.leadingAnchor),
+            priceNote.trailingAnchor.constraint(equalTo: bottomContainer.trailingAnchor),
 
-            notNowButton.topAnchor.constraint(equalTo: priceNote.bottomAnchor, constant: 2),
-            notNowButton.centerXAnchor.constraint(equalTo: bottomContainer.centerXAnchor),
-            notNowButton.heightAnchor.constraint(equalToConstant: 28),
+            notNowButton.topAnchor.constraint(equalTo: priceNote.bottomAnchor, constant: 12),
+            notNowButton.leadingAnchor.constraint(equalTo: bottomContainer.leadingAnchor),
+            notNowButton.trailingAnchor.constraint(equalTo: bottomContainer.trailingAnchor),
+            notNowButton.heightAnchor.constraint(equalToConstant: 50),
             notNowButton.bottomAnchor.constraint(equalTo: bottomContainer.bottomAnchor),
 
             // Scroll View
             scrollView.topAnchor.constraint(equalTo: dismissButton.bottomAnchor, constant: 2),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomContainer.topAnchor, constant: -6),
+            scrollView.bottomAnchor.constraint(equalTo: bottomContainer.topAnchor, constant: -12),
 
             contentView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
             contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
@@ -269,18 +280,18 @@ final class ProBenefitsViewController: UIViewController {
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
 
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 5),
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
             subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             subtitleLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
 
             // Card Container
-            cardView.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 10),
+            cardView.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 12),
             cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
             cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
             // Card Header Layout
-            headerRow.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
+            headerRow.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 12),
             headerRow.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
             headerRow.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
             headerRow.heightAnchor.constraint(equalToConstant: 26),
@@ -310,8 +321,85 @@ final class ProBenefitsViewController: UIViewController {
             featuresStack.topAnchor.constraint(equalTo: headerDivider.bottomAnchor, constant: 8),
             featuresStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
             featuresStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
-            featuresStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12)
+
+            // Legend inside Card
+            legendBar.topAnchor.constraint(equalTo: featuresStack.bottomAnchor, constant: 10),
+            legendBar.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 12),
+            legendBar.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            legendBar.heightAnchor.constraint(equalToConstant: 38),
+            legendBar.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12)
         ])
+    }
+
+    private func makeLegendBar() -> UIView {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = UIColor(red: 0.93, green: 0.93, blue: 0.88, alpha: 1.0)
+        container.layer.cornerRadius = 13
+        container.clipsToBounds = true
+
+        let item1 = makeLegendItem(
+            systemName: "checkmark.circle.fill",
+            tintColor: lime,
+            text: "= Included"
+        )
+        let item2 = makeLegendItem(
+            systemName: "bolt.circle.fill",
+            tintColor: UIColor(red: 0.95, green: 0.62, blue: 0.14, alpha: 1.0),
+            text: "= Limited"
+        )
+        let item3 = makeLegendItem(
+            systemName: "xmark.circle.fill",
+            tintColor: UIColor(red: 0.68, green: 0.70, blue: 0.72, alpha: 1.0),
+            text: "= Not available"
+        )
+
+        let stack = UIStackView(arrangedSubviews: [item1, item2, item3])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.distribution = .equalSpacing
+
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            container.heightAnchor.constraint(equalToConstant: 38)
+        ])
+
+        return container
+    }
+
+    private func makeLegendItem(systemName: String, tintColor: UIColor, text: String) -> UIView {
+        let stack = UIStackView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 5
+
+        let icon = UIImageView()
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+        icon.image = UIImage(systemName: systemName, withConfiguration: config)
+        icon.tintColor = tintColor
+        icon.contentMode = .scaleAspectFit
+
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = text
+        label.font = .systemFont(ofSize: 11.5, weight: .medium)
+        label.textColor = UIColor.black.withAlphaComponent(0.65)
+
+        stack.addArrangedSubview(icon)
+        stack.addArrangedSubview(label)
+
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16)
+        ])
+
+        return stack
     }
 
     private func makeFeatureRow(item: FeatureItem) -> UIView {
@@ -367,8 +455,8 @@ final class ProBenefitsViewController: UIViewController {
         row.addSubview(starterWrap)
         row.addSubview(unlimitedWrap)
 
-        let colUnlimitedWidth: CGFloat = 56
-        let colStarterWidth: CGFloat = 48
+        let colUnlimitedWidth: CGFloat = 54
+        let colStarterWidth: CGFloat = 52
 
         NSLayoutConstraint.activate([
             iconContainer.leadingAnchor.constraint(equalTo: row.leadingAnchor),
@@ -417,11 +505,11 @@ final class ProBenefitsViewController: UIViewController {
         case .basic:
             let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
             imgView.image = UIImage(systemName: "bolt.circle.fill", withConfiguration: config)
-            imgView.tintColor = UIColor(red: 0.95, green: 0.65, blue: 0.12, alpha: 1.0)
+            imgView.tintColor = UIColor(red: 0.95, green: 0.62, blue: 0.14, alpha: 1.0)
         case .excluded:
             let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-            imgView.image = UIImage(systemName: "xmark.circle", withConfiguration: config)
-            imgView.tintColor = UIColor.black.withAlphaComponent(0.22)
+            imgView.image = UIImage(systemName: "xmark.circle.fill", withConfiguration: config)
+            imgView.tintColor = UIColor(red: 0.68, green: 0.70, blue: 0.72, alpha: 1.0)
         }
 
         imgView.contentMode = .scaleAspectFit
