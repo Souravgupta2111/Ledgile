@@ -50,6 +50,16 @@ class DashboardViewController: UIViewController {
         loadWeeklyChartData()
         showLargeTitleProfileButton()
     }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--reset-walkthrough") {
+            WalkthroughManager.shared.resetWalkthroughState()
+        }
+        #endif
+        WalkthroughCoordinator.shared.checkAndStartWalkthroughIfNeeded(from: self)
+    }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
@@ -103,6 +113,7 @@ class DashboardViewController: UIViewController {
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.accessibilityLabel = "Assistant"
+        button.accessibilityIdentifier = "dashboard_assistant_button"
         button.addTarget(self, action: #selector(openAssistant), for: .touchUpInside)
         view.addSubview(button)
         NSLayoutConstraint.activate([
@@ -115,6 +126,9 @@ class DashboardViewController: UIViewController {
     }
 
     @objc private func openAssistant() {
+        if WalkthroughCoordinator.shared.isRunning {
+            WalkthroughCoordinator.shared.dismissWalkthrough(completed: false)
+        }
         let assistant = ShopAssistantViewController()
         assistant.hidesBottomBarWhenPushed = true
         navigationController?.pushViewController(assistant, animated: true)
@@ -322,9 +336,11 @@ extension DashboardViewController: UITableViewDataSource, UITableViewDelegate {
         button.tintColor = .limeMoss
 
         if section == 1 {
+            container.accessibilityIdentifier = "dashboard_recent_transactions_header"
             titleLabel.text = "Recent Transactions"
             button.addTarget(self, action: #selector(didTapViewAllTransactions), for: .touchUpInside)
         } else {
+            container.accessibilityIdentifier = "dashboard_reports_header"
             titleLabel.text = "Reports"
             button.addTarget(self, action: #selector(didTapViewAllReports), for: .touchUpInside)
         }

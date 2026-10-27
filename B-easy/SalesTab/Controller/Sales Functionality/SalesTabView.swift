@@ -29,6 +29,17 @@ struct SalesNavigationActions {
     var onRevenueTapped: () -> Void = {}
     var onProfitTapped: () -> Void = {}
     var onTransactionTapped: (Transaction) -> Void = { _ in }
+    var onActionButtonsFrameChanged: (CGRect) -> Void = { _ in }
+}
+
+struct SalesActionButtonsFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
+    }
 }
 
 // MARK: - Sales View
@@ -194,6 +205,20 @@ struct SalesTabView: View {
             scanButton
             shazamVoiceButton
             manualButton
+        }
+        .accessibilityIdentifier("sales_action_buttons_row")
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: SalesActionButtonsFramePreferenceKey.self,
+                    value: geo.frame(in: .global)
+                )
+            }
+        )
+        .onPreferenceChange(SalesActionButtonsFramePreferenceKey.self) { frame in
+            if frame.width > 0 && frame.height > 0 {
+                actions.onActionButtonsFrameChanged(frame)
+            }
         }
     }
 

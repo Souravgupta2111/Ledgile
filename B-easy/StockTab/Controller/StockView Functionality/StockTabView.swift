@@ -11,6 +11,17 @@ struct StockNavigationActions {
     var onLowStockTapped: () -> Void = {}
     var onExpiryTapped: () -> Void = {}
     var onInventoryTapped: () -> Void = {}
+    var onActionButtonsFrameChanged: (CGRect) -> Void = { _ in }
+}
+
+struct ActionButtonsFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
+    }
 }
 
 struct StockTabView: View {
@@ -173,6 +184,20 @@ struct StockTabView: View {
             scanButton
             shazamVoiceButton
             manualButton
+        }
+        .accessibilityIdentifier("stock_action_buttons_row")
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ActionButtonsFramePreferenceKey.self,
+                    value: geo.frame(in: .global)
+                )
+            }
+        )
+        .onPreferenceChange(ActionButtonsFramePreferenceKey.self) { frame in
+            if frame.width > 0 && frame.height > 0 {
+                actions.onActionButtonsFrameChanged(frame)
+            }
         }
     }
 

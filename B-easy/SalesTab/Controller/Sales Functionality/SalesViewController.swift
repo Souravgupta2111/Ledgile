@@ -12,6 +12,7 @@ class SalesViewController: UIViewController {
     @IBOutlet weak var tableView: UITableView!
 
     private var hostingController: UIHostingController<SalesTabView>?
+    private(set) var actionButtonsGlobalFrame: CGRect?
 
     // MARK: - Inline Voice Recording Properties (copied from VoiceEntryViewController)
 
@@ -87,7 +88,11 @@ class SalesViewController: UIViewController {
             onScanEntry: { [weak self] in self?.openScannedSalesEntry() },
             onRevenueTapped: { [weak self] in self?.openRevenue() },
             onProfitTapped: { [weak self] in self?.openProfit() },
-            onTransactionTapped: { [weak self] tx in self?.presentBillSheet(for: tx) }
+            onTransactionTapped: { [weak self] tx in self?.presentBillSheet(for: tx) },
+            onActionButtonsFrameChanged: { [weak self] frame in
+                self?.actionButtonsGlobalFrame = frame
+                WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .salesActions)
+            }
         ), onTranscriptionUpdate: { [weak self] callback in
             self?.onTranscriptionUpdate = callback
         }, onListeningStateChanged: { [weak self] callback in

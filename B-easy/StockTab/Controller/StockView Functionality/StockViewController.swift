@@ -8,6 +8,7 @@ class StockViewController: UIViewController {
     @IBOutlet private weak var tableView: UITableView!
     
     private var hostingController: UIHostingController<StockTabView>?
+    private(set) var actionButtonsGlobalFrame: CGRect?
 
     // MARK: - Inline Voice Recording Properties
 
@@ -76,7 +77,11 @@ class StockViewController: UIViewController {
             onPurchaseTapped: { [weak self] in self?.openPurchaseHistory() },
             onLowStockTapped: { [weak self] in self?.openLowStock() },
             onExpiryTapped: { [weak self] in self?.openExpiry() },
-            onInventoryTapped: { [weak self] in self?.openInventoryReport() }
+            onInventoryTapped: { [weak self] in self?.openInventoryReport() },
+            onActionButtonsFrameChanged: { [weak self] frame in
+                self?.actionButtonsGlobalFrame = frame
+                WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .stockActions)
+            }
         ), onTranscriptionUpdate: { [weak self] callback in
             self?.onTranscriptionUpdate = callback
         }, onListeningStateChanged: { [weak self] callback in
