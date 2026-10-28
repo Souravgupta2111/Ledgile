@@ -418,6 +418,7 @@ struct StockTabView: View {
                 if left.id != right.id { return false }
                 if left.name != right.name { return false }
                 if left.currentStock != right.currentStock { return false }
+                if left.lowStockThreshold != right.lowStockThreshold { return false }
                 if left.unit != right.unit { return false }
                 if left.defaultSellingPrice != right.defaultSellingPrice { return false }
             }
@@ -425,7 +426,7 @@ struct StockTabView: View {
         }
 
         var body: some View {
-            ForEach(items, id: \.id) { item in
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 Button {
                     onSelect(item)
                 } label: {
@@ -433,10 +434,10 @@ struct StockTabView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.name)
                                 .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(Color.textPrimary)
+                                .foregroundStyle(item.isLowStock ? Color.red : Color.textPrimary)
                             Text("\(item.currentStock.cleanString) \(item.unit)")
                                 .font(.system(size: 14))
-                                .foregroundStyle(Color.textSecondary)
+                                .foregroundStyle(item.isLowStock ? Color.red : Color.textSecondary)
                         }
                         Spacer()
                         Text(String(format: "₹%.0f", item.defaultSellingPrice))
@@ -445,6 +446,9 @@ struct StockTabView: View {
                     }
                     .padding(.vertical, 14)
                     .padding(.horizontal, Spacing.lg)
+                }
+                if index < items.count - 1 {
+                    RowSeparator(leadingInset: Spacing.lg)
                 }
             }
         }

@@ -469,7 +469,38 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     }
 
     @IBAction func saveButtonTapped(_ sender: UIBarButtonItem) {
-        guard !entries.isEmpty else { return }
+        if entries.isEmpty {
+            let alert = UIAlertController(
+                title: "Incomplete Details",
+                message: "Please fill all necessary fields.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        for (index, entry) in entries.enumerated() {
+            let itemName = (entry.selectedItemName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let unit = (entry.selectedUnitName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if itemName.isEmpty || unit.isEmpty || entry.quantity <= 0 || entry.costPrice <= 0 {
+                let alert = UIAlertController(
+                    title: "Incomplete Details",
+                    message: "Please fill all necessary fields.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+                    guard let self = self else { return }
+                    self.expandedItemIndex = index
+                    self.tableView.reloadData()
+                    let targetRow = index < self.entries.count ? index : 0
+                    let indexPath = IndexPath(row: targetRow, section: Section.items.rawValue)
+                    self.tableView.scrollToRow(at: indexPath, at: .middle, animated: true)
+                })
+                present(alert, animated: true)
+                return
+            }
+        }
 
         if isPayLaterEnabled {
             let name = (supplierName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -608,7 +639,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             }
 
             guard !purchaseItems.isEmpty else {
-                throw DataModelError.custom("No items to purchase")
+                throw DataModelError.custom("Please fill all necessary fields.")
             }
 
             let transaction = try dm.addMultiItemPurchase(

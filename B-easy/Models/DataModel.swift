@@ -280,7 +280,7 @@ nonisolated final class DataModel: @unchecked Sendable {
     ) throws -> Transaction {
         
         guard !items.isEmpty else {
-            throw DataModelError.custom("No items to purchase")
+            throw DataModelError.custom("Please fill all necessary fields.")
         }
         
         let now = Date()

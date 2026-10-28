@@ -747,7 +747,8 @@ extension SalesEntryTableViewController {
         let index = sender.tag
         guard index >= 0 && index < transactionItems.count else { return }
 
-        let newQty = max(0.01, Double(sender.text ?? "") ?? 1.0)
+        let text = sender.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let newQty = Double(text) ?? 0.0
         let old = transactionItems[index]
 
         let updated = TransactionItem(
@@ -764,9 +765,34 @@ extension SalesEntryTableViewController {
 
         transactionItems[index] = updated
 
-        if let cell = tableView.cellForRow(at: IndexPath(row: index, section: SalesSection.items.rawValue)) as? EditSalesItemTableViewCell {
-            cell.quantityLabel.text = newQty.cleanString
-        }
+        tableView.reloadSections(
+            IndexSet(integer: SalesSection.summary.rawValue),
+            with: .none
+        )
+    }
+
+    @objc private func itemQuantityEditingDidEnd(_ sender: UITextField) {
+        let index = sender.tag
+        guard index >= 0 && index < transactionItems.count else { return }
+
+        let text = sender.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let parsedQty = Double(text) ?? 0.0
+        let finalQty = parsedQty > 0 ? parsedQty : 1.0
+
+        let old = transactionItems[index]
+        let updated = TransactionItem(
+            id: old.id,
+            transactionID: old.transactionID,
+            itemID: old.itemID,
+            itemName: old.itemName,
+            unit: old.unit,
+            quantity: finalQty,
+            sellingPricePerUnit: old.sellingPricePerUnit,
+            costPricePerUnit: old.costPricePerUnit,
+            createdDate: old.createdDate
+        )
+        transactionItems[index] = updated
+        sender.text = finalQty.cleanString
 
         tableView.reloadSections(
             IndexSet(integer: SalesSection.summary.rawValue),
@@ -922,6 +948,7 @@ extension SalesEntryTableViewController {
                 cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
                 cell.quantityLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
                 cell.quantityLabel.addTarget(self, action: #selector(itemQuantityChanged(_:)), for: .editingChanged)
+                cell.quantityLabel.addTarget(self, action: #selector(itemQuantityEditingDidEnd(_:)), for: .editingDidEnd)
                 
                 cell.priceLabel.keyboardType = .decimalPad
                 cell.quantityLabel.keyboardType = .decimalPad
