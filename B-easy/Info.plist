@@ -2,6 +2,31 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleSpokenName</key>
+	<string>Be easy</string>
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Beasy</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>bee easy</string>
+			<key>INPreferredForAppShortcuts</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Be easy</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>bee easy</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>B easy</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>bee easy</string>
+		</dict>
+	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>whatsapp</string>

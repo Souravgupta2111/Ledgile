@@ -124,6 +124,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneWillEnterForeground(_ scene: UIScene) {
         // Called as the scene transitions from the background to the foreground.
+        AppShortcutRefresher.schedule()
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
