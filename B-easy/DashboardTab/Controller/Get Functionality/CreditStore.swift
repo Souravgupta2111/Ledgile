@@ -6,10 +6,13 @@ nonisolated final class CreditStore: @unchecked Sendable {
     
     static let shared = CreditStore()
 
-    /// Reference to the shared SQLite database
-    private var db: SQLiteDatabase { SQLiteDatabase.shared }
-    
-    private init() {}
+    /// Reference to the database used by this store.
+    private let database: SQLiteDatabase
+    private var db: SQLiteDatabase { database }
+
+    init(database: SQLiteDatabase = .shared) {
+        self.database = database
+    }
 
     private func normalizedName(_ raw: String?) -> String? {
         guard let raw else { return nil }
