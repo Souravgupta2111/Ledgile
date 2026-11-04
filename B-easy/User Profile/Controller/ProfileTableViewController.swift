@@ -146,7 +146,7 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
 
     override func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
         guard let section = Section(rawValue: indexPath.section) else { return 50 }
-        return section == .profile ? 186 : 50
+        return section == .profile ? 180 : 50
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -190,7 +190,8 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
                 email: resolvedEmail(),
                 address: resolvedAddress(),
                 gstin: resolvedGSTIN(),
-                website: resolvedWebsite()
+                website: resolvedWebsite(),
+                logoImage: resolvedProfileImage()
             )
             cell.onShareTapped = { [weak self, weak cell] in
                 guard let cell else { return }
@@ -560,8 +561,17 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
         return nil
     }
 
+    private func resolvedProfileImage() -> UIImage? {
+        if let data = appSettings?.profileImageData {
+            return UIImage(data: data)
+        }
+        return nil
+    }
+
     private func handleBusinessCardField(_ field: BusinessCardField) {
         switch field {
+        case .logo:
+            profileImageTapped()
         case .shop:
             presentCardFieldEditor(
                 title: "Shop name",
@@ -759,7 +769,7 @@ class ProfileTableViewController: UITableViewController, UIImagePickerController
         picker.delegate = self
         picker.allowsEditing = true
 
-        let actionSheet = UIAlertController(title: "Profile Image", message: nil, preferredStyle: .actionSheet)
+        let actionSheet = UIAlertController(title: "Shop Logo", message: nil, preferredStyle: .actionSheet)
 
         if UIImagePickerController.isSourceTypeAvailable(.photoLibrary) {
             actionSheet.addAction(UIAlertAction(title: "Choose Photo", style: .default) { _ in
