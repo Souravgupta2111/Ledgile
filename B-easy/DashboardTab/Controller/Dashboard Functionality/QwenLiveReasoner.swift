@@ -19,6 +19,13 @@ final class QwenLiveReasoner {
         return (v.hasPrefix("$(") || v.isEmpty) ? "" : v.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static func log(_ msg: String) {
+        #if DEBUG
+        let t = String(format: "%.1f", CFAbsoluteTimeGetCurrent().truncatingRemainder(dividingBy: 100000))
+        print("[Assistant][qwen][\(t)s] \(msg)")
+        #endif
+    }
+
     private var supabaseAnonKey: String {
         let v = Bundle.main.infoDictionary?["SUPABASE_ANON_KEY"] as? String ?? ""
         return (v.hasPrefix("$(") || v.isEmpty) ? "" : v.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -45,21 +52,21 @@ final class QwenLiveReasoner {
         }
         messages.append(["role": "user", "content": lastUser])
 
-        LiveLog.qwen("POST assistant-chat (\(messages.count) msgs)…")
+        Self.log("POST assistant-chat (\(messages.count) msgs)…")
         let text: String
         do {
             text = try await postChat(messages: messages)
         } catch {
             // One retry on empty provider replies (overloaded model) — else surface.
             if (error as NSError).code == 6 {
-                LiveLog.qwen("empty reply — one retry in 1s")
+                Self.log("empty reply — one retry in 1s")
                 try await Task.sleep(nanoseconds: 1_000_000_000)
                 text = try await postChat(messages: messages)
             } else {
                 throw error
             }
         }
-        LiveLog.qwen("reply (\(text.count) chars): '\(text.prefix(160))'")
+        Self.log("reply (\(text.count) chars): '\(text.prefix(160))'")
         let clean = LiveRomanFilter.stripSignOffs(LiveRomanFilter.toRoman(text))
 
         // SQL tool line?
@@ -114,25 +121,25 @@ final class QwenLiveReasoner {
         let (data, resp) = try await session.data(for: req)
         let rawPrefix = String(data: data, encoding: .utf8)?.prefix(300) ?? ""
         if let http = resp as? HTTPURLResponse {
-            LiveLog.qwen("HTTP \(http.statusCode), body \(data.count) bytes: \(rawPrefix)")
+            Self.log("HTTP \(http.statusCode), body \(data.count) bytes: \(rawPrefix)")
         }
         if let http = resp as? HTTPURLResponse, http.statusCode == 402 {
             throw NSError(domain: "QwenLive", code: 4, userInfo: [NSLocalizedDescriptionKey: "AI limit reached. Please try again tomorrow or upgrade to Pro."])
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            LiveLog.qwen("non-JSON body: \(rawPrefix)")
+            Self.log("non-JSON body: \(rawPrefix)")
             throw NSError(domain: "QwenLive", code: 5, userInfo: [NSLocalizedDescriptionKey: "Assistant error: \(rawPrefix.prefix(120))"])
         }
         // Surface the Edge/OpenRouter message instead of hiding it.
         if let err = json["error"] as? [String: Any], let msg = err["message"] as? String {
-            LiveLog.qwen("edge error: \(msg)")
+            Self.log("edge error: \(msg)")
             throw NSError(domain: "QwenLive", code: 6, userInfo: [NSLocalizedDescriptionKey: "Assistant error: \(msg.prefix(160))"])
         }
         guard let cands = json["candidates"] as? [[String: Any]],
               let content = cands.first?["content"] as? [String: Any],
               let parts = content["parts"] as? [[String: Any]],
               let text = parts.first?["text"] as? String else {
-            LiveLog.qwen("no candidates in: \(rawPrefix)")
+            Self.log("no candidates in: \(rawPrefix)")
             throw NSError(domain: "QwenLive", code: 5, userInfo: [NSLocalizedDescriptionKey: "No response from the assistant."])
         }
         UsageTracker.shared.record(.voice)

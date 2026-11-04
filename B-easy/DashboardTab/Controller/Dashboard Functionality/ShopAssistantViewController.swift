@@ -16,7 +16,6 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
     private let composer = UITextView()
     private let placeholderLabel = UILabel()
     private let sendButton = UIButton(type: .system)
-    private let liveButton = UIButton(type: .system)
     private var isSending = false
     private let reasoner = QwenLiveReasoner()
 
@@ -60,7 +59,7 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
         composer.isScrollEnabled = false
 
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-        placeholderLabel.text = "Ask about sales, stock, or credit…"
+        placeholderLabel.text = "Ask about sales, stock, or credit"
         placeholderLabel.font = .preferredFont(forTextStyle: .body)
         placeholderLabel.textColor = .tertiaryLabel
         placeholderLabel.numberOfLines = 1
@@ -75,20 +74,10 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
 
-        var liveConfig = UIButton.Configuration.filled()
-        liveConfig.image = UIImage(systemName: "mic.fill")
-        liveConfig.cornerStyle = .capsule
-        liveConfig.baseBackgroundColor = UIColor(named: "Lime Moss") ?? .systemGreen
-        liveConfig.baseForegroundColor = .white
-        liveButton.configuration = liveConfig
-        liveButton.translatesAutoresizingMaskIntoConstraints = false
-        liveButton.addTarget(self, action: #selector(liveTapped), for: .touchUpInside)
-
         view.addSubview(tableView)
         view.addSubview(inputBar)
         inputBar.addSubview(composer)
         composer.addSubview(placeholderLabel)
-        inputBar.addSubview(liveButton)
         inputBar.addSubview(sendButton)
 
         NSLayoutConstraint.activate([
@@ -111,12 +100,7 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
             placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: composer.trailingAnchor, constant: -12),
             placeholderLabel.centerYAnchor.constraint(equalTo: composer.centerYAnchor),
 
-            liveButton.leadingAnchor.constraint(equalTo: composer.trailingAnchor, constant: 8),
-            liveButton.bottomAnchor.constraint(equalTo: composer.bottomAnchor),
-            liveButton.widthAnchor.constraint(equalToConstant: 36),
-            liveButton.heightAnchor.constraint(equalToConstant: 36),
-
-            sendButton.leadingAnchor.constraint(equalTo: liveButton.trailingAnchor, constant: 8),
+            sendButton.leadingAnchor.constraint(equalTo: composer.trailingAnchor, constant: 8),
             sendButton.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -12),
             sendButton.bottomAnchor.constraint(equalTo: composer.bottomAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 36),
@@ -179,34 +163,30 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
 
         let (answer, sql) = try await reasoner.ask(userText: text, shopPack: pack)
         if let sql, !sql.isEmpty {
-            let result = LiveVoiceViewController.runShopSQL(sql)
+            let result = Self.runShopSQL(sql)
             let final = try await reasoner.answerWithSQLResult(result, shopPack: pack)
             return LiveRomanFilter.stripSignOffs(LiveRomanFilter.toRoman(final))
         }
         return LiveRomanFilter.stripSignOffs(LiveRomanFilter.toRoman(answer))
     }
 
+    static func runShopSQL(_ sql: String) -> String {
+        do {
+            let db = AppDataModel.shared.dataModel.db
+            if let sdb = db as? SQLiteDatabase {
+                let (cols, rows) = try sdb.runReadOnlySelect(sql, maxRows: 50)
+                return SQLiteDatabase.formatReadOnlyResult(columns: cols, rows: rows)
+            }
+            return "SQL engine unavailable"
+        } catch {
+            return "SQL error: \(error.localizedDescription)"
+        }
+    }
+
     private func scrollToEnd() {
         let row = lines.count - 1
         guard row >= 0 else { return }
         tableView.scrollToRow(at: IndexPath(row: row, section: 0), at: .bottom, animated: false)
-    }
-
-    // MARK: - Live voice (full-screen modal; turns land here as bubbles on close)
-
-    @objc private func liveTapped() {
-        let pack = ShopLedgerLookup.assistantPack()
-        let vc = LiveVoiceViewController(shopPack: pack)
-        vc.onExit = { [weak self] turns in
-            guard let self, !turns.isEmpty else { return }
-            for t in turns {
-                self.lines.append(Line(isUser: true, text: t.user))
-                self.lines.append(Line(isUser: false, text: t.assistant))
-            }
-            self.tableView.reloadData()
-            self.scrollToEnd()
-        }
-        present(vc, animated: true)
     }
 }
 

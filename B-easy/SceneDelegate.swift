@@ -143,7 +143,7 @@ extension SceneDelegate {
             guard let self, let window = self.window else { return }
             guard let topVC = Self.topViewController(from: window.rootViewController) else { return }
             // Don't re-present if already on a voice screen.
-            if topVC is VoiceEntryViewController || topVC is LiveVoiceViewController || topVC is VoicePurchaseEntryViewController { return }
+            if topVC is VoiceEntryViewController || topVC is VoicePurchaseEntryViewController { return }
             HotwordListener.shared.pause()
             let storyboard = UIStoryboard(name: "Main", bundle: nil)
             guard let voiceVC = storyboard.instantiateViewController(withIdentifier: "VoiceEntryViewController")
