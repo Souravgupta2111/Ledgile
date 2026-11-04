@@ -29,7 +29,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             switch self {
             case .supplier: return "Supplier"
             case .items: return "Items"
-            case .paymentType: return "Purchase type"
+            case .paymentType: return "Credit Purchase"
             case .summary: return "Summary"
             }
         }
