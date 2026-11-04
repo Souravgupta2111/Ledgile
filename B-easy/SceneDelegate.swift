@@ -143,47 +143,18 @@ extension SceneDelegate {
             guard let self, let window = self.window else { return }
             guard let topVC = Self.topViewController(from: window.rootViewController) else { return }
             // Don't re-present if already on a voice screen.
-            if topVC is VoiceEntryViewController || topVC is LiveVoiceViewController { return }
-            guard let tabBar = MainTabSwitcher.rootTabBarController(),
-                  let sales = Self.salesTab(in: tabBar) else { return }
-
-            let showSalesVoiceEntry = {
-                tabBar.selectedIndex = sales.index
-                sales.navigationController?.popToRootViewController(animated: false)
-                sales.controller.loadViewIfNeeded()
-
-                // Let the tab transition and SwiftUI onAppear wiring settle
-                // before starting the inline recorder.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                    guard let self,
-                          let currentTop = Self.topViewController(from: self.window?.rootViewController) else { return }
-                    guard currentTop === sales.controller else { return }
-                    sales.controller.startVoiceEntryFromHotword()
-                }
+            if topVC is VoiceEntryViewController || topVC is LiveVoiceViewController || topVC is VoicePurchaseEntryViewController { return }
+            HotwordListener.shared.pause()
+            let storyboard = UIStoryboard(name: "Main", bundle: nil)
+            guard let voiceVC = storyboard.instantiateViewController(withIdentifier: "VoiceEntryViewController")
+                    as? VoiceEntryViewController else { return }
+            voiceVC.autoStartListening = true
+            voiceVC.modalPresentationStyle = .fullScreen
+            voiceVC.onDismiss = {
+                HotwordListener.shared.resume()
             }
-
-            // Wake word should take over even from a bill sheet/alert.
-            if topVC !== tabBar, topVC.presentingViewController != nil {
-                topVC.dismiss(animated: false, completion: showSalesVoiceEntry)
-            } else {
-                showSalesVoiceEntry()
-            }
+            topVC.present(voiceVC, animated: true)
         }
-    }
-
-    /// Finds the Sales tab and its root controller regardless of tab ordering
-    /// (the Search tab is appended at runtime).
-    private static func salesTab(
-        in tabBar: UITabBarController
-    ) -> (index: Int, navigationController: UINavigationController?, controller: SalesViewController)? {
-        for (index, controller) in (tabBar.viewControllers ?? []).enumerated() {
-            let nav = controller as? UINavigationController
-            let root = nav?.viewControllers.first ?? controller
-            if let sales = root as? SalesViewController {
-                return (index, nav, sales)
-            }
-        }
-        return nil
     }
 
     private static func topViewController(from vc: UIViewController?) -> UIViewController? {

@@ -57,7 +57,7 @@ nonisolated enum ShopLedgerLookup {
             return emptyBooksMessage
         }
         let receivable = CreditStore.shared.getTotalReceivable()
-        return "Today’s sales \(money(today.revenue)), profit \(money(today.profit)). Pending udhaar \(money(receivable))."
+        return "Today’s sales \(money(today.revenue)), profit \(money(today.profit)). Pending credit \(money(receivable))."
     }
 
     static let emptyBooksMessage =
@@ -275,7 +275,7 @@ nonisolated enum ShopLedgerLookup {
                 .filter { $0.date >= start }
                 .sorted { $0.date > $1.date }
             if pays.isEmpty {
-                blocks.append("No udhaar entries in last \(window) months.")
+                blocks.append("No credit entries in last \(window) months.")
             } else {
                 let creditGiven = pays.filter { $0.type == .paid }.reduce(0.0) { $0 + $1.amount }
                 let collected = pays.filter { $0.type == .received }.reduce(0.0) { $0 + $1.amount }

@@ -1,159 +1,129 @@
-
 import UIKit
-import SwiftUI
-import Speech
-import AVFoundation
 
-class SalesViewController: UIViewController {
+class SalesViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
 
-    // Storyboard outlets — kept so IB connections don't break even though
-    // the SwiftUI view replaces the visual UI.
     @IBOutlet weak var addEntryButton: UIButton!
     @IBOutlet weak var tableView: UITableView!
+    let calendar = Calendar.current
+    private var allTransactions: [(transaction: Transaction, itemsSummary: String)] = []
+    private var filteredTransactions: [(transaction: Transaction, itemsSummary: String)] = []
 
-    private var hostingController: UIHostingController<SalesTabView>?
-    private(set) var actionButtonsGlobalFrame: CGRect?
-
-    // MARK: - Inline Voice Recording Properties (copied from VoiceEntryViewController)
-
-    private let audioEngine = AVAudioEngine()
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-IN"))
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-
-    private var whisperAudioFrames: [Float] = []
-    private let whisperLock = NSLock()
-
-    private var silenceTimer: Timer?
-    private var lastSpeechActivity: CFAbsoluteTime = 0
-    private var hasHeardSpeech = false
-    private let silenceThreshold: Float = 0.015
-    private let maxSilenceDuration: TimeInterval = 2.0
-
-    private var recordingStartTime: CFAbsoluteTime = 0
-    private var bufferCount: Int = 0
-    private var whisperFrameCount: Int = 0
-
-    private var lastSFSpeechText: String = ""
-    private var sfSpeechPartialCount: Int = 0
-    private var hotwordSuspendedForInlineVoice = false
-
-    /// Callback to update the SwiftUI view's transcription text and listening state.
-    private var onTranscriptionUpdate: ((String) -> Void)?
-    private var onListeningStateChanged: ((Bool) -> Void)?
-
-    // MARK: - Lifecycle
+    // Header view components
+    let headerContainer = UIView()
+    let transactionsLabel = UILabel()
+    let datePicker = UIDatePicker()
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        extendedLayoutIncludesOpaqueBars = true
-        edgesForExtendedLayout = .all
+        tableView.separatorStyle = .none
+        tableView.showsVerticalScrollIndicator = false
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 120
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.backgroundColor = .systemGray6
+        HomeTabSpacing.apply(to: tableView)
+        tableView.register(UINib(nibName: "ItemTableViewCell", bundle: nil),
+                           forCellReuseIdentifier: "ItemTableViewCell")
 
-        // Hide the storyboard-provided table and button — SwiftUI replaces them.
-        tableView?.isHidden = true
-        addEntryButton?.isHidden = true
+        tableView.register(UINib(nibName: "SalesTopTileTableViewCell", bundle: nil),
+                           forCellReuseIdentifier: "SalesTopTileTableViewCell")
 
-        embedSwiftUIView()
+        datePicker.addTarget(self, action: #selector(dateChanged(_:)), for: .valueChanged)
 
-        // Request speech permissions early
-        SFSpeechRecognizer.requestAuthorization { _ in }
         WhisperService.shared.preloadModel()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: animated)
-        // Refresh data each time the tab appears (e.g. after adding a sale).
-        hostingController?.rootView.reload()
-
-        if hotwordSuspendedForInlineVoice && !audioEngine.isRunning {
-            hotwordSuspendedForInlineVoice = false
-            HotwordListener.shared.resume()
-        }
+        loadSalesData()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         navigationController?.setNavigationBarHidden(false, animated: animated)
-
-        if audioEngine.isRunning {
-            stopListening()
-        }
-    }
-    
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        // Reset the transcription state after the view has transitioned away
-        self.onTranscriptionUpdate?("")
-        self.onListeningStateChanged?(false)
-
-        // Leaving the Sales tab while voice was suspended: restore the wake word.
-        // A push (sales-entry screen) keeps the session suspended until we return.
-        if hotwordSuspendedForInlineVoice && !audioEngine.isRunning,
-           tabBarController?.selectedViewController !== navigationController {
-            hotwordSuspendedForInlineVoice = false
-            HotwordListener.shared.resume()
-        }
     }
 
-    // MARK: - SwiftUI Hosting
+    private func presentSalesTypeSheet(from sourceView: UIView?) {
+        let alert = UIAlertController(
+            title: "Add Sale",
+            message: "Choose how you want to record this sale.",
+            preferredStyle: .actionSheet
+        )
 
-    private func embedSwiftUIView() {
-        let salesView = SalesTabView(actions: SalesNavigationActions(
-            onManualEntry: { [weak self] in self?.openManualSalesEntry() },
-            onVoiceEntry: { [weak self] in self?.toggleInlineRecording() },
-            onScanEntry: { [weak self] in self?.openScannedSalesEntry() },
-            onRevenueTapped: { [weak self] in self?.openRevenue() },
-            onProfitTapped: { [weak self] in self?.openProfit() },
-            onTransactionTapped: { [weak self] tx in self?.presentBillSheet(for: tx) },
-            onActionButtonsFrameChanged: { [weak self] frame in
-                self?.actionButtonsGlobalFrame = frame
-                WalkthroughCoordinator.shared.refreshSpotlightIfCurrent(step: .salesActions)
-            }
-        ), onTranscriptionUpdate: { [weak self] callback in
-            self?.onTranscriptionUpdate = callback
-        }, onListeningStateChanged: { [weak self] callback in
-            self?.onListeningStateChanged = callback
+        alert.addAction(makeSalesAction(
+            title: "Manual Entry",
+            systemImageName: "square.and.pencil"
+        ) { [weak self] in
+            self?.openManualSalesEntry()
         })
 
-        let host = UIHostingController(rootView: salesView)
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        host.view.backgroundColor = .clear
+        alert.addAction(makeSalesAction(
+            title: "Voice Entry",
+            systemImageName: "waveform"
+        ) { [weak self] in
+            self?.openVoiceSalesEntry()
+        })
 
-        addChild(host)
-        view.addSubview(host.view)
-        NSLayoutConstraint.activate([
-            host.view.topAnchor.constraint(equalTo: view.topAnchor),
-            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-        host.didMove(toParent: self)
+        alert.addAction(makeSalesAction(
+            title: "Scan Sale",
+            systemImageName: "camera.viewfinder"
+        ) { [weak self] in
+            self?.openScannedSalesEntry()
+        })
 
-        hostingController = host
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+
+        if let popoverPresentationController = alert.popoverPresentationController {
+            popoverPresentationController.sourceView = sourceView ?? addEntryButton
+            popoverPresentationController.sourceRect = sourceView?.bounds ?? addEntryButton.bounds
+            popoverPresentationController.permittedArrowDirections = [.down, .up]
+        }
+
+        present(alert, animated: true)
     }
 
-    // MARK: - Navigation Actions
+    private func makeSalesAction(
+        title: String,
+        systemImageName: String,
+        handler: @escaping () -> Void
+    ) -> UIAlertAction {
+        let action = UIAlertAction(title: title, style: .default) { _ in
+            handler()
+        }
+
+        if let image = UIImage(systemName: systemImageName) {
+            action.setValue(image, forKey: "image")
+        }
+
+        return action
+    }
+
+    @IBAction func addEntryTapped(_ sender: UIButton) {
+        presentSalesTypeSheet(from: sender)
+    }
+
+    private func openScannedSalesEntry() {
+        salesScanButtonTapped(addEntryButton)
+    }
 
     private func openManualSalesEntry() {
         performSegue(withIdentifier: "manual_sales", sender: nil)
     }
 
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        super.prepare(for: segue, sender: sender)
-        // Hide tab bar for ALL pushed sub-screens
-        segue.destination.hidesBottomBarWhenPushed = true
-
-        if segue.identifier == "manual_sales", let result = sender as? ParsedResult {
-            if let dest = segue.destination as? SalesEntryTableViewController {
-                dest.pendingResult = result
-                dest.entryMode = .voice
-            }
+    private func openVoiceSalesEntry() {
+        guard let voiceVC = storyboard?.instantiateViewController(
+            withIdentifier: "VoiceEntryViewController"
+        ) as? VoiceEntryViewController else {
+            return
         }
+        voiceVC.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(voiceVC, animated: true)
     }
 
-    private func openScannedSalesEntry() {
+    @IBAction func salesScanButtonTapped(_ sender: UIButton) {
         let scanVC = SalesScanCameraViewController.instantiate(mode: .sale)
         scanVC.onSaleResult = { [weak self] result in
             guard let self = self else { return }
@@ -168,402 +138,193 @@ class SalesViewController: UIViewController {
         present(scanVC, animated: true)
     }
 
-    private func openRevenue() {
-        performSegue(withIdentifier: "revenue_segue", sender: nil)
-    }
-
-    private func openProfit() {
-        performSegue(withIdentifier: "profit_segue", sender: nil)
-    }
-
-    // MARK: - IBActions (kept for any remaining storyboard connections)
-
-    @IBAction func addEntryTapped(_ sender: UIButton) {
-        // Fallback — the SwiftUI buttons handle navigation now,
-        // but keep this in case the storyboard button is still wired.
-        openManualSalesEntry()
-    }
-
-    @IBAction func salesScanButtonTapped(_ sender: UIButton) {
-        openScannedSalesEntry()
-    }
-
     @IBAction func manualSalesEntryTapped(_ sender: UIButton) {
         openManualSalesEntry()
     }
 
     @IBAction func voiceEntryTapped(_ sender: UIButton) {
-        toggleInlineRecording()
+        openVoiceSalesEntry()
     }
 
-    // MARK: - Inline Voice Recording
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        super.prepare(for: segue, sender: sender)
+        segue.destination.hidesBottomBarWhenPushed = true
 
-    /// Entry point for the wake-word flow. Mirrors tapping the central mic
-    /// button, but never toggles an already-running recording off.
-    func startVoiceEntryFromHotword() {
-        guard isViewLoaded, view.window != nil else { return }
-        guard !audioEngine.isRunning else { return }
-        startInlineListening()
+        if segue.identifier == "manual_sales", let result = sender as? ParsedResult {
+            if let dest = segue.destination as? SalesEntryTableViewController {
+                dest.pendingResult = result
+                dest.entryMode = .voice
+            }
+        }
     }
 
-    private func toggleInlineRecording() {
-        if audioEngine.isRunning {
-            stopListeningAndProcessImmediate()
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        guard section == 1 else { return nil }
+
+        let container = UIView()
+
+        let label = UILabel()
+        label.text = "Transactions"
+        label.font = .systemFont(ofSize: 20, weight: .semibold)
+
+        datePicker.datePickerMode = .date
+        datePicker.preferredDatePickerStyle = .compact
+        datePicker.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
+        datePicker.maximumDate = Date()
+        if let oldest = (try? AppDataModel.shared.dataModel.db.getTransactions())?.map(\.date).min() {
+            datePicker.minimumDate = Calendar.current.startOfDay(for: oldest)
+        }
+
+        let stack = UIStackView(arrangedSubviews: [label, UIView(), datePicker])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+
+        return container
+    }
+
+    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        return section == 1 ? 64 : 0
+    }
+
+    func loadSalesData() {
+        let dm = AppDataModel.shared.dataModel
+        let all = dm.getRecentTransactions(limit: 100)
+        allTransactions = all.filter { $0.transaction.type == .sale }
+        filterTransactions(for: datePicker.date)
+    }
+
+    func filterTransactions(for date: Date) {
+        let startOfDay = calendar.startOfDay(for: date)
+        filteredTransactions = allTransactions.filter {
+            calendar.startOfDay(for: $0.transaction.date) == startOfDay
+        }
+        tableView.reloadData()
+        if filteredTransactions.isEmpty {
+            tableView.setEmptyState(message: "Sales you make will appear here", icon: "cart")
         } else {
-            startInlineListening()
+            tableView.clearEmptyState()
         }
     }
 
-    private func startInlineListening() {
-        print("\n[SalesInlineVoice] ═══ startInlineListening() ═══")
-        print("[SalesInlineVoice] WhisperService.isReady=\(WhisperService.shared.isReady)")
-
-        // The wake-word listener owns the same mic/session. Suspend it before
-        // starting the inline recorder, otherwise both engines fight over input.
-        if !hotwordSuspendedForInlineVoice {
-            hotwordSuspendedForInlineVoice = true
-            HotwordListener.shared.pause()
-        }
-
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
-        whisperLock.lock()
-        whisperAudioFrames.removeAll()
-        whisperLock.unlock()
-        bufferCount = 0
-        whisperFrameCount = 0
-        sfSpeechPartialCount = 0
-        lastSFSpeechText = ""
-        recordingStartTime = CFAbsoluteTimeGetCurrent()
-        lastSpeechActivity = 0
-        hasHeardSpeech = false
-        startSilenceTimer()
-
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            print("[SalesInlineVoice] ✅ Audio session configured")
-        } catch {
-            do {
-                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-                print("[SalesInlineVoice] ✅ Audio session configured (fallback)")
-            } catch {
-                print("[SalesInlineVoice] ❌ Audio session setup FAILED: \(error)")
-                abortInlineVoiceStart("Microphone unavailable. Please try again.")
-                return
-            }
-        }
-
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest else {
-            abortInlineVoiceStart("Microphone unavailable. Please try again.")
-            return
-        }
-        recognitionRequest.shouldReportPartialResults = true
-
-        let inventoryItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
-        let itemNames = inventoryItems.map { $0.name }
-        if !itemNames.isEmpty {
-            recognitionRequest.contextualStrings = itemNames
-        }
-
-        let inputNode = audioEngine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            print("[SalesInlineVoice] ❌ Invalid input format: \(inputFormat)")
-            abortInlineVoiceStart("Microphone unavailable. Please try again.")
-            return
-        }
-
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) {
-            [weak self] result, error in
-            guard let self = self else { return }
-
-            if let result {
-                let spokenText = result.bestTranscription.formattedString
-                self.sfSpeechPartialCount += 1
-                self.lastSFSpeechText = spokenText
-
-                self.lastSpeechActivity = CFAbsoluteTimeGetCurrent()
-                self.hasHeardSpeech = true
-
-                // We intentionally do not update the UI with live transcription here.
-                // The UI will remain showing "Listening..." as set in toggleInlineRecording.
-            }
-
-            if let error = error {
-                print("[SalesInlineVoice] ⚠️ SFSpeech error: \(error.localizedDescription)")
-            }
-        }
-
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
-            [weak self] buffer, _ in
-            guard let self = self else { return }
-
-            self.bufferCount += 1
-
-            if let channelData = buffer.floatChannelData {
-                let channelPointer = channelData[0]
-                let frameLength = Int(buffer.frameLength)
-                var maxAmp: Float = 0
-                for i in stride(from: 0, to: frameLength, by: 10) {
-                    let absAmp = abs(channelPointer[i])
-                    if absAmp > maxAmp { maxAmp = absAmp }
-                }
-                if maxAmp > self.silenceThreshold {
-                    self.hasHeardSpeech = true
-                    self.lastSpeechActivity = CFAbsoluteTimeGetCurrent()
-                }
-            }
-
-            recognitionRequest.append(buffer)
-
-            if let frames = WhisperService.convertBufferToFrames(buffer) {
-                self.whisperLock.lock()
-                self.whisperAudioFrames.append(contentsOf: frames)
-                self.whisperFrameCount += frames.count
-                self.whisperLock.unlock()
-            }
-        }
-
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-            print("[SalesInlineVoice] ✅ Audio engine started")
-        } catch {
-            print("[SalesInlineVoice] ❌ Audio engine start FAILED: \(error)")
-            abortInlineVoiceStart("Microphone unavailable. Please try again.")
-            return
-        }
-
-        DispatchQueue.main.async {
-            self.onListeningStateChanged?(true)
-            self.onTranscriptionUpdate?("Listening...")
-        }
+    @objc private func dateChanged(_ sender: UIDatePicker) {
+        filterTransactions(for: sender.date)
     }
 
-    /// Cleans up a failed start and restores the wake-word listener.
-    private func abortInlineVoiceStart(_ message: String) {
-        silenceTimer?.invalidate()
-        silenceTimer = nil
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        recognitionRequest?.endAudio()
-        recognitionRequest = nil
-        if audioEngine.isRunning {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioEngine.stop()
-        }
-
-        hotwordSuspendedForInlineVoice = false
-        HotwordListener.shared.resume()
-
-        DispatchQueue.main.async {
-            self.onListeningStateChanged?(false)
-            self.onTranscriptionUpdate?(message)
-        }
+    func numberOfSections(in tableView: UITableView) -> Int {
+        return 2
     }
 
-    private func startSilenceTimer() {
-        silenceTimer?.invalidate()
-        silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self = self, self.audioEngine.isRunning, self.hasHeardSpeech else { return }
-            let quietFor = CFAbsoluteTimeGetCurrent() - self.lastSpeechActivity
-            guard quietFor >= self.maxSilenceDuration else { return }
-            self.stopListeningAndProcessImmediate()
-        }
-    }
-
-    private func stopListening() {
-        silenceTimer?.invalidate()
-        silenceTimer = nil
-
-        if audioEngine.isRunning {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioEngine.stop()
-            recognitionRequest?.endAudio()
-            recognitionTask?.cancel()
-        }
-
-        recognitionRequest = nil
-        recognitionTask = nil
-
-        let audioSession = AVAudioSession.sharedInstance()
-        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
-
-        DispatchQueue.main.async {
-            self.onListeningStateChanged?(false)
-        }
-    }
-
-    /// Restores the wake word only when the user is still on the Sales screen
-    /// and no sales-entry screen/modal is covering it.
-    private func resumeHotwordAfterInlineVoiceIfStillVisible() {
-        guard hotwordSuspendedForInlineVoice, !audioEngine.isRunning else { return }
-        guard navigationController?.topViewController === self,
-              presentedViewController == nil else { return }
-        hotwordSuspendedForInlineVoice = false
-        HotwordListener.shared.resume()
-    }
-
-    private func stopListeningAndProcessImmediate() {
-        let stopTime = CFAbsoluteTimeGetCurrent()
-        let recordingDuration = stopTime - recordingStartTime
-        let sfSpeechText = lastSFSpeechText
-
-        whisperLock.lock()
-        let audioFrames = whisperAudioFrames
-        whisperAudioFrames.removeAll()
-        whisperLock.unlock()
-
-        let whisperAudioDuration = Double(audioFrames.count) / 16000.0
-
-        let (rmsEnergy, peakEnergy) = Self.audioEnergy(audioFrames)
-        let hasRecognizedSpeech = Self.isUsableRecognizedText(sfSpeechText)
-        let isMostlySilence = !hasRecognizedSpeech && (audioFrames.isEmpty || (rmsEnergy < 0.0006 && peakEnergy < 0.015))
-
-        print("\n[SalesInlineVoice] ═══ stopListeningAndProcessImmediate() ═══")
-        print("[SalesInlineVoice] recordingDuration=\(String(format: "%.2f", recordingDuration))s")
-        print("[SalesInlineVoice] sfSpeechText='\(sfSpeechText)'")
-        print("[SalesInlineVoice] whisperAudioFrames=\(audioFrames.count) | duration=\(String(format: "%.2f", whisperAudioDuration))s")
-
-        stopListening()
-
-        DispatchQueue.main.async {
-            self.onTranscriptionUpdate?("Understanding...")
-        }
-
-        if isMostlySilence {
-            print("[SalesInlineVoice] ⏭️ Audio is mostly silence — skipping Whisper")
-            DispatchQueue.main.async {
-                if Self.isUsableRecognizedText(sfSpeechText) {
-                    self.processFinalTextAndNavigate(sfSpeechText)
-                } else {
-                    self.onTranscriptionUpdate?("Could not understand speech. Please try again.")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        self.onTranscriptionUpdate?("")
-                        self.resumeHotwordAfterInlineVoiceIfStillVisible()
-                    }
-                }
-            }
-            return
-        }
-
-        Task {
-            let whisperResult = await WhisperService.shared.transcribe(audioFrames: audioFrames)
-
-            await MainActor.run {
-                var useWhisper = true
-
-                if useWhisper, let whisperText = whisperResult {
-                    if WhisperService.shared.isGarbageTranscription(whisperText, duration: whisperAudioDuration) {
-                        print("[SalesInlineVoice] Whisper hallucination detected: \(whisperText)")
-                        useWhisper = false
-                    }
-                }
-
-                if useWhisper, let whisperText = whisperResult, !whisperText.isEmpty {
-                    print("[SalesInlineVoice] ✅ USING WHISPER: '\(whisperText)'")
-                    self.processFinalTextAndNavigate(whisperText)
-
-                } else if Self.isUsableRecognizedText(sfSpeechText) {
-                    print("[SalesInlineVoice] 🔀 USING SFSPEECH FALLBACK: '\(sfSpeechText)'")
-                    self.processFinalTextAndNavigate(sfSpeechText)
-
-                } else {
-                    print("[SalesInlineVoice] ❌ Both Whisper and SFSpeech failed")
-                    self.onTranscriptionUpdate?("Could not understand speech. Please try again.")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        self.onTranscriptionUpdate?("")
-                        self.resumeHotwordAfterInlineVoiceIfStillVisible()
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Process & Navigate (same as VoiceEntryViewController)
-
-    private func processFinalTextAndNavigate(_ text: String) {
-        guard Self.isUsableRecognizedText(text) else { return }
-
-        print("\n[SalesInlineVoice] ═══ processFinalTextAndNavigate ═══")
-        print("[SalesInlineVoice] Gemini status: isConfigured=\(GeminiService.shared.isConfigured(for: .voice))")
-
-        if GeminiService.shared.isConfigured(for: .voice) {
-            GeminiService.shared.parseVoiceForSale(text: text) { [weak self] geminiResult in
-                guard let self = self else { return }
-                if let result = geminiResult, !result.products.isEmpty {
-                    print("[SalesInlineVoice] ✅ Gemini succeeded: \(result.products.count) items")
-                    self.deliverResult(result)
-                } else {
-                    let result = MLInference.shared.run(text: text)
-                    print("[SalesInlineVoice] MLInference result: \(result.products.count) items")
-                    self.deliverResult(result)
-                }
-            }
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        if section == 0 {
+            return 1
         } else {
-            if GeminiService.shared.hasAPIKey && !UsageTracker.shared.canUse(.voice) {
-                showFreemiumLimitAlertIfNeeded()
-            }
-            let result = MLInference.shared.run(text: text)
-            print("[SalesInlineVoice] MLInference result: \(result.products.count) items")
-            deliverResult(result)
+            return filteredTransactions.count
         }
     }
 
-    private static var didShowFreemiumAlert = false
-    private func showFreemiumLimitAlertIfNeeded() {
-        guard !Self.didShowFreemiumAlert else { return }
-        Self.didShowFreemiumAlert = true
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        if indexPath.section == 0 {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "SalesTopTileTableViewCell", for: indexPath) as! SalesTopTileTableViewCell
+            cell.delegate = self
+            let dm = AppDataModel.shared.dataModel
 
-        DispatchQueue.main.async {
-            let alert = UIAlertController(
-                title: UsageTracker.shared.isProUser ? "Voice AI limit reached" : "Free AI Scans Used Up",
-                message: UsageTracker.shared.limitReachedMessage(for: .voice),
-                preferredStyle: .alert
+            let revenue = dm.getTodayRevenue()
+            let profit = dm.getTodayProfit()
+
+            let revenueString = String(format: "₹%.0f", revenue)
+            let profitString = String(format: "₹%.0f", profit)
+
+            var salesPercentChange: Double? = nil
+            var profitPercentChange: Double? = nil
+
+            if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: Date())),
+                let yesterdaySummary = try? dm.db.getDailySummary(for: yesterday) {
+                salesPercentChange = revenue.percentChange(from: yesterdaySummary.totalRevenue)
+                profitPercentChange = profit.percentChange(from: yesterdaySummary.totalProfit)
+            }
+
+            cell.configure(
+                revenueAmount: revenueString,
+                profitAmount: profitString,
+                revenueReceipts: "\(dm.getTodaySaleCount()) receipts",
+                profitItems: Self.itemCountLabel(dm.getTodayItemsSoldCount()),
+                salesPercentChange: salesPercentChange,
+                profitPercentChange: profitPercentChange
             )
-            if !UsageTracker.shared.isProUser {
-                alert.addAction(UIAlertAction(title: "See Pro", style: .default) { [weak self] _ in
-                    guard let self else { return }
-                    ProBenefitsViewController.present(from: self)
-                })
+
+            return cell
+        }
+
+        if indexPath.section == 1 {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "ItemTableViewCell", for: indexPath) as! ItemTableViewCell
+
+            let isFirst = indexPath.row == 0
+            let isLast = indexPath.row == filteredTransactions.count - 1
+
+            cell.applySectionCornerMask(isFirst: isFirst, isLast: isLast)
+
+            let entry = filteredTransactions[indexPath.row]
+            let tx = entry.transaction
+            let type = "\(tx.type)"
+
+            if type == "sale" && (tx.customerName == nil || tx.customerName?.isEmpty == true) {
+                cell.itemNameLabel.text = "Cash Sale"
+            } else if type == "sale", let name = tx.customerName, !name.isEmpty {
+                cell.itemNameLabel.text = name
+            } else {
+                cell.itemNameLabel.text = "Purchase"
             }
-            alert.addAction(UIAlertAction(title: "OK", style: .cancel))
-            self.present(alert, animated: true)
+            var quantityLabelText = ""
+            let details = tx.toBillingDetails()
+            let itemCount = details.items.count
+            if let firstItem = details.items.first {
+                quantityLabelText = "\(firstItem.itemName) x \(firstItem.quantity)"
+                if itemCount > 1 {
+                    quantityLabelText += " + \(itemCount - 1) more"
+                }
+                cell.quantityLabel.text = quantityLabelText
+            } else {
+                cell.quantityLabel.text = "Unknown"
+            }
+
+            cell.priceLabel.textColor = UIColor(named: "Lime Moss") ?? .systemGreen
+            cell.priceLabel.text = "₹\(tx.totalAmount)"
+            cell.separatorView.backgroundColor = .separator
+            return cell
         }
+        return UITableViewCell()
     }
 
-    private func deliverResult(_ result: ParsedResult) {
-        DispatchQueue.main.async {
-            self.performSegue(withIdentifier: "manual_sales", sender: result)
-        }
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard indexPath.section == 1 else { return }
+        tableView.deselectRow(at: indexPath, animated: true)
+        let tx = filteredTransactions[indexPath.row].transaction
+        presentBillSheet(for: tx)
     }
 
-    // MARK: - Audio Helpers
-
-    private static func isUsableRecognizedText(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty
-            && !trimmed.hasPrefix("Listening")
-            && !trimmed.hasPrefix("Understanding")
-            && !trimmed.hasPrefix("Processing")
-            && trimmed != "Say customer, items, quantity or price to add sale"
+    private static func itemCountLabel(_ count: Double) -> String {
+        let isWhole = count == count.rounded()
+        let numberText = isWhole ? String(Int(count.rounded())) : String(format: "%g", count)
+        let word = (abs(count) == 0 || abs(count) == 1) ? "item" : "items"
+        return "\(numberText) \(word)"
     }
+}
 
-    private static func audioEnergy(_ frames: [Float]) -> (rms: Float, peak: Float) {
-        guard !frames.isEmpty else { return (0, 0) }
-        var sumSquares: Float = 0
-        var peak: Float = 0
-        for sample in frames {
-            let absSample = abs(sample)
-            sumSquares += sample * sample
-            if absSample > peak { peak = absSample }
-        }
-        return (sqrt(sumSquares / Float(frames.count)), peak)
+extension SalesViewController: SalesTopTileTableViewCell.SalesTopTileTableViewCellDelegate {
+    func topTileCellDidTapRevenue(_ cell: SalesTopTileTableViewCell) {
+        performSegue(withIdentifier: "revenue_segue", sender: cell)
+    }
+    func topTileCellDidTapProfit(_ cell: SalesTopTileTableViewCell) {
+        performSegue(withIdentifier: "profit_segue", sender: cell)
     }
 }

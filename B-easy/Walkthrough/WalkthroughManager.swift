@@ -107,7 +107,7 @@ enum WalkthroughStep: Int, CaseIterable {
         case .alerts:
             return "Stay informed with real-time alerts for low stock items and nearing expiry dates to prevent losses."
         case .assistant:
-            return "Ask questions about your sales, stock, udhaar, customers, or products. Get insights from your shop’s ledger right from your phone."
+            return "Ask questions about your sales, stock, credit, customers, or products. Get insights from your shop’s ledger right from your phone."
         case .analytics:
             return "Want to understand your business better? Tap here to explore your analytics and performance reports."
         case .creditDetails:

@@ -34,6 +34,7 @@ class VoicePurchaseEntryViewController: UIViewController {
 
     private var lastSFSpeechText: String = ""
     private var sfSpeechPartialCount: Int = 0
+    private var isProcessing = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -48,6 +49,20 @@ class VoicePurchaseEntryViewController: UIViewController {
         WhisperService.shared.preloadModel()
         print("[VoicePurchase] viewDidLoad — WhisperService preload triggered")
     }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        HotwordListener.shared.pause()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if isBeingDismissed || isMovingFromParent {
+            stopListening()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            HotwordListener.shared.resume()
+        }
+    }
     
     private func setupMicButton() {
         micButton?.layer.cornerRadius = 40
@@ -57,8 +72,8 @@ class VoicePurchaseEntryViewController: UIViewController {
 
 
     @IBAction func startVoiceTapped(_ sender: UIButton) {
+        guard !isProcessing else { return }
         if audioEngine.isRunning {
-
              stopListeningAndProcessImmediate()
         } else {
             startListening()
@@ -92,7 +107,8 @@ class VoicePurchaseEntryViewController: UIViewController {
         sfSpeechPartialCount = 0
         lastSFSpeechText = ""
         recordingStartTime = CFAbsoluteTimeGetCurrent()
-        lastSpeechActivity = 0
+        lastSpeechActivity = CFAbsoluteTimeGetCurrent()
+        hasHeardSpeech = false
         startSilenceTimer()
 
         let audioSession = AVAudioSession.sharedInstance()
@@ -152,7 +168,10 @@ class VoicePurchaseEntryViewController: UIViewController {
             }
 
             if let error = error {
-                print("[VoicePurchase] ⚠️ SFSpeech recognition error: \(error.localizedDescription)")
+                let nsErr = error as NSError
+                if nsErr.code != 216 && nsErr.code != 1110 {
+                    print("[VoicePurchase] ⚠️ SFSpeech recognition error: \(error.localizedDescription)")
+                }
             }
         }
 
@@ -223,6 +242,8 @@ class VoicePurchaseEntryViewController: UIViewController {
         silenceTimer?.invalidate()
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self = self, self.audioEngine.isRunning, self.hasHeardSpeech else { return }
+            let elapsed = CFAbsoluteTimeGetCurrent() - self.recordingStartTime
+            guard elapsed >= 1.0 else { return }
             let quietFor = CFAbsoluteTimeGetCurrent() - self.lastSpeechActivity
             guard quietFor >= self.maxSilenceDuration else { return }
             self.stopListeningAndProcessImmediate()
@@ -244,9 +265,6 @@ class VoicePurchaseEntryViewController: UIViewController {
         recognitionRequest = nil
         recognitionTask = nil
         
-        let audioSession = AVAudioSession.sharedInstance()
-        try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
-        
         DispatchQueue.main.async {
             self.micButton?.setImage(UIImage(systemName: "microphone.fill"), for: .normal)
             self.micButton?.backgroundColor = .systemRed
@@ -256,6 +274,9 @@ class VoicePurchaseEntryViewController: UIViewController {
     }
     
     private func stopListeningAndProcessImmediate() {
+        guard !isProcessing else { return }
+        isProcessing = true
+
         let stopTime = CFAbsoluteTimeGetCurrent()
         let recordingDuration = stopTime - recordingStartTime
         let sfSpeechText = lastSFSpeechText
@@ -270,7 +291,7 @@ class VoicePurchaseEntryViewController: UIViewController {
         
         let (rmsEnergy, peakEnergy) = Self.audioEnergy(audioFrames)
         let hasRecognizedSpeech = Self.isUsableRecognizedText(sfSpeechText)
-        let isMostlySilence = !hasRecognizedSpeech && (audioFrames.isEmpty || (rmsEnergy < 0.0006 && peakEnergy < 0.015))
+        let isMostlySilence = !hasRecognizedSpeech && (audioFrames.isEmpty || (rmsEnergy < 0.0003 && peakEnergy < 0.008))
         
         print("\n[VoicePurchase] ═══ stopListeningAndProcessImmediate() ═══")
         print("[VoicePurchase] recordingDuration=\(String(format: "%.2f", recordingDuration))s")
@@ -290,6 +311,7 @@ class VoicePurchaseEntryViewController: UIViewController {
         if isMostlySilence {
             print("[VoicePurchase] ⏭️ Audio is mostly silence — skipping Whisper")
             DispatchQueue.main.async {
+                self.isProcessing = false
                 self.micButton?.isEnabled = true
                 self.tapToSpeakLabel?.text = "Tap to Speak"
                 if Self.isUsableRecognizedText(sfSpeechText) {
@@ -309,6 +331,7 @@ class VoicePurchaseEntryViewController: UIViewController {
             print("[VoicePurchase] Whisper transcribe returned in \(String(format: "%.2f", whisperTime))s | chars=\(whisperResult?.count ?? 0)")
             
             await MainActor.run {
+                self.isProcessing = false
                 self.micButton?.isEnabled = true
                 self.tapToSpeakLabel?.text = "Tap to Speak"
                 

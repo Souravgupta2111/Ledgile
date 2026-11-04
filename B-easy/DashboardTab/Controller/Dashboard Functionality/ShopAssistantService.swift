@@ -60,7 +60,7 @@ final class ShopAssistantService {
     }
 
     private static let scopeReply =
-        "I can only answer from this shop’s B-easy data — sales, stock, udhaar, a customer, or a product. What should I look up?"
+        "I can only answer from this shop’s B-easy data — sales, stock, credit, a customer, or a product. What should I look up?"
 
     private static func isGreeting(_ question: String) -> Bool {
         let t = question.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

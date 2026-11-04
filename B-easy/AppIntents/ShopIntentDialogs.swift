@@ -11,7 +11,7 @@ nonisolated enum ShopIntentDialogs {
     }
 
     static var queryNotUnderstood: IntentDialog {
-        IntentDialog("You can ask Beasy about today's sales, udhaar summary, low stock, expiry alerts, or recent bills.")
+        IntentDialog("You can ask Beasy about today's sales, credit summary, low stock, expiry alerts, or recent bills.")
     }
 
     static var partyNotFound: IntentDialog {
@@ -30,7 +30,7 @@ nonisolated enum ShopIntentDialogs {
         guard snapshot.saleCount > 0 else {
             return IntentDialog(stringLiteral: String(
                 localized: "intent.today.no_sales",
-                    defaultValue: "No sales recorded today yet. Pending udhaar is \(SpokenFormatting.amount(snapshot.receivable)) rupees.",
+                    defaultValue: "No sales recorded today yet. Pending credit is \(SpokenFormatting.amount(snapshot.receivable)) rupees.",
                     locale: SpokenFormatting.locale
                 )
             )
@@ -38,7 +38,7 @@ nonisolated enum ShopIntentDialogs {
 
         return IntentDialog(stringLiteral: String(
                 localized: "intent.today.summary",
-                defaultValue: "Today: \(SpokenFormatting.amount(snapshot.revenue)) rupees sales, \(SpokenFormatting.amount(snapshot.profit)) rupees profit, \(SpokenFormatting.count(snapshot.saleCount)) bills, \(SpokenFormatting.amount(snapshot.itemsSold)) items sold, and \(SpokenFormatting.amount(snapshot.receivable)) rupees udhaar pending.",
+                defaultValue: "Today: \(SpokenFormatting.amount(snapshot.revenue)) rupees sales, \(SpokenFormatting.amount(snapshot.profit)) rupees profit, \(SpokenFormatting.count(snapshot.saleCount)) bills, \(SpokenFormatting.amount(snapshot.itemsSold)) items sold, and \(SpokenFormatting.amount(snapshot.receivable)) rupees credit pending.",
                 locale: SpokenFormatting.locale
             )
         )
@@ -77,7 +77,7 @@ nonisolated enum ShopIntentDialogs {
         if !snapshot.topCustomers.isEmpty {
             let header = String(
                 localized: "intent.udhaar.receivables_header",
-                defaultValue: "Top udhaar:",
+                defaultValue: "Top credit:",
                 locale: SpokenFormatting.locale
             )
             let lines = snapshot.topCustomers.map { party in

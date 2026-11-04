@@ -473,6 +473,14 @@ class DashboardTopTileTableViewCell: UITableViewCell {
         let dataSet = BarChartDataSet(entries: entries)
         dataSet.colors = colors
         dataSet.drawValuesEnabled = false
+        if activeTab == .revenue {
+            // Lighter shade of gray highlight that pairs cleanly with the greenish Lime Moss tile
+            dataSet.highlightColor = UIColor(white: 0.88, alpha: 1.0)
+            dataSet.highlightAlpha = 0.55
+        } else {
+            dataSet.highlightColor = onyx.withAlphaComponent(0.35)
+            dataSet.highlightAlpha = 0.55
+        }
         
         let data = BarChartData(dataSet: dataSet)
         data.barWidth = 0.5

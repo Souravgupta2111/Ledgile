@@ -8,7 +8,7 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
     }
 
     private var lines: [Line] = [
-        Line(isUser: false, text: "Ask anything about this shop — today’s sales, stock, udhaar, a customer, or a product. I read the ledger on this phone.")
+        Line(isUser: false, text: "Ask anything about this shop — today’s sales, stock, credit, a customer, or a product. I read the ledger on this phone.")
     ]
 
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -60,7 +60,7 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
         composer.isScrollEnabled = false
 
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-        placeholderLabel.text = "Ask about sales, stock, or udhaar…"
+        placeholderLabel.text = "Ask about sales, stock, or credit…"
         placeholderLabel.font = .preferredFont(forTextStyle: .body)
         placeholderLabel.textColor = .tertiaryLabel
         placeholderLabel.numberOfLines = 1

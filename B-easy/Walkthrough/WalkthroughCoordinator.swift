@@ -768,41 +768,17 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         stockVC.view.layoutIfNeeded()
 
-        // 1. Check if stockVC has reported a valid global frame from SwiftUI
-        if let globalFrame = stockVC.actionButtonsGlobalFrame,
-           globalFrame.width > 100, globalFrame.height > 40 {
-            let rectInOverlay = overlay.convert(globalFrame, from: nil)
-            if isValidActionPanelRect(rectInOverlay, in: overlay) {
-                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
-                completion(cutouts)
+        // 1. Spotlight the Add Stock button
+        if let btn = stockVC.view.subviews.first(where: { ($0 as? UIButton) != nil && $0.bounds.width >= 35 }) as? UIButton, !btn.isHidden {
+            let rectInOverlay = btn.convert(btn.bounds, to: overlay)
+            if rectInOverlay.width > 20 && rectInOverlay.height > 20 {
+                let cutout = WalkthroughCutout(rect: rectInOverlay, cornerRadius: rectInOverlay.height / 2)
+                completion([cutout])
                 return
             }
         }
 
-        // 2. Check if the accessibility view can be located in the view hierarchy
-        if let actionRow = findView(withAccessibilityIdentifier: "stock_action_buttons_row", in: stockVC.view) {
-            let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
-            if isValidActionPanelRect(rectInOverlay, in: overlay) {
-                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
-                completion(cutouts)
-                return
-            }
-        }
-
-        // 3. Retry while SwiftUI completes first rendering pass
-        if retryCount < 6 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-                self?.resolveStockActionsCutouts(
-                    in: tabBar,
-                    overlay: overlay,
-                    retryCount: retryCount + 1,
-                    completion: completion
-                )
-            }
-            return
-        }
-
-        // 4. Safe fallback: derive from stockVC.view bounds
+        // 2. Safe fallback: derive from stockVC.view bounds
         let viewRect = stockVC.view.convert(stockVC.view.bounds, to: overlay)
         let fallback = generateFallbackActionPanelCutouts(in: viewRect, overlay: overlay)
         completion(fallback)
@@ -828,41 +804,17 @@ final class WalkthroughCoordinator: NSObject, WalkthroughOverlayViewDelegate {
 
         salesVC.view.layoutIfNeeded()
 
-        // 1. Check if salesVC has reported a valid global frame from SwiftUI
-        if let globalFrame = salesVC.actionButtonsGlobalFrame,
-           globalFrame.width > 100, globalFrame.height > 40 {
-            let rectInOverlay = overlay.convert(globalFrame, from: nil)
-            if isValidActionPanelRect(rectInOverlay, in: overlay) {
-                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
-                completion(cutouts)
+        // 1. Spotlight the Add Sale button
+        if let btn = salesVC.addEntryButton, !btn.isHidden {
+            let rectInOverlay = btn.convert(btn.bounds, to: overlay)
+            if rectInOverlay.width > 20 && rectInOverlay.height > 20 {
+                let cutout = WalkthroughCutout(rect: rectInOverlay, cornerRadius: rectInOverlay.height / 2)
+                completion([cutout])
                 return
             }
         }
 
-        // 2. Check if the accessibility view can be located in the view hierarchy
-        if let actionRow = findView(withAccessibilityIdentifier: "sales_action_buttons_row", in: salesVC.view) {
-            let rectInOverlay = actionRow.convert(actionRow.bounds, to: overlay)
-            if isValidActionPanelRect(rectInOverlay, in: overlay) {
-                let cutouts = generateActionPanelCutouts(from: rectInOverlay)
-                completion(cutouts)
-                return
-            }
-        }
-
-        // 3. Retry while SwiftUI completes first rendering pass
-        if retryCount < 6 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-                self?.resolveSalesActionsCutouts(
-                    in: tabBar,
-                    overlay: overlay,
-                    retryCount: retryCount + 1,
-                    completion: completion
-                )
-            }
-            return
-        }
-
-        // 4. Safe fallback: derive from salesVC.view bounds
+        // 2. Safe fallback: derive from salesVC.view bounds
         let viewRect = salesVC.view.convert(salesVC.view.bounds, to: overlay)
         let fallback = generateFallbackActionPanelCutouts(in: viewRect, overlay: overlay)
         completion(fallback)

@@ -85,7 +85,7 @@ class CustomerSelectionViewController: UIViewController,
     private func promptForPhone(name: String, existingPhone: String?) {
         let alert = UIAlertController(
             title: "Mobile number",
-            message: "Required for WhatsApp udhaar. 10 digits.",
+            message: "Required for WhatsApp credit. 10 digits.",
             preferredStyle: .alert
         )
         alert.addTextField { field in

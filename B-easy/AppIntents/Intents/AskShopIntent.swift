@@ -3,7 +3,7 @@ import AppIntents
 
 public struct AskShopIntent: AppIntent {
     public static var title: LocalizedStringResource = "Ask Beasy"
-    public static var description = IntentDescription("Ask anything about today's sales, udhaar, low stock, expiry, or recent bills in Hindi, Hinglish, or English.")
+    public static var description = IntentDescription("Ask anything about today's sales, credit, low stock, expiry, or recent bills in Hindi, Hinglish, or English.")
     public static var openAppWhenRun: Bool = false
     public static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
 
