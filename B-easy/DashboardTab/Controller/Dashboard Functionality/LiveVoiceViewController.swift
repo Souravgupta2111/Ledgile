@@ -61,6 +61,9 @@ final class LiveVoiceViewController: UIViewController {
 
 
         orb.translatesAutoresizingMaskIntoConstraints = false
+        orb.isUserInteractionEnabled = true
+        let orbTap = UITapGestureRecognizer(target: self, action: #selector(orbTapped))
+        orb.addGestureRecognizer(orbTap)
 
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.text = "Listening..."
@@ -216,7 +219,14 @@ final class LiveVoiceViewController: UIViewController {
         engine?.onStatus = { [weak self] status, text in
             guard let self, !self.isClosing else { return }
             LiveLog.ui("[DIAG] engine.onStatus: status=\(status) text='\(text)'")
-            self.setStatus(mode: .listening, text: text)
+            let mode: LiveOrbView.Mode
+            switch status {
+            case .idle: mode = .idle
+            case .listening: mode = .listening
+            case .thinking: mode = .thinking
+            case .speaking: mode = .speaking
+            }
+            self.setStatus(mode: mode, text: text)
         }
         engine?.onMicHint = { [weak self] hint in
             guard let self, !self.isClosing else { return }
@@ -224,10 +234,9 @@ final class LiveVoiceViewController: UIViewController {
         }
         engine?.onSpeechStarted = { [weak self] in
             guard let self, !self.isClosing else { return }
-            // If the user starts speaking while assistant is thinking or speaking,
-            // immediately yield to the user, cancel pending AI generation, and listen!
-            if self.orb.mode == .thinking || self.orb.mode == .speaking {
-                LiveLog.ui("🗣️ [DIAG] User spoke during \(self.orb.mode) -> cancelling pending turn and listening")
+            // If the user starts speaking while assistant is speaking, interrupt playback and listen
+            if self.orb.mode == .speaking {
+                LiveLog.ui("🗣️ [DIAG] User spoke during speaking -> cancelling playback and listening")
                 self.currentTurnTask?.cancel()
                 self.currentTurnTask = nil
                 self.speaker?.stop()
@@ -294,7 +303,7 @@ final class LiveVoiceViewController: UIViewController {
                 self.history.append((user: roman, assistant: show))
                 LiveLog.ui("✅ turn #\(self.history.count) done — speaking (\(show.count) chars): '\(show.prefix(200))'")
                 self.setStatus(mode: .speaking, text: "Speaking...")
-                self.engine?.monitorForBargeIn(true)
+                self.engine?.pauseListening() // Pause microphone so speaker audio is never picked up as an interruption
                 LiveLog.ui("[DIAG] calling speaker.speak()...")
                 self.speaker?.speak(show)
             } catch {
@@ -302,14 +311,49 @@ final class LiveVoiceViewController: UIViewController {
                     LiveLog.ui("[DIAG] turn cancelled by user interruption")
                     return
                 }
-                let msg = (error as NSError).localizedDescription
+                let nsErr = error as NSError
+                let msg = nsErr.localizedDescription
                 LiveLog.ui("❌ turn FAILED: \(msg)")
-                LiveLog.ui("[DIAG] error domain=\((error as NSError).domain) code=\((error as NSError).code)")
+                LiveLog.ui("[DIAG] error domain=\(nsErr.domain) code=\(nsErr.code)")
                 guard !self.isClosing else { return }
                 self.history.append((user: roman, assistant: msg))
+
+                if nsErr.domain == "QwenLive" && nsErr.code == 2 {
+                    self.promptSignIn()
+                    return
+                }
+
                 self.setStatus(mode: .listening, text: "Listening...")
                 self.engine?.listenAgain()
             }
+        }
+    }
+
+    private func promptSignIn() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isClosing else { return }
+            self.speaker?.speak("Please log in to your account to use the AI assistant.")
+            self.setStatus(mode: .idle, text: "Login required")
+
+            let alert = UIAlertController(
+                title: "Sign In Required",
+                message: "Please sign in to your B-easy account to use the cloud AI voice assistant.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Sign In", style: .default) { [weak self] _ in
+                guard let self else { return }
+                let storyboard = UIStoryboard(name: "Main", bundle: nil)
+                if let signInVC = storyboard.instantiateViewController(withIdentifier: "SignInViewController") as? SignInViewController {
+                    let nav = UINavigationController(rootViewController: signInVC)
+                    nav.modalPresentationStyle = .fullScreen
+                    self.present(nav, animated: true)
+                }
+            })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+                self?.setStatus(mode: .listening, text: "Listening...")
+                self?.engine?.listenAgain()
+            })
+            self.present(alert, animated: true)
         }
     }
 
@@ -335,6 +379,15 @@ final class LiveVoiceViewController: UIViewController {
     }
 
     // MARK: - actions
+
+    @objc private func orbTapped() {
+        if orb.mode == .speaking {
+            LiveLog.ui("🗣️ Orb tapped during speaking — interrupting speech")
+            speaker?.stop()
+            setStatus(mode: .listening, text: "Listening...")
+            engine?.listenAgain()
+        }
+    }
 
     @objc private func closeTapped() {
         isClosing = true

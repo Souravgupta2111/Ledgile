@@ -6,6 +6,8 @@
 	<array>
 		<string>whatsapp</string>
 	</array>
+	<key>DEEPGRAM_API_KEY</key>
+	<string>$(DEEPGRAM_API_KEY)</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SUPABASE_URL</key>

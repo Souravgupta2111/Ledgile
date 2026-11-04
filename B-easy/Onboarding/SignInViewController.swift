@@ -34,6 +34,14 @@ class SignInViewController: UIViewController, UITextFieldDelegate {
         configureCountryCodeButton()
         updateSendCodeState()
         configureAppleSignIn()
+
+        if navigationController?.presentingViewController != nil || presentingViewController != nil {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Close", style: .plain, target: self, action: #selector(closeTapped))
+        }
+    }
+
+    @objc private func closeTapped() {
+        dismiss(animated: true)
     }
 
     private func styleUI() {

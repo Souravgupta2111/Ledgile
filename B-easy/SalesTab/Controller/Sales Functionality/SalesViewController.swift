@@ -36,6 +36,7 @@ class SalesViewController: UIViewController {
 
     private var lastSFSpeechText: String = ""
     private var sfSpeechPartialCount: Int = 0
+    private var hotwordSuspendedForInlineVoice = false
 
     /// Callback to update the SwiftUI view's transcription text and listening state.
     private var onTranscriptionUpdate: ((String) -> Void)?
@@ -65,11 +66,20 @@ class SalesViewController: UIViewController {
         navigationController?.setNavigationBarHidden(true, animated: animated)
         // Refresh data each time the tab appears (e.g. after adding a sale).
         hostingController?.rootView.reload()
+
+        if hotwordSuspendedForInlineVoice && !audioEngine.isRunning {
+            hotwordSuspendedForInlineVoice = false
+            HotwordListener.shared.resume()
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         navigationController?.setNavigationBarHidden(false, animated: animated)
+
+        if audioEngine.isRunning {
+            stopListening()
+        }
     }
     
     override func viewDidDisappear(_ animated: Bool) {
@@ -77,6 +87,14 @@ class SalesViewController: UIViewController {
         // Reset the transcription state after the view has transitioned away
         self.onTranscriptionUpdate?("")
         self.onListeningStateChanged?(false)
+
+        // Leaving the Sales tab while voice was suspended: restore the wake word.
+        // A push (sales-entry screen) keeps the session suspended until we return.
+        if hotwordSuspendedForInlineVoice && !audioEngine.isRunning,
+           tabBarController?.selectedViewController !== navigationController {
+            hotwordSuspendedForInlineVoice = false
+            HotwordListener.shared.resume()
+        }
     }
 
     // MARK: - SwiftUI Hosting
@@ -180,6 +198,14 @@ class SalesViewController: UIViewController {
 
     // MARK: - Inline Voice Recording
 
+    /// Entry point for the wake-word flow. Mirrors tapping the central mic
+    /// button, but never toggles an already-running recording off.
+    func startVoiceEntryFromHotword() {
+        guard isViewLoaded, view.window != nil else { return }
+        guard !audioEngine.isRunning else { return }
+        startInlineListening()
+    }
+
     private func toggleInlineRecording() {
         if audioEngine.isRunning {
             stopListeningAndProcessImmediate()
@@ -191,6 +217,13 @@ class SalesViewController: UIViewController {
     private func startInlineListening() {
         print("\n[SalesInlineVoice] ═══ startInlineListening() ═══")
         print("[SalesInlineVoice] WhisperService.isReady=\(WhisperService.shared.isReady)")
+
+        // The wake-word listener owns the same mic/session. Suspend it before
+        // starting the inline recorder, otherwise both engines fight over input.
+        if !hotwordSuspendedForInlineVoice {
+            hotwordSuspendedForInlineVoice = true
+            HotwordListener.shared.pause()
+        }
 
         recognitionTask?.cancel()
         recognitionTask = nil
@@ -209,15 +242,26 @@ class SalesViewController: UIViewController {
 
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.record, mode: .spokenAudio, options: .duckOthers)
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
             print("[SalesInlineVoice] ✅ Audio session configured")
         } catch {
-            print("[SalesInlineVoice] ❌ Audio session setup FAILED: \(error)")
+            do {
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                print("[SalesInlineVoice] ✅ Audio session configured (fallback)")
+            } catch {
+                print("[SalesInlineVoice] ❌ Audio session setup FAILED: \(error)")
+                abortInlineVoiceStart("Microphone unavailable. Please try again.")
+                return
+            }
         }
 
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest else { return }
+        guard let recognitionRequest else {
+            abortInlineVoiceStart("Microphone unavailable. Please try again.")
+            return
+        }
         recognitionRequest.shouldReportPartialResults = true
 
         let inventoryItems = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
@@ -228,6 +272,11 @@ class SalesViewController: UIViewController {
 
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            print("[SalesInlineVoice] ❌ Invalid input format: \(inputFormat)")
+            abortInlineVoiceStart("Microphone unavailable. Please try again.")
+            return
+        }
 
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) {
             [weak self] result, error in
@@ -287,11 +336,35 @@ class SalesViewController: UIViewController {
             print("[SalesInlineVoice] ✅ Audio engine started")
         } catch {
             print("[SalesInlineVoice] ❌ Audio engine start FAILED: \(error)")
+            abortInlineVoiceStart("Microphone unavailable. Please try again.")
+            return
         }
 
         DispatchQueue.main.async {
             self.onListeningStateChanged?(true)
             self.onTranscriptionUpdate?("Listening...")
+        }
+    }
+
+    /// Cleans up a failed start and restores the wake-word listener.
+    private func abortInlineVoiceStart(_ message: String) {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+        if audioEngine.isRunning {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+        }
+
+        hotwordSuspendedForInlineVoice = false
+        HotwordListener.shared.resume()
+
+        DispatchQueue.main.async {
+            self.onListeningStateChanged?(false)
+            self.onTranscriptionUpdate?(message)
         }
     }
 
@@ -325,6 +398,16 @@ class SalesViewController: UIViewController {
         DispatchQueue.main.async {
             self.onListeningStateChanged?(false)
         }
+    }
+
+    /// Restores the wake word only when the user is still on the Sales screen
+    /// and no sales-entry screen/modal is covering it.
+    private func resumeHotwordAfterInlineVoiceIfStillVisible() {
+        guard hotwordSuspendedForInlineVoice, !audioEngine.isRunning else { return }
+        guard navigationController?.topViewController === self,
+              presentedViewController == nil else { return }
+        hotwordSuspendedForInlineVoice = false
+        HotwordListener.shared.resume()
     }
 
     private func stopListeningAndProcessImmediate() {
@@ -363,6 +446,7 @@ class SalesViewController: UIViewController {
                     self.onTranscriptionUpdate?("Could not understand speech. Please try again.")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         self.onTranscriptionUpdate?("")
+                        self.resumeHotwordAfterInlineVoiceIfStillVisible()
                     }
                 }
             }
@@ -395,6 +479,7 @@ class SalesViewController: UIViewController {
                     self.onTranscriptionUpdate?("Could not understand speech. Please try again.")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         self.onTranscriptionUpdate?("")
+                        self.resumeHotwordAfterInlineVoiceIfStillVisible()
                     }
                 }
             }

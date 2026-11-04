@@ -18,9 +18,19 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
     private let sendButton = UIButton(type: .system)
     private let liveButton = UIButton(type: .system)
     private var isSending = false
-    private var assistant: AnyObject?
+    private let reasoner = QwenLiveReasoner()
 
-    // MARK: - Assistant Live (full-screen voice modal; history lands here on close)
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        HotwordListener.shared.pause()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if navigationController?.topViewController !== self {
+            HotwordListener.shared.resume()
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -112,16 +122,6 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
             sendButton.widthAnchor.constraint(equalToConstant: 36),
             sendButton.heightAnchor.constraint(equalToConstant: 36)
         ])
-
-        if #available(iOS 26.0, *) {
-            if ShopAssistantService.isAvailable {
-                assistant = ShopAssistantService()
-            } else {
-                lines.append(Line(isUser: false, text: ShopAssistantService.unavailableMessage))
-            }
-        } else {
-            lines.append(Line(isUser: false, text: "Assistant needs iOS 26 or later."))
-        }
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -175,19 +175,15 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
     }
 
     private func ask(_ text: String) async throws -> String {
-        if #available(iOS 26.0, *) {
-            guard let service = assistant as? ShopAssistantService else {
-                return ShopAssistantService.unavailableMessage
-            }
-            return try await service.streamReply(to: text) { [weak self] partial in
-                guard let self else { return }
-                guard !self.lines.isEmpty else { return }
-                self.lines[self.lines.count - 1].text = partial
-                self.tableView.reloadData()
-                self.scrollToEnd()
-            }
+        let pack = ShopLedgerLookup.assistantPack()
+
+        let (answer, sql) = try await reasoner.ask(userText: text, shopPack: pack)
+        if let sql, !sql.isEmpty {
+            let result = LiveVoiceViewController.runShopSQL(sql)
+            let final = try await reasoner.answerWithSQLResult(result, shopPack: pack)
+            return LiveRomanFilter.stripSignOffs(LiveRomanFilter.toRoman(final))
         }
-        return "Assistant needs iOS 26 or later."
+        return LiveRomanFilter.stripSignOffs(LiveRomanFilter.toRoman(answer))
     }
 
     private func scrollToEnd() {
@@ -199,10 +195,7 @@ final class ShopAssistantViewController: UIViewController, UITableViewDataSource
     // MARK: - Live voice (full-screen modal; turns land here as bubbles on close)
 
     @objc private func liveTapped() {
-        let snap = ShopLedgerLookup.shopSnapshot()
-        let top = ShopLedgerLookup.topSellingProducts(limit: 5)
-        let low = ShopLedgerLookup.lowStock()
-        let pack = [snap, top, "LOWSTOCK:\n" + low].joined(separator: "\n")
+        let pack = ShopLedgerLookup.assistantPack()
         let vc = LiveVoiceViewController(shopPack: pack)
         vc.onExit = { [weak self] turns in
             guard let self, !turns.isEmpty else { return }

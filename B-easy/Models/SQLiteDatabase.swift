@@ -20,6 +20,20 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
+    private static let dateOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+    private static let dateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
 
 
     init(path: String? = nil) {
@@ -48,6 +62,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         migrateCreditTransactionIDs()
         migrateUPICollectionColumns()
         migrateWatchlistColumns()
+        createAssistantViews()
         _ = exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_invoice ON transactions(invoice_number)")
         capitalizeExistingItemNames()
     }
@@ -125,6 +140,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         migrateCreditTransactionIDs()
         migrateUPICollectionColumns()
         migrateWatchlistColumns()
+        createAssistantViews()
     }
 
 
@@ -327,6 +343,86 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
 
         exec(ddl)
         createTallyTables()
+    }
+
+    /// Friendly, read-only projections for Assistant Live SQL.
+    /// Recreated each launch so an app update can change the view shape safely.
+    private func createAssistantViews() {
+        let views = [
+            "v_sales", "v_purchases", "v_sale_items", "v_stock",
+            "v_customer_balances", "v_supplier_balances", "v_daily_sales",
+            "v_top_items", "v_low_stock"
+        ]
+        for view in views {
+            _ = exec("DROP VIEW IF EXISTS \(view)")
+        }
+
+        let ddl = """
+        CREATE VIEW v_sales AS
+        SELECT id, date, invoice_number, customer_name, total_amount, notes
+        FROM transactions
+        WHERE type = 'sale';
+
+        CREATE VIEW v_purchases AS
+        SELECT id, date, invoice_number, supplier_name, total_amount, notes
+        FROM transactions
+        WHERE type = 'purchase';
+
+        CREATE VIEW v_sale_items AS
+        SELECT ti.id, ti.transaction_id, t.date, ti.item_name, ti.quantity, ti.unit,
+               ti.selling_price_per_unit,
+               ROUND(ti.quantity * COALESCE(ti.selling_price_per_unit, 0), 2) AS total_price,
+               ti.cost_price_per_unit
+        FROM transaction_items ti
+        JOIN transactions t ON t.id = ti.transaction_id
+        WHERE t.type = 'sale';
+
+        CREATE VIEW v_stock AS
+        SELECT id, name, unit, current_stock, low_stock_threshold,
+               default_selling_price, default_cost_price, barcode, gst_rate, is_active
+        FROM items;
+
+        CREATE VIEW v_customer_balances AS
+        SELECT c.id, c.name, c.phone,
+               ROUND(COALESCE(SUM(CASE p.type
+                   WHEN 'paid' THEN p.amount
+                   WHEN 'received' THEN -p.amount
+                   ELSE 0 END), 0), 2) AS balance
+        FROM customers c
+        LEFT JOIN customer_payments p ON p.customer_id = c.id
+        GROUP BY c.id, c.name, c.phone;
+
+        CREATE VIEW v_supplier_balances AS
+        SELECT s.id, s.name, s.phone,
+               ROUND(COALESCE(SUM(CASE p.type
+                   WHEN 'received' THEN p.amount
+                   WHEN 'paid' THEN -p.amount
+                   ELSE 0 END), 0), 2) AS balance
+        FROM suppliers s
+        LEFT JOIN supplier_payments p ON p.supplier_id = s.id
+        GROUP BY s.id, s.name, s.phone;
+
+        CREATE VIEW v_daily_sales AS
+        SELECT date, COUNT(*) AS sale_count, ROUND(SUM(total_amount), 2) AS total_sales
+        FROM transactions
+        WHERE type = 'sale'
+        GROUP BY date;
+
+        CREATE VIEW v_top_items AS
+        SELECT ti.item_name,
+               ROUND(SUM(ti.quantity), 2) AS qty_sold,
+               ROUND(SUM(ti.quantity * COALESCE(ti.selling_price_per_unit, 0)), 2) AS revenue
+        FROM transaction_items ti
+        JOIN transactions t ON t.id = ti.transaction_id
+        WHERE t.type = 'sale'
+        GROUP BY ti.item_name;
+
+        CREATE VIEW v_low_stock AS
+        SELECT name, current_stock, unit, low_stock_threshold
+        FROM items
+        WHERE is_active = 1 AND current_stock <= low_stock_threshold;
+        """
+        exec(ddl)
     }
 
     // MARK: - Tally one-tap export + backward mirror (file-based, no bridge)
@@ -580,6 +676,29 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
     // Used by LiveAssistant: Qwen emits `SQL: SELECT ...`, app executes locally.
     // NOTE: PRAGMA query_only is NOT set (shared connection must keep writing bills).
     // Safety comes from validation below: single SELECT/WITH, allowlisted tables.
+    static let assistantReadableTables = [
+        "transactions", "transaction_items", "items", "item_batches",
+        "daily_summaries", "customers", "suppliers",
+        "customer_payments", "supplier_payments", "app_settings",
+        "v_sales", "v_purchases", "v_sale_items", "v_stock",
+        "v_customer_balances", "v_supplier_balances", "v_daily_sales",
+        "v_top_items", "v_low_stock"
+    ]
+
+    /// Column names for the model prompt. Views are included so the LLM can
+    /// emit SQL against the friendly projections instead of guessing columns.
+    func assistantSchemaSummary() -> String {
+        Self.assistantReadableTables.compactMap { table in
+            guard let stmt = prepare("PRAGMA table_info(\(table))") else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            var columns: [String] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                columns.append(String(cString: sqlite3_column_text(stmt, 1)))
+            }
+            return columns.isEmpty ? nil : "\(table)(\(columns.joined(separator: ",")))"
+        }.joined(separator: "\n")
+    }
+
     func runReadOnlySelect(_ sql: String, maxRows: Int = 50) throws -> (columns: [String], rows: [[String]]) {
         let q = sql.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { throw SQLiteDBError.prepareFailed("empty SQL") }
@@ -592,9 +711,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         for b in banned where upper.contains(b) {
             throw SQLiteDBError.prepareFailed("blocked keyword: \(b)")
         }
-        let allowedTables = ["transactions", "transaction_items", "items", "item_batches",
-                             "daily_summaries", "customers", "suppliers",
-                             "customer_payments", "supplier_payments", "app_settings"]
+        let allowedTables = Self.assistantReadableTables
         // Every FROM/JOIN target must be allowlisted.
         let tokens = upper.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
         var i = 0
@@ -612,8 +729,9 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
             i += 1
         }
 
+        let rowCap = min(max(1, maxRows), 50)
         var limited = q
-        if !upper.contains("LIMIT") { limited += " LIMIT \(min(max(1, maxRows), 50))" }
+        if !upper.contains("LIMIT") { limited += " LIMIT \(rowCap)" }
         guard let stmt = prepare(limited) else { throw SQLiteDBError.prepareFailed(limited) }
         defer { sqlite3_finalize(stmt) }
 
@@ -625,7 +743,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         var rows: [[String]] = []
         let deadline = CFAbsoluteTimeGetCurrent() + 2.0
         while sqlite3_step(stmt) == SQLITE_ROW {
-            if CFAbsoluteTimeGetCurrent() > deadline || rows.count >= 50 { break }
+            if CFAbsoluteTimeGetCurrent() > deadline || rows.count >= rowCap { break }
             var row: [String] = []
             for c in 0..<colCount {
                 let name = cols[c].lowercased()
@@ -844,7 +962,10 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
     }
     private func readDate(_ stmt: OpaquePointer, _ col: Int32) -> Date {
         let s = readString(stmt, col)
-        if let d = Self.iso8601.date(from: s) ?? Self.iso8601NoFrac.date(from: s) {
+        if let d = Self.iso8601.date(from: s)
+            ?? Self.iso8601NoFrac.date(from: s)
+            ?? Self.dateOnlyFormatter.date(from: s)
+            ?? Self.dateTimeFormatter.date(from: s) {
             return d
         }
         print("[SQLiteDB] Unparseable date '\(s)' — not substituting now")

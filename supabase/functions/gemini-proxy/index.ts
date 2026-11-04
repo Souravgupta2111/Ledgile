@@ -1,8 +1,8 @@
 // Voice JSON → OpenRouter paid model (Hinglish + JSON, cheaper than Gemini Flash-Lite).
 // Camera → OpenRouter paid Gemini 2.5 Flash-Lite.
 // Assistant Live chat (Roman Hinglish, text) → Qwen 3.7 Flash (fast + cheap + tool-calling).
-// TTS → Sarvam Bulbul v3 (Hindi voice, streaming-capable).
-// Secrets (never in the iOS app): OPENROUTER_API_KEY, SARVAM_API_KEY.
+// TTS → Deepgram Flux (server-side key), Sarvam Bulbul v3 fallback.
+// Secrets (never in the iOS app): OPENROUTER_API_KEY, DEEPGRAM_API_KEY, SARVAM_API_KEY.
 // Optional: OPENROUTER_VOICE_MODEL, OPENROUTER_VISION_MODEL, OPENROUTER_ASSISTANT_MODEL,
 //   SARVAM_TTS_SPEAKER (default anushka), SARVAM_TTS_LANGUAGE (default hi-IN)
 
@@ -34,11 +34,19 @@ Deno.serve(async (req) => {
       return json({ ok: true, quota });
     }
 
-    // Bulbul TTS does not consume an extra LLM turn; the Qwen assistant-chat
+    // TTS does not consume an extra LLM turn; the Qwen assistant-chat
     // turn already counted. Skip consumeQuota entirely for TTS sentences.
-    if (task === "bulbul-tts") {
-      const audio = await sarvamBulbulTTS(body);
-      return json({ ...audio });
+    if (task === "tts" || task === "deepgram-tts" || task === "bulbul-tts") {
+      try {
+        const audio = await deepgramTTS(body);
+        return json({ ...audio });
+      } catch (e) {
+        if (Deno.env.get("SARVAM_API_KEY")) {
+          const audio = await sarvamBulbulTTS(body);
+          return json({ ...audio });
+        }
+        throw e;
+      }
     }
 
     const kind = task === "vision" ? "camera" : "voice";
@@ -88,7 +96,12 @@ const PRO_PRODUCTS = new Set([
   "com.sourav.beasyyyy.pro.yearly",
 ]);
 
-function adminClient() {
+// supabase-js' generic ReturnType resolves inconsistently across versions;
+// the service-role client is untyped by design here.
+// deno-lint-ignore no-explicit-any
+type AdminClient = any;
+
+function adminClient(): AdminClient {
   return createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -129,7 +142,7 @@ function isProActive(row: Record<string, unknown>) {
   return new Date(exp).getTime() > Date.now();
 }
 
-async function loadQuota(admin: ReturnType<typeof createClient>, userId: string) {
+async function loadQuota(admin: AdminClient, userId: string) {
   const { data } = await admin.from("ai_quota").select("*").eq("user_id", userId).maybeSingle();
   return (data ?? {
     user_id: userId,
@@ -143,7 +156,7 @@ async function loadQuota(admin: ReturnType<typeof createClient>, userId: string)
   }) as Record<string, unknown>;
 }
 
-async function saveQuota(admin: ReturnType<typeof createClient>, row: Record<string, unknown>) {
+async function saveQuota(admin: AdminClient, row: Record<string, unknown>) {
   await admin.from("ai_quota").upsert({
     user_id: row.user_id,
     free_used: row.free_used,
@@ -158,7 +171,7 @@ async function saveQuota(admin: ReturnType<typeof createClient>, row: Record<str
 }
 
 async function consumeQuota(
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   userId: string,
   kind: "voice" | "camera",
 ) {
@@ -205,7 +218,7 @@ function decodeJwsPayload(jws: string): Record<string, unknown> | null {
 }
 
 async function markPro(
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   userId: string,
   jws: string,
 ) {
@@ -282,10 +295,20 @@ async function openRouterAssistantChat(body: {
   const temperature = Number(body.temperature ?? 0.1);
   let messages: Array<Record<string, string>>;
   if (Array.isArray(body.messages) && body.messages.length > 0) {
-    messages = body.messages
+    const filtered = body.messages
       .filter((m) => m && typeof m.content === "string")
-      .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 4000) }))
-      .slice(-21);
+      .map((m) => ({
+        role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
+        content: String(m.content).slice(0, 4000),
+      }));
+    // Keep the caller's system prompt first; it carries the shop rules and
+    // snapshot. Then keep only the most recent turns to bound token cost.
+    const system = filtered.filter((m) => m.role === "system").slice(0, 1);
+    const turns = filtered.filter((m) => m.role !== "system").slice(-20);
+    messages = [...system, ...turns];
+    if (messages.length === 0) {
+      throw new Error("assistant-chat requires at least one message");
+    }
   } else {
     messages = [
       { role: "system", content: String(body.systemPrompt ?? "You are B-easy shop assistant. Reply in Roman Hinglish only, no Devanagari.") },
@@ -314,6 +337,44 @@ async function openRouterAssistantChat(body: {
     console.log(`assistant-chat ${model} failed: ${result.error}`);
   }
   throw new Error(lastError);
+}
+
+/// Deepgram Flux TTS (Hannah Voice, model: flux-hannah-en, speed: 1.0, expressivity: 1)
+async function deepgramTTS(body: {
+  text?: string;
+  voice?: string;
+  speed?: number;
+  expressivity?: number;
+}): Promise<Record<string, unknown>> {
+  const key = Deno.env.get("DEEPGRAM_API_KEY");
+  if (!key) throw new Error("DEEPGRAM_API_KEY is not set (add via supabase secrets set)");
+  const text = String(body.text ?? "").trim().slice(0, 2500);
+  if (!text) throw new Error("TTS requires text");
+  const voice = String(body.voice ?? "flux-hannah-en");
+  const speed = Number(body.speed ?? 1.0);
+  const expressivity = Number(body.expressivity ?? 1);
+
+  const url = `https://api.deepgram.com/v2/speak?model=${encodeURIComponent(voice)}&speed=${speed}&expressivity=${expressivity}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Token ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const raw = await res.text();
+    throw new Error(`Deepgram TTS HTTP ${res.status}: ${raw.slice(0, 300)}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const audioBase64 = btoa(binary);
+  return { audioBase64, format: "mp3", voice, speed, expressivity };
 }
 
 /// Sarvam Bulbul v3 TTS. Body: { text, speaker?, language?, pace? }

@@ -70,6 +70,16 @@ nonisolated enum ShopLedgerLookup {
         return !txs.isEmpty
     }
 
+    /// Snapshot + live lists + the actual SQLite view schema sent to the
+    /// assistant, so it writes SQL against the real columns.
+    static func assistantPack() -> String {
+        let snap = shopSnapshot()
+        let top = topSellingProducts(limit: 5)
+        let low = lowStock()
+        let schema = SQLiteDatabase.shared.assistantSchemaSummary()
+        return [snap, "SCHEMA:\n" + schema, top, "LOWSTOCK:\n" + low].joined(separator: "\n")
+    }
+
     static func topSellingProducts(limit: Int = 5) -> String {
         let sales = dm.getRecentTransactions(limit: 500, type: .sale)
         if sales.isEmpty {

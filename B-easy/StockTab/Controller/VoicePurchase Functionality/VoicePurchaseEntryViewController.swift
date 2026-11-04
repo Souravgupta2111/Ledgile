@@ -97,11 +97,17 @@ class VoicePurchaseEntryViewController: UIViewController {
 
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.record, mode: .spokenAudio, options: .duckOthers)
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            print("[VoicePurchase] ✅ Audio session configured (record/spokenAudio)")
+            print("[VoicePurchase] ✅ Audio session configured (playAndRecord/measurement)")
         } catch {
-            print("[VoicePurchase] ❌ Audio session setup FAILED: \(error)")
+            do {
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                print("[VoicePurchase] ✅ Audio session configured (fallback)")
+            } catch {
+                print("[VoicePurchase] ❌ Audio session setup FAILED: \(error)")
+            }
         }
 
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()

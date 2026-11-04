@@ -285,7 +285,7 @@
 					"-weak_framework",
 					FoundationModels,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyyy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.notbeeasyyyyyy;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -341,7 +341,7 @@
 					"-weak_framework",
 					FoundationModels,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.beasyyyy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sourav.notbeeasyyyyyy;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -360,6 +360,7 @@
 		};
 		D647A9152F3B0CE400C3EA11 /* Debug configuration for PBXProject "B-easy" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D7EC81843071840B005153AE /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -423,6 +424,7 @@
 		};
 		D647A9162F3B0CE400C3EA11 /* Release configuration for PBXProject "B-easy" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D7EC81843071840B005153AE /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;

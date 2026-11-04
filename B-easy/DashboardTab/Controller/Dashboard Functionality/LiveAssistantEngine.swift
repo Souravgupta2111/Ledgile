@@ -12,190 +12,309 @@ final class LiveAssistantEngine {
     var onFinal: ((String) -> Void)?
     var onBargeIn: (() -> Void)?
     var onSpeechStarted: (() -> Void)?
-    /// Fired when the mic hears nothing for a long time (simulator = no mic).
     var onMicHint: ((String) -> Void)?
 
     private let audioEngine = AVAudioEngine()
-    private var frames: [Float] = []
-    private var lastVoiceTime: CFAbsoluteTime = 0
-    private var turnStart: CFAbsoluteTime = 0
-    private var heardSpeech = false
-    private var isCutting = false
-    private var monitoring = false  // true while speaker plays (barge-in watch)
+    private let stateLock = NSLock()
+    private var tapInstalled = false
+
+    private var webSocketTask: URLSessionWebSocketTask?
+    private var webSocketSession: URLSession?
+    private var isWebSocketConnected = false
+
+    private var accumulatedPCMData = Data()
+    private var isFinalized = false
+    private var hasSpeechStarted = false
+    private var monitoring = false // true while speaker plays (barge-in watch)
     private var bargeHits = 0
-    private var bargePreRoll: [Float] = []
-    private var silentRestarts = 0
-    private var lastHeartbeat: CFAbsoluteTime = 0
+    private var turnStartTime: CFAbsoluteTime = 0
+    private var lastSpeechTime: CFAbsoluteTime = 0
+    private var lastHeartbeatTime: CFAbsoluteTime = 0
     private var bufferCount = 0
-    private var lastBufferTime: CFAbsoluteTime = 0
-    private var failedStarts = 0
-    private var stallWarned = false
-
-    private let silenceCut: TimeInterval = 0.85
-    private let maxTurn: TimeInterval = 30.0
-    
-    private var noiseFloor: Float = 0.002
-    private var voiceStreak = 0
-    private let neededStreak = 5
-    private var speechStart: CFAbsoluteTime = 0
-
-    private func voiceThreshold() -> Float {
-        var thr = max(noiseFloor * 3, noiseFloor + 0.002, 0.002)
-        if noiseFloor > 0.04 { thr *= 1.5 } // loud room: conservative
-        return thr
-    }
 
     var isRunning: Bool { audioEngine.isRunning }
 
+    static var apiKey: String {
+        if let key = Bundle.main.infoDictionary?["DEEPGRAM_API_KEY"] as? String,
+           !key.isEmpty, !key.hasPrefix("$(") {
+            return key.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return "e6f867b60b0bace8e478728b4dc2626f55147988"
+    }
+
+    init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 300
+        webSocketSession = URLSession(configuration: config)
+    }
+
+    deinit {
+        stop()
+    }
+
+    // MARK: - Lifecycle
+
     func start() {
-        LiveLog.mic("═══ start() ═══")
-        LiveLog.mic("engine.isRunning=\(audioEngine.isRunning)")
-        stopTap()
-        frames.removeAll()
-        heardSpeech = false
-        voiceStreak = 0
-        speechStart = 0
-        isCutting = false
+        LiveLog.mic("═══ start() [Deepgram STT] ═══")
+        stop()
+
+        stateLock.lock()
+        isFinalized = false
+        hasSpeechStarted = false
         monitoring = false
         bargeHits = 0
-        bargePreRoll.removeAll()
-        silentRestarts = 0
         bufferCount = 0
-        noiseFloor = 0.002
-        lastHeartbeat = CFAbsoluteTimeGetCurrent()
-        turnStart = CFAbsoluteTimeGetCurrent()
-        lastVoiceTime = turnStart
+        accumulatedPCMData.removeAll()
+        turnStartTime = CFAbsoluteTimeGetCurrent()
+        lastSpeechTime = turnStartTime
+        lastHeartbeatTime = turnStartTime
+        stateLock.unlock()
 
-        
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+
             let session = AVAudioSession.sharedInstance()
-            LiveLog.mic("[DIAG] AVAudioSession current: category=\(session.category.rawValue) mode=\(session.mode.rawValue) sampleRate=\(session.sampleRate) inputAvailable=\(session.isInputAvailable)")
-            if let inputs = session.availableInputs {
-                for inp in inputs {
-                    LiveLog.mic("[DIAG] available input: \(inp.portName) type=\(inp.portType.rawValue)")
-                }
-            }
-            try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
             do {
+                try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetooth])
                 try session.setActive(true, options: .notifyOthersOnDeactivation)
-                LiveLog.mic("✅ audio session active — sampleRate=\(session.sampleRate) inputAvailable=\(session.isInputAvailable)")
-                if let currentInput = session.currentRoute.inputs.first {
-                    LiveLog.mic("[DIAG] active input: \(currentInput.portName) type=\(currentInput.portType.rawValue)")
-                } else {
-                    LiveLog.mic("⚠️ [DIAG] NO active input in currentRoute!")
-                }
+                LiveLog.mic("✅ Audio session active for Deepgram STT")
             } catch {
-                LiveLog.mic("❌ session activate FAILED: \(error.localizedDescription)")
+                LiveLog.mic("❌ Audio session setup failed: \(error.localizedDescription)")
             }
+
             DispatchQueue.main.async {
-                WhisperService.shared.preloadModel()
-                LiveLog.mic("Whisper ready=\(WhisperService.shared.isReady) — starting tap")
-                self.onStatus?(.listening, "Listening...")
+                self.connectWebSocket()
                 self.startTap()
+                self.onStatus?(.listening, "Listening...")
             }
         }
     }
 
-   
-    func monitorForBargeIn(_ on: Bool) {
-        LiveLog.mic("monitorForBargeIn(\(on)) — engine running=\(audioEngine.isRunning)")
-        monitoring = on
+    func listenAgain() {
+        LiveLog.mic("═══ listenAgain() [Next Question] ═══")
+        stateLock.lock()
+        monitoring = false
         bargeHits = 0
-        bargePreRoll.removeAll()
-        if on && !audioEngine.isRunning { startTap() }
+        isFinalized = false
+        hasSpeechStarted = false
+        bufferCount = 0
+        accumulatedPCMData.removeAll()
+        turnStartTime = CFAbsoluteTimeGetCurrent()
+        lastSpeechTime = turnStartTime
+        lastHeartbeatTime = turnStartTime
+        stateLock.unlock()
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onStatus?(.listening, "Listening...")
+            self.connectWebSocket()
+            self.startTap()
+        }
     }
 
+    /// Pauses mic and WebSocket during assistant speech without tearing down the audio session.
+    func pauseListening() {
+        stateLock.lock()
+        monitoring = false
+        isFinalized = true
+        stateLock.unlock()
+
+        stopTap()
+        closeWebSocket()
+    }
+
+    /// Full teardown when exiting the screen.
     func stop() {
         LiveLog.mic("stop()")
-        monitoring = false
-        stopTap()
+        pauseListening()
+
         DispatchQueue.global(qos: .utility).async {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
         onStatus?(.idle, "")
     }
 
-    // MARK: - Tap
+    func monitorForBargeIn(_ on: Bool) {
+        stateLock.lock()
+        monitoring = on
+        bargeHits = 0
+        stateLock.unlock()
+        LiveLog.mic("monitorForBargeIn(\(on)) — engine running=\(audioEngine.isRunning)")
+        if on && !audioEngine.isRunning {
+            startTap()
+        }
+    }
+
+    // MARK: - Deepgram WebSocket STT
+
+    private func connectWebSocket() {
+        closeWebSocket()
+
+        // Nova-2 with en-IN handles Indian English and Roman Hinglish natively.
+        let urlString = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-IN&smart_format=true&encoding=linear16&sample_rate=16000&channels=1&endpointing=350&interim_results=true"
+        guard let url = URL(string: urlString) else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Token \(Self.apiKey)", forHTTPHeaderField: "Authorization")
+
+        let task = webSocketSession?.webSocketTask(with: request)
+        webSocketTask = task
+        isWebSocketConnected = true
+        task?.resume()
+
+        LiveLog.mic("🔌 Connecting to Deepgram Live STT WebSocket...")
+        listenWebSocketMessages(for: task)
+    }
+
+    private func closeWebSocket() {
+        isWebSocketConnected = false
+        webSocketTask?.cancel(with: .normalClosure, reason: nil)
+        webSocketTask = nil
+    }
+
+    private func listenWebSocketMessages(for activeTask: URLSessionWebSocketTask?) {
+        guard let activeTask = activeTask, isWebSocketConnected else { return }
+
+        activeTask.receive { [weak self] result in
+            guard let self else { return }
+            guard self.webSocketTask === activeTask else { return }
+
+            switch result {
+            case .success(let message):
+                switch message {
+                case .string(let text):
+                    self.handleWebSocketJSON(text)
+                case .data(let data):
+                    if let text = String(data: data, encoding: .utf8) {
+                        self.handleWebSocketJSON(text)
+                    }
+                @unknown default:
+                    break
+                }
+                self.listenWebSocketMessages(for: activeTask)
+
+            case .failure(let error):
+                LiveLog.mic("⚠️ Deepgram WebSocket receive error: \(error.localizedDescription)")
+                self.isWebSocketConnected = false
+            }
+        }
+    }
+
+    private func handleWebSocketJSON(_ jsonText: String) {
+        guard let data = jsonText.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+
+        let isSpeechFinal = json["speech_final"] as? Bool ?? false
+        let isFinal = json["is_final"] as? Bool ?? false
+
+        guard let channel = json["channel"] as? [String: Any],
+              let alternatives = channel["alternatives"] as? [[String: Any]],
+              let firstAlt = alternatives.first else { return }
+
+        let transcript = (firstAlt["transcript"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        stateLock.lock()
+        let alreadyFinalized = isFinalized
+        let isMonitoring = monitoring
+        stateLock.unlock()
+
+        guard !alreadyFinalized else { return }
+
+        if !transcript.isEmpty && !hasSpeechStarted {
+            hasSpeechStarted = true
+            LiveLog.mic("🗣️ Speech onset: '\(transcript)'")
+            DispatchQueue.main.async { self.onSpeechStarted?() }
+        }
+
+        // If user finished speaking (speech_final or is_final with text)
+        if (isSpeechFinal || isFinal) && !transcript.isEmpty && !isMonitoring {
+            stateLock.lock()
+            isFinalized = true
+            stateLock.unlock()
+
+            LiveLog.mic("✅ [Deepgram STT Final] Transcript: '\(transcript)'")
+            DispatchQueue.main.async {
+                self.stopTap()
+                self.closeWebSocket()
+                self.onStatus?(.thinking, "Understanding...")
+                self.onFinal?(transcript)
+            }
+        }
+    }
+
+    // MARK: - Audio Tap & PCM Streaming
 
     private func startTap() {
-        if audioEngine.isRunning {
-            LiveLog.mic("startTap: engine already running")
-            return
-        }
-        let input = audioEngine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        LiveLog.mic("[DIAG] inputNode format: sampleRate=\(format.sampleRate) channels=\(format.channelCount) commonFormat=\(format.commonFormat.rawValue) interleaved=\(format.isInterleaved)")
+        if audioEngine.isRunning && tapInstalled { return }
+
+        stopTap()
+
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetooth])
+        try? session.setActive(true, options: .notifyOthersOnDeactivation)
+
+        audioEngine.reset()
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            LiveLog.mic("❌ startTap FAILED: invalid input format (sampleRate=\(format.sampleRate), channels=\(format.channelCount))")
-            DispatchQueue.main.async { self.onStatus?(.idle, "Mic unavailable") }
+            LiveLog.mic("⚠️ Invalid inputNode format: \(format) — retrying in 0.2s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.startTap()
+            }
             return
         }
-        input.removeTap(onBus: 0)
-        
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
-            self?.handle(buffer: buffer)
+
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+            self?.handleAudioBuffer(buffer)
         }
+        tapInstalled = true
+
         do {
             try audioEngine.start()
-            failedStarts = 0
-            stallWarned = false
-            lastBufferTime = CFAbsoluteTimeGetCurrent()
-            LiveLog.mic("✅ engine started — tap live (format: \(format.sampleRate)Hz, \(format.channelCount)ch)")
+            LiveLog.mic("✅ AudioEngine started — mic tap live (\(format.sampleRate)Hz)")
         } catch {
-            failedStarts += 1
-            LiveLog.mic("❌ engine.start FAILED (#\(failedStarts)): \(error.localizedDescription)")
+            LiveLog.mic("❌ AudioEngine start failed: \(error.localizedDescription)")
+            stopTap()
             DispatchQueue.main.async { self.onStatus?(.idle, "Mic unavailable") }
         }
     }
 
     private func stopTap() {
-        if audioEngine.isRunning {
+        if tapInstalled {
             audioEngine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        if audioEngine.isRunning {
             audioEngine.stop()
         }
     }
 
-    private func handle(buffer: AVAudioPCMBuffer) {
-        guard let chunk = WhisperService.convertBufferToFrames(buffer), !chunk.isEmpty else {
-            if bufferCount == 0 {
-                LiveLog.mic("⚠️ [DIAG] FIRST tap buffer is EMPTY — convertBufferToFrames returned nil/empty (buffer.format=\(buffer.format), frameLength=\(buffer.frameLength))")
-            }
-            return
-        }
-        bufferCount += 1
-        lastBufferTime = CFAbsoluteTimeGetCurrent()
-        if bufferCount == 1 {
-            LiveLog.mic("[DIAG] ✅ first tap buffer received: frames=\(chunk.count) fmt=\(buffer.format)")
-        }
-        // Log every 50th buffer for flow diagnostics
-        if bufferCount % 50 == 0 {
-            let rmsVal = sqrt(chunk.reduce(0) { $0 + $1 * $1 } / Float(chunk.count))
-            let peakVal = chunk.map { abs($0) }.max() ?? 0
-            LiveLog.mic("[DIAG] buffer #\(bufferCount): rms=\(String(format: "%.5f", rmsVal)) peak=\(String(format: "%.5f", peakVal)) threshold=\(String(format: "%.5f", voiceThreshold())) noiseFloor=\(String(format: "%.5f", noiseFloor)) heardSpeech=\(heardSpeech) voiceStreak=\(voiceStreak) totalFrames=\(frames.count)")
-        }
+    private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard let chunk = WhisperService.convertBufferToFrames(buffer), !chunk.isEmpty else { return }
+
+        // 1. Metering calculation for UI Orb
         let rms = sqrt(chunk.reduce(0) { $0 + $1 * $1 } / Float(chunk.count))
         let peak = chunk.map { abs($0) }.max() ?? 0
         let lvl = max(0, min(1, (20 * log10(rms + 1e-6) + 50) / 50))
         DispatchQueue.main.async { self.onLevel?(CGFloat(lvl)) }
 
-        // Barge-in watch while speaking — requires clear sustained vocal sound, ignoring ambient taps/breaths.
-        if monitoring {
-            bargePreRoll.append(contentsOf: chunk)
-            if bargePreRoll.count > 16_000 {
-                bargePreRoll.removeFirst(bargePreRoll.count - 16_000)
-            }
-            if peak > 0.035 && rms > max(self.voiceThreshold() * 1.5, 0.005) {
+        // 2. Barge-in check during assistant speech
+        stateLock.lock()
+        let isMonitoring = monitoring
+        let alreadyFinalized = isFinalized
+        stateLock.unlock()
+
+        if isMonitoring {
+            if peak > 0.05 && rms > 0.015 {
                 bargeHits += 1
-                if bargeHits >= 5 {
+                if bargeHits >= 4 {
                     bargeHits = 0
-                    LiveLog.mic("🗣️ [DIAG] Clear vocal speech detected during playback — triggering barge-in")
+                    stateLock.lock()
                     monitoring = false
-                    frames = bargePreRoll
-                    bargePreRoll.removeAll()
-                    heardSpeech = true
-                    speechStart = CFAbsoluteTimeGetCurrent() - 0.5
-                    lastVoiceTime = CFAbsoluteTimeGetCurrent()
-                    voiceStreak = neededStreak
+                    stateLock.unlock()
+                    LiveLog.mic("🗣️ Clear vocal speech during playback — triggering barge-in")
                     DispatchQueue.main.async { self.onBargeIn?() }
                 }
             } else {
@@ -204,142 +323,37 @@ final class LiveAssistantEngine {
             return
         }
 
-        // Normal listen turn.
-        frames.append(contentsOf: chunk)
-        if frames.count > 480_000 { frames.removeFirst(frames.count - 480_000) } // 30s cap
-        let now = CFAbsoluteTimeGetCurrent()
-        let thr = voiceThreshold()
-        if peak > thr && rms > thr * 0.25 {
-            voiceStreak += 1
-            if voiceStreak >= neededStreak {
-                if !heardSpeech {
-                    speechStart = now - 0.4 // include streak onset + pad
-                    LiveLog.mic("speech confirmed (\(voiceStreak) bufs, rms=\(String(format: "%.3f", rms)), floor=\(String(format: "%.4f", noiseFloor)), thr=\(String(format: "%.3f", thr)))")
-                    DispatchQueue.main.async { self.onSpeechStarted?() }
-                }
-                lastVoiceTime = now
-                heardSpeech = true
-            }
-        } else {
-            if voiceStreak > 0 && voiceStreak < neededStreak {
-                LiveLog.mic("voice streak broken at \(voiceStreak)/\(neededStreak) — spike ignored")
-            }
-            voiceStreak = 0
-            
-            noiseFloor += (min(rms, thr) - noiseFloor) * 0.03
-            noiseFloor = min(max(noiseFloor, 0.0005), 0.04)
-        }
-        if !heardSpeech, now - lastHeartbeat > 5 {
-            lastHeartbeat = now
-            let sinceBuffer = now - lastBufferTime
-            LiveLog.mic("heartbeat: listening \(String(format: "%.0f", now - turnStart))s, no speech yet, floor=\(String(format: "%.4f", noiseFloor)), buffered=\(String(format: "%.1f", Double(frames.count) / 16000.0))s, lastBuffer=\(String(format: "%.1f", sinceBuffer))s ago")
-            if sinceBuffer > 10 && !stallWarned {
-                stallWarned = true
-                LiveLog.mic("STALL: tap delivering no buffers 10s+ (simulator input device often dies after reconfig)")
-                DispatchQueue.main.async {
-                    self.onMicHint?("Audio tap stalled — no mic buffers for 10s+.")
-                }
-            }
-        }
-        let dur = now - turnStart
-        let silentFor = now - lastVoiceTime
-        if isCutting { return }
-        if heardSpeech && frames.count > 9600 && silentFor >= silenceCut {
-            cut(reason: "silence")
-        } else if dur >= maxTurn && heardSpeech {
-            cut(reason: "max")
-        } else if dur >= maxTurn && !heardSpeech {
-            // 30s me kuch nahi bola -> restart turn, count silence.
-            silentRestarts += 1
-            LiveLog.mic("30s with NO speech (silentRestarts=\(silentRestarts)) — simulator mic is usually dead")
-            frames.removeAll()
-            turnStart = now
-            lastVoiceTime = now
-            lastHeartbeat = now
-            if silentRestarts == 2 {
-                DispatchQueue.main.async {
-                    self.onMicHint?("No mic input detected — simulator has no mic. Type below instead.")
+        guard !alreadyFinalized else { return }
+
+        // 3. Convert 16kHz float frames into 16-bit Linear PCM Little-Endian
+        let pcmData = Self.framesToLinear16PCM(chunk)
+
+        stateLock.lock()
+        accumulatedPCMData.append(pcmData)
+        bufferCount += 1
+        stateLock.unlock()
+
+        // 4. Send audio bytes over WebSocket to Deepgram STT
+        if isWebSocketConnected, let task = webSocketTask {
+            task.send(.data(pcmData)) { error in
+                if let error = error {
+                    LiveLog.mic("⚠️ Deepgram send error: \(error.localizedDescription)")
                 }
             }
         }
     }
 
-    private func cut(reason: String) {
-        isCutting = true
-        var snapshot = frames
-        frames.removeAll()
-        let nowCut = CFAbsoluteTimeGetCurrent()
-        LiveLog.mic("═══ cut(reason=\(reason)) ═══")
-        LiveLog.mic("[DIAG] raw snapshot: \(snapshot.count) frames = \(String(format: "%.1f", Double(snapshot.count) / 16000.0))s")
-        if speechStart > 0 {
-            let keepSecs = min(Double(snapshot.count) / 16000.0, (nowCut - speechStart) + 1.5)
-            let keepCount = max(4800, Int(keepSecs * 16000))
-            if snapshot.count > keepCount {
-                LiveLog.mic("[DIAG] snapshot bounded: \(String(format: "%.1f", Double(snapshot.count) / 16000.0))s -> \(String(format: "%.1f", Double(keepCount) / 16000.0))s")
-                snapshot.removeFirst(snapshot.count - keepCount)
-            }
-        }
-       
-        
-        turnStart = CFAbsoluteTimeGetCurrent()
-        lastVoiceTime = turnStart
-        let snapshotRms = snapshot.isEmpty ? 0 : sqrt(snapshot.reduce(0) { $0 + $1 * $1 } / Float(snapshot.count))
-        let snapshotPeak = snapshot.map { abs($0) }.max() ?? 0
-        LiveLog.whisper("cut(reason=\(reason)) — transcribing \(String(format: "%.1f", Double(snapshot.count) / 16000.0))s audio (rms=\(String(format: "%.5f", snapshotRms)) peak=\(String(format: "%.4f", snapshotPeak)))")
-        DispatchQueue.main.async { self.onStatus?(.thinking, reason == "max" ? "Heard the full 30 seconds. Understanding..." : "Understanding...") }
-        Task {
-            LiveLog.whisper("[DIAG] calling WhisperService.transcribe with \(snapshot.count) frames...")
-            let text = await WhisperService.shared.transcribe(audioFrames: snapshot)
-            LiveLog.whisper("[DIAG] Whisper raw result: '\(text ?? "<nil>")'")
-            let roman = LiveRomanFilter.dedupeRepeats(LiveRomanFilter.toRoman(text ?? ""))
-            LiveLog.whisper("[DIAG] after Roman filter: '\(roman.prefix(120))' (\(roman.count) chars)")
-            DispatchQueue.main.async {
-                self.isCutting = false
-               
-                if self.frames.count > 192_000 { self.frames.removeFirst(self.frames.count - 192_000) }
-                self.heardSpeech = false
-                self.voiceStreak = 0
-                self.speechStart = 0
-                self.lastVoiceTime = CFAbsoluteTimeGetCurrent()
-                if roman.count < 2 {
-                    LiveLog.whisper("⚠️ too short/garbage ('\(roman)') — listening again, Qwen skipped")
-                    self.listenAgain()
-                    return
-                }
-                LiveLog.whisper("✅ sending to Qwen: '\(roman.prefix(120))'")
-                self.onFinal?(roman)
-            }
-        }
-    }
+    // MARK: - Utilities
 
-    
-    func listenAgain() {
-        guard !monitoring else { return }
-        LiveLog.mic("listenAgain() — resetting turn markers (engine running=\(audioEngine.isRunning))")
-        frames.removeAll()
-        heardSpeech = false
-        voiceStreak = 0
-        speechStart = 0
-        isCutting = false
-        silentRestarts = 0
-        turnStart = CFAbsoluteTimeGetCurrent()
-        lastVoiceTime = turnStart
-        lastHeartbeat = turnStart
-        DispatchQueue.main.async { self.onStatus?(.listening, "Listening...") }
-        if !audioEngine.isRunning {
-            if failedStarts >= 3 {
-                LiveLog.mic("not restarting engine — 3+ start failures, staying on typed input")
-                return
-            }
-            LiveLog.mic("engine not running at listenAgain — re-activating session + restart")
-            DispatchQueue.global(qos: .userInitiated).async {
-                let session = AVAudioSession.sharedInstance()
-                try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
-                try? session.setActive(true, options: .notifyOthersOnDeactivation)
-                DispatchQueue.main.async {
-                    self.startTap()
-                }
-            }
+    /// Converts normalized 16kHz Float audio frames [-1.0, 1.0] to 16-bit signed Linear PCM bytes.
+    static func framesToLinear16PCM(_ frames: [Float]) -> Data {
+        var data = Data(capacity: frames.count * MemoryLayout<Int16>.size)
+        for sample in frames {
+            let clamped = max(-1.0, min(1.0, sample))
+            let int16Val = Int16(clamped * 32767.0)
+            var le = int16Val.littleEndian
+            withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
         }
+        return data
     }
 }

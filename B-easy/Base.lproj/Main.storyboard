@@ -1498,7 +1498,7 @@
         <!--Sign In-->
         <scene sceneID="fnW-dN-HPa">
             <objects>
-                <viewController id="RFR-UU-iS7" customClass="SignInViewController" customModule="B_easy" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController storyboardIdentifier="SignInViewController" id="RFR-UU-iS7" customClass="SignInViewController" customModule="B_easy" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="ikF-6R-mfC">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="783"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>

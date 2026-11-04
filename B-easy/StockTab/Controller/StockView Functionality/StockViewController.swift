@@ -195,11 +195,17 @@ class StockViewController: UIViewController {
 
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.record, mode: .spokenAudio, options: .duckOthers)
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
             print("[StockInlineVoice] ✅ Audio session configured")
         } catch {
-            print("[StockInlineVoice] ❌ Audio session setup FAILED: \(error)")
+            do {
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                print("[StockInlineVoice] ✅ Audio session configured (fallback)")
+            } catch {
+                print("[StockInlineVoice] ❌ Audio session setup FAILED: \(error)")
+            }
         }
 
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()

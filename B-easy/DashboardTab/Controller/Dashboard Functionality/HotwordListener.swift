@@ -40,9 +40,8 @@ final class HotwordListener {
 
     private var isPaused = false
     private var lastTriggerTime: CFAbsoluteTime = 0
-    private let cooldown: TimeInterval = 5.0
-    private let windowDuration: TimeInterval = 3.0
-    private let energyThreshold: Float = 0.008
+    private let cooldown: TimeInterval = 3.0
+    private let windowDuration: TimeInterval = 30.0
 
     private var hasPermission = false
 
@@ -172,8 +171,9 @@ final class HotwordListener {
             }
             if let error {
                 // Error 216 = "request was canceled" — normal on window restart, ignore.
+                // Error 1110 = "No speech detected" — normal when room is quiet, ignore.
                 let nsError = error as NSError
-                if nsError.code != 216 {
+                if nsError.code != 216 && nsError.code != 1110 {
                     print("[Hotword] SFSpeech error: \(error.localizedDescription)")
                 }
             }
@@ -189,18 +189,8 @@ final class HotwordListener {
             }
             inputNode.removeTap(onBus: 0)
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-                guard let self else { return }
-                // Energy gate: skip silent buffers to save CPU.
-                if let data = buffer.floatChannelData {
-                    let frames = Int(buffer.frameLength)
-                    var maxAmp: Float = 0
-                    for i in stride(from: 0, to: frames, by: 16) {
-                        let a = abs(data[0][i])
-                        if a > maxAmp { maxAmp = a }
-                    }
-                    guard maxAmp > self.energyThreshold else { return }
-                }
-                self.recognitionRequest?.append(buffer)
+                guard let self, let req = self.recognitionRequest else { return }
+                req.append(buffer)
             }
 
             audioEngine.prepare()
@@ -224,9 +214,10 @@ final class HotwordListener {
             audioEngine.inputNode.removeTap(onBus: 0)
             audioEngine.stop()
         }
-        DispatchQueue.global(qos: .utility).async {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        }
+        // Deactivate synchronously: callers immediately start another recorder
+        // (inline voice/Live), and a queued deactivation would tear down the
+        // newly activated session.
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     // MARK: - Wake Phrase Matching
@@ -244,20 +235,36 @@ final class HotwordListener {
         patterns.insert(collapsed)
         
         if phrase.hasPrefix("hey ") {
-            let withoutHey = String(phrase.dropFirst(4))
+            let withoutHey = String(phrase.dropFirst(4)).trimmingCharacters(in: .whitespaces)
             patterns.insert(withoutHey)
             patterns.insert(withoutHey.replacingOccurrences(of: " ", with: ""))
         }
         
-        if phrase.contains("b easy") {
-            patterns.insert(phrase.replacingOccurrences(of: "b easy", with: "be easy"))
+        if phrase.contains("b easy") || phrase.contains("beasy") {
+            patterns.insert("hey beasy")
+            patterns.insert("beasy")
+            patterns.insert("hey b easy")
+            patterns.insert("b easy")
+            patterns.insert("hey be easy")
+            patterns.insert("be easy")
+        }
+        if phrase.contains("narayan") {
+            patterns.insert("hey narayan")
+            patterns.insert("narayan")
+            patterns.insert("hey narayana")
+            patterns.insert("narayana")
         }
         return Array(patterns).filter { !$0.isEmpty }
     }
 
     private func containsWakePhrase(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        return wakePatterns.contains { lower.contains($0) }
+        let cleaned = text.lowercased()
+            .replacingOccurrences(of: "[^a-z0-9\\s]", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return wakePatterns.contains { pattern in
+            let cleanPattern = pattern.replacingOccurrences(of: "[^a-z0-9\\s]", with: "", options: .regularExpression)
+            return cleaned.contains(cleanPattern)
+        }
     }
 
     // MARK: - Trigger

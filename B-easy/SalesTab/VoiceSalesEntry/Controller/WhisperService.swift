@@ -3,6 +3,27 @@ import SwiftWhisper
 import AVFoundation
 import whisper_cpp
 
+private actor TranscriptionGate {
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if !busy {
+            busy = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            busy = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 final class WhisperService {
     
     static let shared = WhisperService()
@@ -11,11 +32,18 @@ final class WhisperService {
      var whisper: Whisper?
      var isLoading = false
      let loadLock = NSLock()
+    private let transcriptionGate = TranscriptionGate()
     
     
     var isReady: Bool { whisper != nil }
     
      init() {}
+
+    private func currentWhisper() -> Whisper? {
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        return whisper
+    }
     
     
     func preloadModel() {
@@ -73,6 +101,13 @@ final class WhisperService {
     
     
     func transcribe(audioFrames: [Float]) async -> String? {
+        await transcriptionGate.acquire()
+        let result = await transcribeLocked(audioFrames: audioFrames)
+        await transcriptionGate.release()
+        return result
+    }
+
+    private func transcribeLocked(audioFrames: [Float]) async -> String? {
         let totalStart = CFAbsoluteTimeGetCurrent()
         print("\n[WhisperService] ═══════════════════════════════════════")
         print("[WhisperService] 🎙️ transcribe() called | inputFrames=\(audioFrames.count) | duration=\(String(format: "%.2f", Double(audioFrames.count) / 16000.0))s")
@@ -101,17 +136,17 @@ final class WhisperService {
             return nil
         }
         
-        if whisper == nil {
+        if currentWhisper() == nil {
             print("[WhisperService] ⏳ Model not loaded yet — loading synchronously...")
             let modelLoadStart = CFAbsoluteTimeGetCurrent()
             await loadModelSync()
             let modelLoadTime = CFAbsoluteTimeGetCurrent() - modelLoadStart
-            print("[WhisperService] Model sync-load took \(String(format: "%.2f", modelLoadTime))s | success=\(whisper != nil)")
+            print("[WhisperService] Model sync-load took \(String(format: "%.2f", modelLoadTime))s | success=\(currentWhisper() != nil)")
         } else {
             print("[WhisperService] ✅ Model already loaded — ready for inference")
         }
         
-        guard let whisper = whisper else {
+        guard let whisper = currentWhisper() else {
             print("[WhisperService] ❌ whisper instance is nil after load attempt — CANNOT transcribe")
             print("[WhisperService] ═══════════════════════════════════════\n")
             return nil
@@ -321,6 +356,20 @@ final class WhisperService {
     }
     
     
+    // Kept alive for the lifetime of the process: WhisperParams stores a raw
+    // C pointer, so a temporary NSString's utf8String would dangle.
+    private static let initialPrompt: NSString = """
+    Shivraj ko aadha kilo Aloo 40 rupees per kg, dedh kg Pyaaz 25 rupees, \
+    paav kilo Dhaniya, sawa kilo Dal, dhai kg Lehsun, \
+    500g Tamatar at rate 30, 250 gram Adrak, 2 liter Doodh ₹60, \
+    3 kg Chawal 80 rupees, 1 kg Cheeni, 2 packet Maggi, \
+    5 piece Sabun ₹30, 10 pcs Biscuit, 1 dozen Banana, \
+    Paneer 200g ₹80, Ghee 1 ltr, Atta 5 kg ₹250, \
+    Gobhi Gajar Matar Palak Bhindi Shimla Mirch Baingan Mooli, \
+    Jeera Haldi Namak Tel Maida Besan Suji, \
+    sold to Ramesh Sharma, customer Sunil Kumar. Bill banao.
+    """
+
     static func makeWhisperParams() -> WhisperParams {
         let params = WhisperParams(strategy: .greedy)
        
@@ -349,18 +398,7 @@ final class WhisperService {
         params.no_speech_thold = 0.5         
         
 
-        let prompt = """
-        Shivraj ko aadha kilo Aloo 40 rupees per kg, dedh kg Pyaaz 25 rupees, \
-        paav kilo Dhaniya, sawa kilo Dal, dhai kg Lehsun, \
-        500g Tamatar at rate 30, 250 gram Adrak, 2 liter Doodh ₹60, \
-        3 kg Chawal 80 rupees, 1 kg Cheeni, 2 packet Maggi, \
-        5 piece Sabun ₹30, 10 pcs Biscuit, 1 dozen Banana, \
-        Paneer 200g ₹80, Ghee 1 ltr, Atta 5 kg ₹250, \
-        Gobhi Gajar Matar Palak Bhindi Shimla Mirch Baingan Mooli, \
-        Jeera Haldi Namak Tel Maida Besan Suji, \
-        sold to Ramesh Sharma, customer Sunil Kumar. Bill banao.
-        """
-        params.initial_prompt = (prompt as NSString).utf8String
+        params.initial_prompt = Self.initialPrompt.utf8String
         
         return params
     }
