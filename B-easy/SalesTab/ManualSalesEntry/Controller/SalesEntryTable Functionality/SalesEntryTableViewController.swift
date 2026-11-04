@@ -55,6 +55,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     var customerNameField = UITextField()
     var inventoryCache: [Item] = []
     private var currentSuggestions: [Item] = []
+    private let suggestionsContainerView = UIView()
     private let suggestionsTableView = UITableView(frame: .zero, style: .plain)
     private weak var activeNameField: UITextField?
     private weak var activeUnitField: UITextField?
@@ -66,10 +67,15 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     var entryMode: EntryMode = .manual
     override func viewDidLoad() {
         super.viewDidLoad()
-        tableView.backgroundColor = UIColor.systemGray6
+        tableView.backgroundColor = .systemGroupedBackground
+        tableView.separatorStyle = .none
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.rowHeight = UITableView.automaticDimension
         
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTableTap(_:)))
+        tap.cancelsTouchesInView = false
+        tableView.addGestureRecognizer(tap)
+
         tableView.register(UINib(nibName: "SalesItemTableViewCell", bundle: nil),
                        forCellReuseIdentifier: "SalesItemTableViewCell")
         tableView.register(UINib(nibName: "LabelTextFieldTableViewCell", bundle: nil),
@@ -82,6 +88,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
                        forCellReuseIdentifier: "TextViewTableViewCell")
         tableView.register(UINib(nibName: "TwoLabelsTableViewCell", bundle: nil),
                        forCellReuseIdentifier: "TwoLabelsTableViewCell")
+        tableView.register(InlineDiscountCell.self, forCellReuseIdentifier: InlineDiscountCell.reuseIdentifier)
         
         if inventoryCache.isEmpty {
             inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
@@ -95,31 +102,56 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             // entryMode is already set by the caller before pushing this VC
             appendItems(from: result)
         } else if entryMode == .manual && transactionItems.isEmpty {
-            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: 0.0, costPricePerUnit: 0.0, createdDate: Date()))
+            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: nil, costPricePerUnit: 0.0, createdDate: Date()))
         }
         
-        setupBackButton()
+        setupNavigationButtons()
+    }
+
+    @objc private func handleTableTap(_ gesture: UITapGestureRecognizer) {
+        if !suggestionsContainerView.isHidden {
+            let location = gesture.location(in: suggestionsContainerView)
+            if !suggestionsContainerView.bounds.contains(location) {
+                dismissSuggestions()
+            }
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        // The suggestions dropdown is added to the window, so it outlives this
-        // screen. Tear it down, otherwise it is still floating over the sales
-        // list (or any other screen) after going back.
         dismissSuggestions()
     }
 
     deinit {
+        suggestionsContainerView.removeFromSuperview()
         suggestionsTableView.removeFromSuperview()
     }
 
-    private func setupBackButton() {
-        self.navigationItem.hidesBackButton = true
-        let newBackButton = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(backButtonTapped))
-        self.navigationItem.leftBarButtonItem = newBackButton
-        
-        // Also handle the swipe-to-go-back gesture
-        self.navigationController?.interactivePopGestureRecognizer?.addTarget(self, action: #selector(handleSwipeGesture))
+    private func setupNavigationButtons() {
+        navigationItem.title = "Add Sales"
+
+        // Clean back button matching the rest of the app
+        navigationItem.hidesBackButton = true
+        let backButton = UIBarButtonItem(
+            image: UIImage(systemName: "chevron.backward"),
+            style: .plain,
+            target: self,
+            action: #selector(backButtonTapped)
+        )
+        backButton.tintColor = UIColor(named: "Onyx") ?? .label
+        navigationItem.leftBarButtonItem = backButton
+
+        // Save button tinted in app theme green
+        let saveButton = UIBarButtonItem(
+            title: "Save",
+            style: .done,
+            target: self,
+            action: #selector(saveButtonTapped(_:))
+        )
+        saveButton.tintColor = UIColor(named: "Lime Moss") ?? .systemGreen
+        navigationItem.rightBarButtonItem = saveButton
+
+        navigationController?.interactivePopGestureRecognizer?.addTarget(self, action: #selector(handleSwipeGesture))
     }
 
     @objc private func handleSwipeGesture(gesture: UIGestureRecognizer) {
@@ -148,92 +180,121 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     }
 
     private func setupSuggestionsTableView() {
-        suggestionsTableView.isHidden = true
+        suggestionsContainerView.isHidden = true
+        suggestionsContainerView.backgroundColor = .clear
+        suggestionsContainerView.layer.shadowColor = UIColor.black.cgColor
+        suggestionsContainerView.layer.shadowOpacity = 0.15
+        suggestionsContainerView.layer.shadowOffset = CGSize(width: 0, height: 4)
+        suggestionsContainerView.layer.shadowRadius = 8
+        suggestionsContainerView.layer.masksToBounds = false
+
+        suggestionsTableView.backgroundColor = .secondarySystemGroupedBackground
         suggestionsTableView.layer.cornerRadius = 12
-        suggestionsTableView.layer.borderWidth = 0.5
-        suggestionsTableView.layer.borderColor = UIColor.systemGray3.cgColor
-        suggestionsTableView.backgroundColor = .systemBackground
-        suggestionsTableView.rowHeight = 44
+        suggestionsTableView.layer.cornerCurve = .continuous
+        suggestionsTableView.layer.masksToBounds = true
+        suggestionsTableView.clipsToBounds = true
+        suggestionsTableView.layer.borderWidth = 1
+        suggestionsTableView.layer.borderColor = UIColor.systemGray4.cgColor
+        suggestionsTableView.rowHeight = 64
         suggestionsTableView.dataSource = self
         suggestionsTableView.delegate = self
-        suggestionsTableView.register(UITableViewCell.self, forCellReuseIdentifier: "InventorySuggestionCell")
-        
-
-        suggestionsTableView.sectionHeaderTopPadding = 0
-        suggestionsTableView.sectionHeaderHeight = 0
-        suggestionsTableView.sectionFooterHeight = 0
-        suggestionsTableView.contentInset = .zero
+        suggestionsTableView.register(SuggestionTableViewCell.self, forCellReuseIdentifier: SuggestionTableViewCell.reuseIdentifier)
         suggestionsTableView.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
-        
-        // Shadow for floating appearance
-        suggestionsTableView.layer.shadowColor = UIColor.black.cgColor
-        suggestionsTableView.layer.shadowOpacity = 0.15
-        suggestionsTableView.layer.shadowOffset = CGSize(width: 0, height: 4)
-        suggestionsTableView.layer.shadowRadius = 12
-        suggestionsTableView.layer.masksToBounds = false
+        suggestionsTableView.sectionHeaderTopPadding = 0
+
+        suggestionsContainerView.addSubview(suggestionsTableView)
+        suggestionsTableView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            suggestionsTableView.leadingAnchor.constraint(equalTo: suggestionsContainerView.leadingAnchor),
+            suggestionsTableView.trailingAnchor.constraint(equalTo: suggestionsContainerView.trailingAnchor),
+            suggestionsTableView.topAnchor.constraint(equalTo: suggestionsContainerView.topAnchor),
+            suggestionsTableView.bottomAnchor.constraint(equalTo: suggestionsContainerView.bottomAnchor)
+        ])
     }
 
-    /// Removes the floating suggestions dropdown from the window and clears the
-    /// data that backs it. The dropdown lives in the window (not in the view
-    /// hierarchy of this controller) so it has to be torn down explicitly,
-    /// otherwise it keeps swallowing taps meant for the table below it.
     private func dismissSuggestions() {
+        suggestionsContainerView.isHidden = true
+        suggestionsContainerView.removeFromSuperview()
         suggestionsTableView.isHidden = true
-        suggestionsTableView.removeFromSuperview()
         currentSuggestions = []
         currentUnitSuggestions = []
         isSuggestingUnits = false
     }
 
     private func updateSuggestions(for query: String) {
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else {
+        if inventoryCache.isEmpty {
+            inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
+        }
+        guard !inventoryCache.isEmpty else {
             dismissSuggestions()
             return
         }
 
-        if inventoryCache.isEmpty {
-            inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches: [Item]
+        if normalized.isEmpty {
+            matches = inventoryCache
+        } else {
+            let filtered = InventoryMatcher.shared.getSuggestions(for: normalized, against: inventoryCache)
+            matches = filtered.isEmpty ? inventoryCache.filter { $0.name.localizedCaseInsensitiveContains(normalized) } : filtered
         }
-        let matches = InventoryMatcher.shared.getSuggestions(for: normalized, against: inventoryCache)
-        guard !matches.isEmpty, let field = activeNameField, let window = view.window else {
+
+        guard !matches.isEmpty, let field = activeNameField else {
             dismissSuggestions()
             return
         }
         currentSuggestions = matches
         isSuggestingUnits = false
 
+        let rowHeight = suggestionRowHeight(showsSubtitle: true)
+        suggestionsTableView.rowHeight = rowHeight
+        let maxRows = max(1, min(4, Int((view.bounds.height * 0.45) / rowHeight)))
+        let visibleRows = min(currentSuggestions.count, maxRows)
+        let desiredHeight = CGFloat(visibleRows) * rowHeight
+        presentSuggestionsDropdown(below: field, desiredHeight: desiredHeight)
+    }
+
+    private func suggestionRowHeight(showsSubtitle: Bool) -> CGFloat {
+        let titleHeight = UIFont.preferredFont(forTextStyle: .body).lineHeight
+        let subtitleHeight = UIFont.preferredFont(forTextStyle: .subheadline).lineHeight
+        let contentHeight = titleHeight + (showsSubtitle ? subtitleHeight + 2 : 0)
+        return max(44, ceil(contentHeight + 20))
+    }
+
+    private func presentSuggestionsDropdown(below field: UIView, desiredHeight: CGFloat) {
+        guard let window = view.window else {
+            dismissSuggestions()
+            return
+        }
 
         let fieldRect = field.convert(field.bounds, to: window)
-        
         let horizontalPadding: CGFloat = 16
         let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
-        let desiredHeight = min(CGFloat(currentSuggestions.count) * suggestionsTableView.rowHeight, 220)
-        
 
         let spaceBelow = window.bounds.height - fieldRect.maxY - 20
         let yPosition: CGFloat
         if spaceBelow >= desiredHeight {
             yPosition = fieldRect.maxY + 4
         } else {
-            yPosition = fieldRect.minY - desiredHeight - 4
+            yPosition = max(fieldRect.minY - desiredHeight - 4, 60)
         }
-        
-        suggestionsTableView.frame = CGRect(
+
+        suggestionsContainerView.frame = CGRect(
             x: horizontalPadding,
             y: yPosition,
             width: dropdownWidth,
             height: desiredHeight
         )
-        
-        if suggestionsTableView.superview != window {
-            suggestionsTableView.removeFromSuperview()
-            window.addSubview(suggestionsTableView)
+
+        if suggestionsContainerView.superview != window {
+            suggestionsContainerView.removeFromSuperview()
+            window.addSubview(suggestionsContainerView)
         }
-        
+
         suggestionsTableView.reloadData()
+        suggestionsContainerView.isHidden = false
         suggestionsTableView.isHidden = false
-        window.bringSubviewToFront(suggestionsTableView)
+        window.bringSubviewToFront(suggestionsContainerView)
     }
 
     /// Matches the typed name against the inventory. Returns `true` when the
@@ -293,7 +354,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             // responder, reloading the table tears its cell down in the middle of
             // the update, and UIKit raises NSInternalInconsistencyException.
             view.endEditing(true)
-            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: 0.0, costPricePerUnit: 0.0, createdDate: Date()))
+            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: nil, costPricePerUnit: 0.0, createdDate: Date()))
             tableView.reloadData()
         }
     }
@@ -469,7 +530,22 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
         present(alert, animated: true)
     }
 
-    @IBAction func saveButtonTapped(_ sender: UIBarButtonItem) {
+    @IBAction func saveButtonTapped(_ sender: Any) {
+        // Price validation: each billable item must have a valid price > 0
+        for item in billableItems {
+            if (item.sellingPricePerUnit ?? 0) <= 0 {
+                let itemName = item.itemName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let alert = UIAlertController(
+                    title: "Price Required",
+                    message: "Please enter a valid price for \(itemName.isEmpty ? "item" : itemName).",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                present(alert, animated: true)
+                return
+            }
+        }
+
         // Credit validation: customer name is required for credit sales
         if isCreditEnabled {
             let name = (customerName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -842,46 +918,66 @@ extension SalesEntryTableViewController {
         case .transactionTypeSlider:
             return 1
         case .invoice:
-            return 3
+            return 2
         }
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if tableView == suggestionsTableView {
-            let cell = tableView.dequeueReusableCell(withIdentifier: "InventorySuggestionCell", for: indexPath)
-            var content = cell.defaultContentConfiguration()
+            let cell = tableView.dequeueReusableCell(
+                withIdentifier: SuggestionTableViewCell.reuseIdentifier,
+                for: indexPath
+            ) as! SuggestionTableViewCell
+
             if isSuggestingUnits {
                 guard indexPath.row < currentUnitSuggestions.count else { return cell }
-                content.text = currentUnitSuggestions[indexPath.row]
+                cell.configure(title: currentUnitSuggestions[indexPath.row], subtitle: nil)
             } else {
                 guard indexPath.row < currentSuggestions.count else { return cell }
-                content.text = currentSuggestions[indexPath.row].name
+                let item = currentSuggestions[indexPath.row]
+
+                var details: [String] = []
+                if item.defaultSellingPrice > 0 {
+                    details.append(String(format: "₹%.2f", item.defaultSellingPrice))
+                }
+                if !item.unit.isEmpty {
+                    details.append(item.unit)
+                }
+                cell.configure(
+                    title: item.name,
+                    subtitle: details.isEmpty ? nil : details.joined(separator: " / ")
+                )
             }
-            content.textProperties.font = .systemFont(ofSize: 13, weight: .regular)
-            content.textProperties.numberOfLines = 1
-            cell.contentConfiguration = content
-            cell.accessoryType = .none
             return cell
         }
         
         switch SalesSection(rawValue: indexPath.section)! {
         case .customer:
             if indexPath.row == 0 {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "TwoLabelsTableViewCell", for: indexPath) as! TwoLabelsTableViewCell
-                cell.titleLabel.text = "Customer Name"
-                cell.titleLabel.textColor = .label
-                cell.detailLabel.text = customerName ?? "Tap to select"
-                cell.detailLabel.textColor = customerName != nil ? .label : .secondaryLabel
+                let identifier = "customerNameCell"
+                let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .value1, reuseIdentifier: identifier)
+                var config = UIListContentConfiguration.valueCell()
+                let personConfig = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+                config.image = UIImage(systemName: "person", withConfiguration: personConfig)
+                config.imageProperties.tintColor = .label
+                config.text = "Customer Name"
+                config.textProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.textProperties.color = .label
+                config.secondaryText = customerName ?? "Tap to select"
+                config.secondaryTextProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.secondaryTextProperties.color = customerName != nil ? .label : .secondaryLabel
+                cell.contentConfiguration = config
                 cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
                 return cell
             } else if indexPath.row == 1 {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
                 cell.titleLabel.text = "Buyer GSTIN"
-                cell.titleLabel.font = .systemFont(ofSize: 17)
+                cell.titleLabel.font = UIFont.preferredFont(forTextStyle: .body)
                 cell.titleLabel.textColor = UIColor(named: "Onyx") ?? .label
                 cell.textField.text = buyerGSTIN
                 cell.textField.placeholder = "Enter GSTIN"
-                cell.textField.font = .systemFont(ofSize: 17)
+                cell.textField.font = UIFont.preferredFont(forTextStyle: .body)
                 cell.textField.textColor = UIColor(named: "Onyx") ?? .label
                 cell.textField.autocapitalizationType = .allCharacters
                 cell.textField.removeTarget(self, action: nil, for: .allEvents)
@@ -890,9 +986,11 @@ extension SalesEntryTableViewController {
             } else {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "TwoLabelsTableViewCell", for: indexPath) as! TwoLabelsTableViewCell
                 cell.titleLabel.text = "Place of Supply"
+                cell.titleLabel.font = UIFont.preferredFont(forTextStyle: .body)
                 cell.titleLabel.textColor = UIColor(named: "Onyx") ?? .label
                 let stateName = IndianStates.stateByCode(buyerStateCode ?? "")?.name
                 cell.detailLabel.text = stateName ?? "Auto"
+                cell.detailLabel.font = UIFont.preferredFont(forTextStyle: .body)
                 cell.detailLabel.textColor = stateName != nil ? (UIColor(named: "Onyx") ?? .label) : .secondaryLabel
                 cell.accessoryType = .disclosureIndicator
                 return cell
@@ -901,9 +999,6 @@ extension SalesEntryTableViewController {
         case .items:
             if transactionItems.isEmpty || indexPath.row == transactionItems.count {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "AddNewItemTableViewCell", for: indexPath) as! AddNewItemTableViewCell
-                // The cell has its own button. Leaving the row selectable would
-                // make a single tap fire both the button action and
-                // tableView(_:didSelectRowAt:) and add the row twice.
                 cell.selectionStyle = .none
                 cell.onAddTapped = { [weak self] in
                     guard let self = self else { return }
@@ -915,105 +1010,93 @@ extension SalesEntryTableViewController {
             let item = transactionItems[indexPath.row]
             let cell = tableView.dequeueReusableCell(withIdentifier: "EditSalesItemTableViewCell", for: indexPath) as! EditSalesItemTableViewCell
             cell.selectionStyle = .none
-                cell.nameLabel.text = item.itemName
-                cell.unitLabel.text = "\(item.unit)"
-                cell.priceLabel.text = item.sellingPricePerUnit != nil ?
-                        String(format: "%.2f", item.sellingPricePerUnit!) : nil
-                cell.quantityLabel.text = item.quantity.cleanString
+            cell.nameLabel.text = item.itemName
+            cell.unitLabel.text = "\(item.unit)"
+            if let price = item.sellingPricePerUnit, price > 0 {
+                cell.priceLabel.text = String(format: "%.2f", price)
+            } else {
+                cell.priceLabel.text = nil
+            }
+            cell.priceLabel.placeholder = "Price (₹)"
+            cell.quantityLabel.text = item.quantity.cleanString
 
-                cell.nameLabel.tag = indexPath.row
-                cell.unitLabel.tag = indexPath.row
-                cell.priceLabel.tag = indexPath.row
-                cell.quantityLabel.tag = indexPath.row
-                cell.deleteButton.tag = indexPath.row
-                
-                // Cells are reused, so drop the targets of a previous
-                // configuration first - otherwise every handler is invoked once
-                // per configuration.
-                cell.nameLabel.removeTarget(self, action: nil, for: .allEvents)
-                cell.unitLabel.removeTarget(self, action: nil, for: .allEvents)
-                cell.priceLabel.removeTarget(self, action: nil, for: .allEvents)
-                cell.quantityLabel.removeTarget(self, action: nil, for: .allEvents)
-                cell.deleteButton.removeTarget(self, action: nil, for: .allEvents)
+            cell.nameLabel.tag = indexPath.row
+            cell.unitLabel.tag = indexPath.row
+            cell.priceLabel.tag = indexPath.row
+            cell.quantityLabel.tag = indexPath.row
+            cell.deleteButton.tag = indexPath.row
 
-                cell.nameLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
-                cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidBegin(_:)), for: .editingDidBegin)
-                cell.nameLabel.addTarget(self, action: #selector(itemNameChanged(_:)), for: .editingChanged)
-                cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidEnd(_:)), for: .editingDidEnd)
-                cell.deleteButton.addTarget(self, action: #selector(deleteItemTapped(_:)), for: .touchUpInside)
-                cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidBegin(_:)), for: .editingDidBegin)
-                cell.unitLabel.addTarget(self, action: #selector(itemUnitChanged(_:)), for: .editingChanged)
-                cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidEnd(_:)), for: .editingDidEnd)
-                cell.priceLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
-                cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
-                cell.quantityLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
-                cell.quantityLabel.addTarget(self, action: #selector(itemQuantityChanged(_:)), for: .editingChanged)
-                cell.quantityLabel.addTarget(self, action: #selector(itemQuantityEditingDidEnd(_:)), for: .editingDidEnd)
-                
-                cell.priceLabel.keyboardType = .decimalPad
-                cell.quantityLabel.keyboardType = .decimalPad
-                cell.nameLabel.placeholder = "Add Item"
-                cell.nameLabel.borderStyle = .roundedRect
-                cell.unitLabel.borderStyle = .roundedRect
-                cell.priceLabel.borderStyle = .roundedRect
-                cell.quantityLabel.borderStyle = .roundedRect
-                
-                return cell
+            // Clear prior targets before adding
+            cell.nameLabel.removeTarget(self, action: nil, for: .allEvents)
+            cell.unitLabel.removeTarget(self, action: nil, for: .allEvents)
+            cell.priceLabel.removeTarget(self, action: nil, for: .allEvents)
+            cell.quantityLabel.removeTarget(self, action: nil, for: .allEvents)
+            cell.deleteButton.removeTarget(self, action: nil, for: .allEvents)
+
+            cell.nameLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+            cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidBegin(_:)), for: .editingDidBegin)
+            cell.nameLabel.addTarget(self, action: #selector(itemNameChanged(_:)), for: .editingChanged)
+            cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidEnd(_:)), for: .editingDidEnd)
+            cell.deleteButton.addTarget(self, action: #selector(deleteItemTapped(_:)), for: .touchUpInside)
+            cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidBegin(_:)), for: .editingDidBegin)
+            cell.unitLabel.addTarget(self, action: #selector(itemUnitChanged(_:)), for: .editingChanged)
+            cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidEnd(_:)), for: .editingDidEnd)
+            cell.priceLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+            cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
+            cell.quantityLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+            cell.quantityLabel.addTarget(self, action: #selector(itemQuantityChanged(_:)), for: .editingChanged)
+            cell.quantityLabel.addTarget(self, action: #selector(itemQuantityEditingDidEnd(_:)), for: .editingDidEnd)
+
+            cell.priceLabel.keyboardType = .decimalPad
+            cell.quantityLabel.keyboardType = .decimalPad
+
+            return cell
+
         case .summary:
             switch indexPath.row {
             case 0:
-                let cell: UITableViewCell
-                if let dequeued = tableView.dequeueReusableCell(withIdentifier: "rightDetail") {
-                    cell = dequeued
-                } else {
-                    cell = UITableViewCell(style: .value1, reuseIdentifier: "rightDetail")
-                }
-                cell.selectionStyle = .default
-                cell.textLabel?.text = "Subtotal"
-                cell.textLabel?.font = .preferredFont(forTextStyle: .body)
-                cell.detailTextLabel?.font = .preferredFont(forTextStyle: .body)
-                cell.detailTextLabel?.text = String(format: "₹ %.2f", subTotal)
+                let identifier = "summarySubtotalCell"
+                let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .value1, reuseIdentifier: identifier)
+                var config = UIListContentConfiguration.valueCell()
+                config.text = "Subtotal"
+                config.textProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.textProperties.color = .label
+                config.secondaryText = String(format: "₹ %.2f", subTotal)
+                config.secondaryTextProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.secondaryTextProperties.color = .label
+                cell.contentConfiguration = config
+                cell.selectionStyle = .none
                 return cell
 
             case 1:
-                if isEditingEnabled {
-                    let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-                    cell.selectionStyle = .none
-                    cell.titleLabel.text = "Discount"
-                    cell.textField.keyboardType = .decimalPad
-                    cell.textField.text = discountAmount > 0 ? String(format: "%.2f", discountAmount) : ""
-                    cell.textField.placeholder = "0.00"
-                    cell.textField.removeTarget(self, action: nil, for: .allEvents)
-                    cell.textField.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
-                    cell.textField.addTarget(self, action: #selector(discountChanged(_:)), for: .editingChanged)
-                    return cell
-                }
-                else {
-                    let cell: UITableViewCell
-                    if let dequeued = tableView.dequeueReusableCell(withIdentifier: "rightDetail") {
-                        cell = dequeued
-                    } else {
-                        cell = UITableViewCell(style: .value1, reuseIdentifier: "rightDetail")
+                let cell = tableView.dequeueReusableCell(
+                    withIdentifier: InlineDiscountCell.reuseIdentifier,
+                    for: indexPath
+                ) as! InlineDiscountCell
+                cell.textField.text = discountAmount > 0 ? String(format: "%.2f", discountAmount) : ""
+                cell.onTextChanged = { [weak self] text in
+                    guard let self = self else { return }
+                    self.discountAmount = Double(text) ?? 0
+                    UIView.performWithoutAnimation {
+                        self.tableView.reloadRows(
+                            at: [IndexPath(row: 2, section: SalesSection.summary.rawValue)],
+                            with: .none
+                        )
                     }
-                    cell.textLabel?.text = "Discount"
-                    cell.detailTextLabel?.text = String(format: "₹ %.2f", discountAmount)
-                    cell.textLabel?.font = .preferredFont(forTextStyle: .body)
-                    cell.detailTextLabel?.font = .preferredFont(forTextStyle: .body)
-                    cell.selectionStyle = .none
-                    return cell
                 }
+                return cell
 
             case 2:
-                let cell: UITableViewCell
-                if let dequeued = tableView.dequeueReusableCell(withIdentifier: "rightDetail") {
-                    cell = dequeued
-                } else {
-                    cell = UITableViewCell(style: .value1, reuseIdentifier: "rightDetail")
-                }
-                cell.textLabel?.text = "Total(INR)"
-                cell.textLabel?.font = .systemFont(ofSize: 17, weight: .bold)
-                cell.detailTextLabel?.font = .systemFont(ofSize: 17, weight: .bold)
-                cell.detailTextLabel?.text = String(format: "₹ %.2f", grandTotal)
+                let identifier = "summaryTotalCell"
+                let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .value1, reuseIdentifier: identifier)
+                var config = UIListContentConfiguration.valueCell()
+                config.text = "Total (INR)"
+                config.textProperties.font = .systemFont(ofSize: 17, weight: .bold)
+                config.textProperties.color = .label
+                config.secondaryText = String(format: "₹ %.2f", grandTotal)
+                config.secondaryTextProperties.font = .systemFont(ofSize: 17, weight: .bold)
+                config.secondaryTextProperties.color = .label
+                cell.contentConfiguration = config
                 cell.selectionStyle = .none
                 return cell
             default:
@@ -1021,90 +1104,114 @@ extension SalesEntryTableViewController {
             }
 
         case .transactionTypeSlider:
-            let identifier = "creditToggleCell"
+            let identifier = "creditToggleCardCell"
             let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .default, reuseIdentifier: identifier)
             cell.selectionStyle = .none
             cell.contentView.subviews.forEach { $0.removeFromSuperview() }
 
+            let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+
+            let iconView = UIImageView()
+            iconView.translatesAutoresizingMaskIntoConstraints = false
+            let iconConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .regular)
+            iconView.image = UIImage(systemName: "creditcard", withConfiguration: iconConfig)
+            iconView.tintColor = lime
+            iconView.contentMode = .scaleAspectFit
+
             let titleLabel = UILabel()
             titleLabel.text = "Credit"
-            titleLabel.font = .preferredFont(forTextStyle: .body)
+            titleLabel.font = UIFont.preferredFont(forTextStyle: .body)
+            titleLabel.textColor = .label
 
             let subtitleLabel = UILabel()
             subtitleLabel.text = "Enable when the customer will pay later."
-            subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
+            subtitleLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
             subtitleLabel.textColor = .secondaryLabel
+            subtitleLabel.numberOfLines = 0
+            subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
 
-            let labelStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-            labelStack.axis = .vertical
-            labelStack.spacing = 2
+            let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+            textStack.axis = .vertical
+            textStack.spacing = 2
+            textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             let toggle = UISwitch()
             toggle.isOn = isCreditEnabled
+            toggle.onTintColor = lime
+            toggle.setContentCompressionResistancePriority(.required, for: .horizontal)
             toggle.addTarget(self, action: #selector(creditToggleChanged(_:)), for: .valueChanged)
 
-            let stack = UIStackView(arrangedSubviews: [labelStack, UIView(), toggle])
-            stack.axis = .horizontal
-            stack.alignment = .center
-            stack.spacing = 12
+            let mainStack = UIStackView(arrangedSubviews: [iconView, textStack, toggle])
+            mainStack.translatesAutoresizingMaskIntoConstraints = false
+            mainStack.axis = .horizontal
+            mainStack.alignment = .center
+            mainStack.spacing = 14
 
-            cell.contentView.addSubview(stack)
-            stack.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(mainStack)
             NSLayoutConstraint.activate([
-                stack.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 12),
-                stack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12),
-                stack.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-                stack.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16)
+                iconView.widthAnchor.constraint(equalToConstant: 28),
+                iconView.heightAnchor.constraint(equalToConstant: 24),
+
+                mainStack.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                mainStack.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                mainStack.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 12),
+                mainStack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12)
             ])
 
             return cell
 
         case .invoice:
-            let cell: UITableViewCell
-            if let dequeued = tableView.dequeueReusableCell(withIdentifier: "rightDetail") {
-                cell = dequeued
+            let identifier = indexPath.row == 0 ? "invoiceDateCell" : "invoiceNumberCell"
+            let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .value1, reuseIdentifier: identifier)
+
+            var config = UIListContentConfiguration.valueCell()
+            let symConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+
+            if indexPath.row == 0 {
+                config.image = UIImage(systemName: "calendar", withConfiguration: symConfig)
+                config.imageProperties.tintColor = .label
+                config.text = "Invoice Date"
+                config.textProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.textProperties.color = .label
+
+                let df = DateFormatter()
+                df.dateFormat = "d MMM yyyy"
+                config.secondaryText = df.string(from: Date())
+                config.secondaryTextProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.secondaryTextProperties.color = .secondaryLabel
+
+                cell.contentConfiguration = config
+                cell.accessoryType = .none
+                cell.selectionStyle = .none
             } else {
-                cell = UITableViewCell(style: .value1, reuseIdentifier: "rightDetail")
+                config.image = UIImage(systemName: "number", withConfiguration: symConfig)
+                config.imageProperties.tintColor = .label
+                config.text = "Invoice Number"
+                config.textProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.textProperties.color = .label
+
+                config.secondaryText = generatedInvoiceNumber
+                config.secondaryTextProperties.font = UIFont.preferredFont(forTextStyle: .body)
+                config.secondaryTextProperties.color = .secondaryLabel
+
+                cell.contentConfiguration = config
+                cell.accessoryType = .none
+                cell.selectionStyle = .none
             }
-            cell.textLabel?.text = "Invoice Date"
-            cell.textLabel?.font = .systemFont(ofSize: 17, weight: .regular)
-            cell.detailTextLabel?.font = .systemFont(ofSize: 17, weight: .regular)
-            cell.detailTextLabel?.text = String(format: "₹ %.2f", grandTotal)
-            cell.selectionStyle = .none
-            
-            if indexPath.row == 0 || indexPath.row == 1 {
-                cell.textLabel?.text = indexPath.row == 0 ? "Invoice Date" : "Invoice Number"
-                if indexPath.row == 0 {
-                    let df = DateFormatter()
-                    df.dateStyle = .medium
-                    df.timeStyle = .none
-                    cell.detailTextLabel?.text = df.string(from: Date())
-                } else {
-                    cell.detailTextLabel?.text = generatedInvoiceNumber
-                }
-                
             return cell
-            }
-            else {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "TextViewTableViewCell", for: indexPath) as! TextViewTableViewCell
-                return cell
-            }
-            
-            
         }
-    }
-    
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        if tableView == suggestionsTableView {
-            return nil
-        }
-        return SalesSection(rawValue: section)?.title
     }
     
     override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        cell.backgroundColor = .systemBackground
-        cell.layer.cornerRadius = 12
-        cell.layer.masksToBounds = true
+        if tableView == suggestionsTableView {
+            cell.backgroundColor = .secondarySystemGroupedBackground
+            return
+        }
+
+        if SalesSection(rawValue: indexPath.section) == .items {
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .clear
+        }
     }
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -1170,41 +1277,47 @@ extension SalesEntryTableViewController {
                 tableView.deselectRow(at: indexPath, animated: true)
                 promptForState()
             }
+        } else if SalesSection(rawValue: indexPath.section) == .summary {
+            if indexPath.row == 1 {
+                tableView.deselectRow(at: indexPath, animated: true)
+                if let cell = tableView.cellForRow(at: indexPath) as? InlineDiscountCell {
+                    cell.textField.becomeFirstResponder()
+                }
+            }
         }
-        
-        // The rows of the items section are not selectable: the "Add new item"
-        // cell carries its own button, and reacting to the row selection as
-        // well would add a line twice for a single tap.
     }
+
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView == tableView {
             dismissSuggestions()
         }
     }
 
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        if tableView == suggestionsTableView {
+            return nil
+        }
+        guard SalesSection(rawValue: section) != .items else { return nil }
+        return SalesSection(rawValue: section)?.title
+    }
+
     override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        if tableView == suggestionsTableView { return nil }
         guard SalesSection(rawValue: section) == .items else { return nil }
 
         let container = UIView()
         let titleLabel = UILabel()
         titleLabel.text = "Item Details"
-        titleLabel.textColor = .gray
+        titleLabel.textColor = .secondaryLabel
         titleLabel.font = UIFont.preferredFont(forTextStyle: .headline)
 
-        // Button removed
-
-        let stack = UIStackView(arrangedSubviews: [titleLabel])
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 8
-
-        container.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            titleLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
         ])
 
         return container
@@ -1280,7 +1393,7 @@ extension SalesEntryTableViewController {
         isSuggestingUnits = true
         activeNameField = nil
         activeUnitField = sender
-        updateUnitSuggestions(for: sender.text ?? "")
+        updateUnitSuggestions(for: "")
     }
 
     @objc private func itemUnitEditingDidEnd(_ sender: UITextField) {
@@ -1298,43 +1411,22 @@ extension SalesEntryTableViewController {
         if normalized.isEmpty {
             currentUnitSuggestions = allUnits
         } else {
-            currentUnitSuggestions = allUnits.filter { $0.lowercased().hasPrefix(normalized) }
+            let filtered = allUnits.filter { $0.lowercased().hasPrefix(normalized) }
+            currentUnitSuggestions = filtered.isEmpty ? allUnits : filtered
         }
         
-        guard !currentUnitSuggestions.isEmpty, let field = activeUnitField, let window = view.window else {
+        guard !currentUnitSuggestions.isEmpty, let field = activeUnitField else {
             dismissSuggestions()
             return
         }
+        isSuggestingUnits = true
 
-        let fieldRect = field.convert(field.bounds, to: window)
-        
-        let horizontalPadding: CGFloat = 16
-        let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
-        let desiredHeight = min(CGFloat(currentUnitSuggestions.count) * suggestionsTableView.rowHeight, 150)
-        
-        let spaceBelow = window.bounds.height - fieldRect.maxY
-        let yPos: CGFloat
-        if spaceBelow >= desiredHeight + 8 {
-            yPos = fieldRect.maxY + 4
-        } else {
-            yPos = fieldRect.minY - desiredHeight - 4
-        }
-        
-        suggestionsTableView.frame = CGRect(
-            x: horizontalPadding,
-            y: yPos,
-            width: dropdownWidth,
-            height: desiredHeight
-        )
-        
-        if suggestionsTableView.superview != window {
-            suggestionsTableView.removeFromSuperview()
-            window.addSubview(suggestionsTableView)
-        }
-        
-        suggestionsTableView.reloadData()
-        suggestionsTableView.isHidden = false
-        window.bringSubviewToFront(suggestionsTableView)
+        let rowHeight = suggestionRowHeight(showsSubtitle: false)
+        suggestionsTableView.rowHeight = rowHeight
+        let maxRows = max(1, min(5, Int((view.bounds.height * 0.45) / rowHeight)))
+        let visibleRows = min(currentUnitSuggestions.count, maxRows)
+        let desiredHeight = CGFloat(visibleRows) * rowHeight
+        presentSuggestionsDropdown(below: field, desiredHeight: desiredHeight)
     }
     
     @objc private func customerNameChanged(_ sender: UITextField) {
@@ -1403,11 +1495,16 @@ extension SalesEntryTableViewController: CustomerSelectionDelegate {
         customerNameField.text = name
         
         let all = CreditStore.shared.getAllCustomers()
-        if let customer = all.first(where: { $0.name == name }), let gstin = customer.gstin, !gstin.isEmpty {
+        if let customer = all.first(where: { $0.name == name }),
+           let gstin = customer.gstin, !gstin.isEmpty {
             buyerGSTIN = gstin
             if gstin.count >= 2, let state = IndianStates.stateFromGSTIN(gstin) {
                 buyerStateCode = state.code
             }
+        } else {
+            // Do not keep the GSTIN/state of a previously selected customer.
+            buyerGSTIN = nil
+            buyerStateCode = nil
         }
         
         tableView.reloadSections(IndexSet(integer: SalesSection.customer.rawValue), with: .none)
@@ -1483,4 +1580,125 @@ extension SalesEntryTableViewController: saveDelegate{
         }
     }
    
+}
+
+/// Suggestion row for the item/unit dropdown. The labels are laid out with
+/// explicit padding so the text is never clipped by the cell bounds.
+private final class SuggestionTableViewCell: UITableViewCell {
+    static let reuseIdentifier = "InventorySuggestionCell"
+
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let stack = UIStackView()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    private func configure() {
+        selectionStyle = .default
+        backgroundColor = .secondarySystemGroupedBackground
+        contentView.backgroundColor = .clear
+
+        titleLabel.font = UIFont.preferredFont(forTextStyle: .body)
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        subtitleLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 1
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+
+        stack.axis = .vertical
+        stack.spacing = 2
+        stack.alignment = .fill
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(titleLabel)
+        stack.addArrangedSubview(subtitleLabel)
+        contentView.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
+        ])
+    }
+
+    func configure(title: String, subtitle: String?) {
+        titleLabel.text = title
+        let hasSubtitle = !(subtitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        subtitleLabel.text = hasSubtitle ? subtitle : nil
+        subtitleLabel.isHidden = !hasSubtitle
+    }
+}
+
+/// Summary row with an always-visible discount field, styled like the item
+/// cells so it is obvious that the value can be edited.
+private final class InlineDiscountCell: UITableViewCell {
+    static let reuseIdentifier = "inlineDiscountCell"
+
+    let titleLabel = UILabel()
+    let textField = UITextField()
+    var onTextChanged: ((String) -> Void)?
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    private func configure() {
+        selectionStyle = .none
+        backgroundColor = .systemBackground
+
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = "Discount"
+        titleLabel.font = UIFont.preferredFont(forTextStyle: .body)
+        titleLabel.textColor = .label
+
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.borderStyle = .none
+        textField.backgroundColor = .clear
+        textField.font = UIFont.preferredFont(forTextStyle: .body)
+        textField.textColor = .label
+        textField.textAlignment = .right
+        textField.keyboardType = .decimalPad
+        textField.placeholder = "₹ 0.00"
+        textField.addTarget(self, action: #selector(editingChanged), for: .editingChanged)
+
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(textField)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            titleLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+
+            textField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            textField.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
+            textField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
+            textField.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5),
+            textField.widthAnchor.constraint(equalToConstant: 140)
+        ])
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onTextChanged = nil
+    }
+
+    @objc private func editingChanged() {
+        onTextChanged?(textField.text ?? "")
+    }
 }

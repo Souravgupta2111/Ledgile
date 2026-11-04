@@ -165,17 +165,29 @@ class CustomerSelectionViewController: UIViewController,
         } else {
             cell.applyStandardCornerMask(isFirst: isFirst, isLast: isLast)
         }
-        cell.backgroundColor = .cell
+        cell.backgroundColor = .clear
+        cell.contentView.backgroundColor = .clear
     }
     func tableView(_ tableView: UITableView,
                    cellForRowAt indexPath: IndexPath) -> UITableViewCell {
                    
+        let isFirst = indexPath.row == 0
+        let isLast = indexPath.row == (tableView.numberOfRows(inSection: indexPath.section) - 1)
+
         if indexPath.row >= filteredCustomers.count {
-            let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-            cell.contentView.backgroundColor = .cell
-            cell.textLabel?.text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-            cell.detailTextLabel?.text = "Creating New"
-            cell.detailTextLabel?.textColor = .systemOrange
+            let cell = tableView.dequeueReusableCell(
+                withIdentifier: "ItemTableViewCell",
+                for: indexPath
+            ) as! ItemTableViewCell
+            cell.itemNameLabel.text = searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+            cell.quantityLabel.text = "Creating New"
+            cell.quantityLabel.textColor = .systemOrange
+            cell.priceLabel.isHidden = true
+            cell.symbolView.isHidden = true
+            cell.separatorView.isHidden = true
+            cell.applySectionCornerMask(isFirst: isFirst, isLast: isLast)
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .clear
             return cell
         }
 
@@ -196,14 +208,20 @@ class CustomerSelectionViewController: UIViewController,
         } else if balance < 0 {
             cell.quantityLabel.text = String(format: "-₹%.0f", -balance)
             cell.quantityLabel.textColor = .systemRed
+        } else if let phone = customer.phone, !phone.isEmpty {
+            cell.quantityLabel.text = phone
+            cell.quantityLabel.textColor = .secondaryLabel
         } else {
-            cell.quantityLabel.text = nil
+            cell.quantityLabel.text = "No pending dues"
+            cell.quantityLabel.textColor = .systemGray3
         }
 
         cell.priceLabel.isHidden = true
         cell.symbolView.isHidden = true
-
-
+        cell.separatorView.isHidden = isLast
+        cell.applySectionCornerMask(isFirst: isFirst, isLast: isLast)
+        cell.backgroundColor = .clear
+        cell.contentView.backgroundColor = .clear
 
         return cell
     }

@@ -1,4 +1,4 @@
-import UIKit
+ import UIKit
 import AVFoundation
 
 
@@ -29,7 +29,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             switch self {
             case .supplier: return "Supplier"
             case .items: return "Items"
-            case .paymentType: return "Credit Purchase"
+            case .paymentType: return "Purchase type"
             case .summary: return "Summary"
             }
         }
@@ -800,23 +800,33 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
         case .supplier:
             if indexPath.row == 0 {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "StockTwoLabelsTableViewCell", for: indexPath) as! StockTwoLabelsTableViewCell
-                cell.titleLabel.text = "Supplier Name"
-                cell.titleLabel.textColor = .label
-                cell.detailLabel.text = supplierName ?? "Tap to select"
-                cell.detailLabel.textColor = supplierName != nil ? .label : .secondaryLabel
+                let identifier = "supplierNameCell"
+                let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .value1, reuseIdentifier: identifier)
+                var config = UIListContentConfiguration.valueCell()
+                let personConfig = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+                config.image = UIImage(systemName: "person", withConfiguration: personConfig)
+                config.imageProperties.tintColor = .label
+                config.text = "Supplier Name"
+                config.textProperties.font = .preferredFont(forTextStyle: .body)
+                config.textProperties.color = .label
+                config.secondaryText = supplierName ?? "Tap to select"
+                config.secondaryTextProperties.font = .preferredFont(forTextStyle: .body)
+                config.secondaryTextProperties.color = supplierName != nil ? .label : .secondaryLabel
+                cell.contentConfiguration = config
                 cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
                 return cell
             } else {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "LabelTextFieldTableViewCell", for: indexPath) as! LabelTextFieldTableViewCell
-                cell.titleLabel.text = "    Supplier GSTIN"
-                cell.titleLabel.font = .systemFont(ofSize: 17)
+                cell.titleLabel.text = "Supplier GSTIN"
+                cell.titleLabel.font = .preferredFont(forTextStyle: .body)
                 cell.titleLabel.textColor = UIColor(named: "Onyx") ?? .label
                 cell.textField.text = supplierGSTIN
-                cell.textField.placeholder = "Enter GSTIN    "
-                cell.textField.font = .systemFont(ofSize: 17)
+                cell.textField.placeholder = "Enter GSTIN"
+                cell.textField.font = .preferredFont(forTextStyle: .body)
                 cell.textField.textColor = UIColor(named: "Onyx") ?? .label
                 cell.textField.autocapitalizationType = .allCharacters
+                cell.textField.removeTarget(self, action: nil, for: .allEvents)
                 cell.textField.addTarget(self, action: #selector(supplierGSTINChanged(_:)), for: .editingChanged)
                 return cell
             }
@@ -834,6 +844,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             
             if indexPath.row == addItemRow {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "AddNewItemTableViewCell", for: indexPath) as! AddNewItemTableViewCell
+                cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+                cell.backgroundColor = .clear
+                cell.contentView.backgroundColor = .clear
+                cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
                 cell.onAddTapped = { [weak self] in
                     guard let self = self else { return }
                     self.addNewItemByEntryMode()
@@ -870,13 +884,14 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             let lineQty = isService ? max(entry.quantity, 1) : entry.quantity
             let total = Money.line(quantity: lineQty, rate: entry.costPrice)
             cell.priceLabel?.text = String(format: "₹%.2f", total)
-            
-            cell.backgroundColor = .systemBackground
-            cell.contentView.backgroundColor = .systemBackground
-            let chevron = UIImageView(image: UIImage(systemName: isExpanded ? "chevron.up" : "chevron.down"))
-            chevron.tintColor = .tertiaryLabel
-            cell.accessoryView = chevron
+
+            cell.accessoryView = nil
             cell.accessoryType = .none
+            cell.configureExpansion(isExpanded: isExpanded)
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .clear
+            cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
 
             return cell
 
@@ -886,6 +901,15 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.selectionStyle = .none
             cell.contentView.subviews.forEach { $0.removeFromSuperview() }
 
+            let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+
+            let iconView = UIImageView()
+            iconView.translatesAutoresizingMaskIntoConstraints = false
+            let iconConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .regular)
+            iconView.image = UIImage(systemName: "creditcard", withConfiguration: iconConfig)
+            iconView.tintColor = lime
+            iconView.contentMode = .scaleAspectFit
+
             let titleLabel = UILabel()
             titleLabel.text = "Credit Purchase"
             titleLabel.font = .preferredFont(forTextStyle: .body)
@@ -894,24 +918,31 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             subtitleLabel.text = "Enable if purchase is on credit."
             subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
             subtitleLabel.textColor = .secondaryLabel
+            subtitleLabel.numberOfLines = 0
+            subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
 
             let labelStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
             labelStack.axis = .vertical
             labelStack.spacing = 2
+            labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             let toggle = UISwitch()
             toggle.isOn = isPayLaterEnabled
+            toggle.onTintColor = lime
+            toggle.setContentCompressionResistancePriority(.required, for: .horizontal)
             toggle.addTarget(self, action: #selector(payLaterToggleChanged(_:)), for: .valueChanged)
 
-            let stack = UIStackView(arrangedSubviews: [labelStack, UIView(), toggle])
+            let stack = UIStackView(arrangedSubviews: [iconView, labelStack, toggle])
             stack.axis = .horizontal
             stack.alignment = .center
-            stack.spacing = 12
+            stack.spacing = 14
 
             cell.contentView.backgroundColor = .cell
             cell.contentView.addSubview(stack)
             stack.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
+                iconView.widthAnchor.constraint(equalToConstant: 28),
+                iconView.heightAnchor.constraint(equalToConstant: 24),
                 stack.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 12),
                 stack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12),
                 stack.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
@@ -920,22 +951,33 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
             return cell
         case .summary:
-            let cell = UITableViewCell(style: .value1, reuseIdentifier: "summary")
-            cell.selectionStyle = .none
             if indexPath.row == 0 {
-                cell.textLabel?.text = "Subtotal"
-                cell.detailTextLabel?.text = String(format: "₹%.2f", subTotal)
-                cell.textLabel?.font = .systemFont(ofSize: 17)
-                cell.detailTextLabel?.font = .systemFont(ofSize: 17)
-            } else {
-                cell.textLabel?.text = "Total(INR)"
-                cell.textLabel?.font = .boldSystemFont(ofSize: 17)
-                cell.detailTextLabel?.font = .boldSystemFont(ofSize: 17)
-                cell.detailTextLabel?.text = String(format: "₹%.2f", subTotal)
+                let identifier = "summarySubtotalCell"
+                let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .value1, reuseIdentifier: identifier)
+                var config = UIListContentConfiguration.valueCell()
+                config.text = "Subtotal"
+                config.textProperties.font = .preferredFont(forTextStyle: .body)
+                config.textProperties.color = .label
+                config.secondaryText = String(format: "₹ %.2f", subTotal)
+                config.secondaryTextProperties.font = .preferredFont(forTextStyle: .body)
+                config.secondaryTextProperties.color = .label
+                cell.contentConfiguration = config
+                cell.selectionStyle = .none
+                return cell
             }
-            cell.contentView.backgroundColor = .cell
-            return cell
 
+            let identifier = "summaryTotalCell"
+            let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .value1, reuseIdentifier: identifier)
+            var config = UIListContentConfiguration.valueCell()
+            config.text = "Total (INR)"
+            config.textProperties.font = .systemFont(ofSize: 17, weight: .bold)
+            config.textProperties.color = .label
+            config.secondaryText = String(format: "₹ %.2f", subTotal)
+            config.secondaryTextProperties.font = .systemFont(ofSize: 17, weight: .bold)
+            config.secondaryTextProperties.color = .label
+            cell.contentConfiguration = config
+            cell.selectionStyle = .none
+            return cell
         
         }
     }
@@ -1119,8 +1161,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.textLabel?.font = .systemFont(ofSize: 17)
             cell.detailTextLabel?.font = .systemFont(ofSize: 17)
             cell.accessoryType = .disclosureIndicator
-            cell.contentView.backgroundColor = .cell
-            cell.backgroundColor = .cell
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .systemBackground
             return cell
 
         case .lowStock:
@@ -1141,17 +1184,42 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             return cell
             
         case .expiryToggle:
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            cell.textLabel?.text = "  Has Expiry Date?"
-            cell.textLabel?.font = .systemFont(ofSize: 17)
-            cell.contentView.backgroundColor = .cell
-            cell.backgroundColor = .cell
+            let identifier = "expiryToggleCell"
+            let cell = tableView.dequeueReusableCell(withIdentifier: identifier) ?? UITableViewCell(style: .default, reuseIdentifier: identifier)
+            cell.selectionStyle = .none
+            cell.accessoryView = nil
+            cell.accessoryType = .none
+            cell.backgroundConfiguration = nil
+            cell.backgroundColor = .systemBackground
+            cell.contentView.backgroundColor = .systemBackground
+            cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+            
+            let label = UILabel()
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.text = "  Has Expiry Date?"
+            label.font = .systemFont(ofSize: 17)
+            label.textColor = .label
             
             let toggle = UISwitch()
+            toggle.translatesAutoresizingMaskIntoConstraints = false
             toggle.isOn = (entry.expiryDate != nil)
+            let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+            toggle.onTintColor = lime
             toggle.tag = entryIndex
             toggle.addTarget(self, action: #selector(expiryToggleChanged(_:)), for: .valueChanged)
-            cell.accessoryView = toggle
+            
+            cell.contentView.addSubview(label)
+            cell.contentView.addSubview(toggle)
+            
+            NSLayoutConstraint.activate([
+                cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
+                label.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                label.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
+                
+                toggle.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                toggle.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor)
+            ])
             
             return cell
             
@@ -1195,8 +1263,22 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             let lime = UIColor(named: "Lime Moss") ?? .systemGreen
             let cell = UITableViewCell()
             cell.selectionStyle = .none
-            cell.backgroundColor = .systemBackground
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+            cell.backgroundColor = .clear
             cell.contentView.backgroundColor = .systemBackground
+
+            cell.contentView.layer.cornerRadius = 14
+            cell.contentView.layer.cornerCurve = .continuous
+            cell.contentView.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            cell.contentView.layer.masksToBounds = true
+            cell.contentView.clipsToBounds = true
+
+            cell.layer.cornerRadius = 14
+            cell.layer.cornerCurve = .continuous
+            cell.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            cell.layer.masksToBounds = true
+            cell.clipsToBounds = true
+            cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
 
             let addPhotoBtn = UIButton(type: .system)
             let cameraConfig = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
@@ -1355,6 +1437,70 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         }
         guard Section(rawValue: section) == .items else { return UITableView.automaticDimension }
         return 44
+    }
+
+    override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        if tableView == suggestionsTableView { return }
+
+        guard Section(rawValue: indexPath.section) == .items else { return }
+
+        let addItemRow: Int
+        if entries.isEmpty {
+            addItemRow = 0
+        } else if let expanded = expandedItemIndex, expanded < entries.count {
+            addItemRow = entries.count + detailRowCount()
+        } else {
+            addItemRow = entries.count
+        }
+
+        if indexPath.row == addItemRow {
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .clear
+            cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
+            return
+        }
+
+        let resolved = resolveItemRow(indexPath.row)
+
+        if resolved.isDetailRow {
+            let rowTypes = detailRowTypes(for: resolved.entryIndex)
+            let isLastDetailRow = (resolved.detailRow == rowTypes.count - 1)
+
+            if isLastDetailRow {
+                cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+                cell.backgroundColor = .clear
+                cell.contentView.backgroundColor = .systemBackground
+
+                cell.contentView.layer.cornerRadius = 14
+                cell.contentView.layer.cornerCurve = .continuous
+                cell.contentView.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                cell.contentView.layer.masksToBounds = true
+                cell.contentView.clipsToBounds = true
+
+                cell.layer.cornerRadius = 14
+                cell.layer.cornerCurve = .continuous
+                cell.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                cell.layer.masksToBounds = true
+                cell.clipsToBounds = true
+
+                cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
+            } else {
+                cell.backgroundConfiguration = nil
+                cell.backgroundColor = .systemBackground
+                cell.contentView.backgroundColor = .systemBackground
+                cell.layer.cornerRadius = 0
+                cell.contentView.layer.cornerRadius = 0
+                cell.layer.maskedCorners = []
+                cell.contentView.layer.maskedCorners = []
+                cell.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 0)
+            }
+        } else {
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .clear
+            cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
+        }
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -1534,15 +1680,31 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     @objc private func expiryToggleChanged(_ sender: UISwitch) {
         let index = sender.tag
         guard index < entries.count else { return }
-        
-        if sender.isOn {
-            entries[index].expiryDate = Date()
-        } else {
-            entries[index].expiryDate = nil
+
+        guard let expanded = expandedItemIndex, expanded == index else {
+            entries[index].expiryDate = sender.isOn ? Date() : nil
+            return
         }
-        
-        
-        tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .automatic)
+
+        let currentRows = detailRowTypes(for: index)
+        guard let toggleDetailRow = currentRows.firstIndex(of: .expiryToggle) else {
+            entries[index].expiryDate = sender.isOn ? Date() : nil
+            tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .automatic)
+            return
+        }
+
+        let expiryDetailRow = toggleDetailRow + 1
+        let targetIndexPath = IndexPath(row: expanded + 1 + expiryDetailRow, section: Section.items.rawValue)
+
+        if sender.isOn {
+            guard entries[index].expiryDate == nil else { return }
+            entries[index].expiryDate = Date()
+            tableView.insertRows(at: [targetIndexPath], with: .automatic)
+        } else {
+            guard entries[index].expiryDate != nil else { return }
+            entries[index].expiryDate = nil
+            tableView.deleteRows(at: [targetIndexPath], with: .automatic)
+        }
     }
     
     @objc private func detailNameEditingDidBegin(_ sender: UITextField) {
