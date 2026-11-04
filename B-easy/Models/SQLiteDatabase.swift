@@ -1247,6 +1247,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindText(stmt, 20, "goods")
         bindBool(stmt, 21, item.isWatchlisted)
         sqlite3_step(stmt)
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func updateItem(_ item: Item) throws {
@@ -1276,6 +1277,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindBool(stmt, 19, item.isWatchlisted)
         bindUUID(stmt, 20, item.id)
         sqlite3_step(stmt)
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func deleteItem(id: UUID) throws {
@@ -1287,6 +1289,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         if sqlite3_changes(db) == 0 {
             throw DataModelError.itemNotFound
         }
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
 
@@ -1749,6 +1752,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindBlob(stmt, 4, customer.profileImageData)
         bindOptText(stmt, 5, customer.gstin)
         sqlite3_step(stmt)
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func updateCustomerRecord(_ customer: Customer) {
@@ -1761,6 +1765,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindOptText(stmt, 4, customer.gstin)
         bindUUID(stmt, 5, customer.id)
         sqlite3_step(stmt)
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func deleteCustomerCascade(id: UUID) {
@@ -1776,6 +1781,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
             bindUUID(stmt, 1, id)
             sqlite3_step(stmt)
         }
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func getCustomerByID(_ id: UUID) -> Customer? {
@@ -1806,6 +1812,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindBlob(stmt, 4, supplier.profileImageData)
         bindOptText(stmt, 5, supplier.gstin)
         sqlite3_step(stmt)
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func updateSupplierRecord(_ supplier: Supplier) {
@@ -1818,6 +1825,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
         bindOptText(stmt, 4, supplier.gstin)
         bindUUID(stmt, 5, supplier.id)
         sqlite3_step(stmt)
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func deleteSupplierCascade(id: UUID) {
@@ -1833,6 +1841,7 @@ nonisolated final class SQLiteDatabase: Database, @unchecked Sendable {
             bindUUID(stmt, 1, id)
             sqlite3_step(stmt)
         }
+        NotificationCenter.default.post(name: .ledgerCatalogDidChange, object: nil)
     }
 
     func getSupplierByID(_ id: UUID) -> Supplier? {
