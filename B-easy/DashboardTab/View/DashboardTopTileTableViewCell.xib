@@ -241,10 +241,10 @@
                                                 </connections>
                                             </button>
                                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="CreditSale" translatesAutoresizingMaskIntoConstraints="NO" id="p4k-1P-pZ6">
-                                                <rect key="frame" x="118" y="30" width="97" height="92"/>
+                                                <rect key="frame" x="145" y="41" width="70" height="70"/>
                                                 <constraints>
-                                                    <constraint firstAttribute="height" constant="92" id="h4k-1P-pZ6"/>
-                                                    <constraint firstAttribute="width" constant="97" id="w4k-1P-pZ6"/>
+                                                    <constraint firstAttribute="height" constant="70" id="h4k-1P-pZ6"/>
+                                                    <constraint firstAttribute="width" constant="70" id="w4k-1P-pZ6"/>
                                                 </constraints>
                                                 <preferredSymbolConfiguration key="preferredSymbolConfiguration" scale="large"/>
                                             </imageView>
@@ -429,8 +429,8 @@
         </tableViewCell>
     </objects>
     <resources>
-        <image name="CreditPurchase" width="1536" height="1024"/>
-        <image name="CreditSale" width="1536" height="1024"/>
+        <image name="CreditPurchase" width="1312" height="1199"/>
+        <image name="CreditSale" width="1312" height="1199"/>
         <image name="chevron.right" catalog="system" width="93" height="128"/>
         <image name="document.viewfinder" catalog="system" width="128" height="119"/>
         <image name="mic" catalog="system" width="107" height="128"/>
