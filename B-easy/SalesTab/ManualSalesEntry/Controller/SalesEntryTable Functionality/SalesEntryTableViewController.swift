@@ -51,7 +51,12 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
     var grandTotal: Double {
         Money.round2(subTotal - discountAmount + adjustmentAmount)
     }
-    private var isEditingEnabled = true
+    private var isEditingEnabled = false {
+        didSet {
+            tableView.reloadData()
+            editButton.setTitle(isEditingEnabled ? "Done" : "Edit", for: .normal)
+        }
+    }
     var customerNameField = UITextField()
     var inventoryCache: [Item] = []
     private var currentSuggestions: [Item] = []
@@ -101,9 +106,9 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             pendingResult = nil
             // entryMode is already set by the caller before pushing this VC
             appendItems(from: result)
-        } else if entryMode == .manual && transactionItems.isEmpty {
-            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: nil, costPricePerUnit: 0.0, createdDate: Date()))
         }
+
+
         
         setupNavigationButtons()
     }
@@ -350,12 +355,7 @@ class SalesEntryTableViewController: UITableViewController, UITextFieldDelegate 
             scanVC.modalPresentationStyle = .fullScreen
             present(scanVC, animated: true)
         case .manual:
-            // End editing *before* reloading. If a text field is still the first
-            // responder, reloading the table tears its cell down in the middle of
-            // the update, and UIKit raises NSInternalInconsistencyException.
-            view.endEditing(true)
-            transactionItems.append(TransactionItem(id: UUID(), transactionID: transactionID, itemID: UUID(), itemName: "", unit: "pcs", quantity: 1.0, sellingPricePerUnit: nil, costPricePerUnit: 0.0, createdDate: Date()))
-            tableView.reloadData()
+            performSegue(withIdentifier: "item_information", sender: nil)
         }
     }
 
@@ -907,11 +907,10 @@ extension SalesEntryTableViewController {
             return isGST ? 3 : 1
 
         case .items:
-            if transactionItems.isEmpty {
-                return 1
-            } else {
-                return transactionItems.count + 1
-            }
+            return transactionItems.count
+
+        case .addItem:
+            return 1
         case .summary:
             return 3
 
@@ -997,59 +996,74 @@ extension SalesEntryTableViewController {
             }
             
         case .items:
-            if transactionItems.isEmpty || indexPath.row == transactionItems.count {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "AddNewItemTableViewCell", for: indexPath) as! AddNewItemTableViewCell
-                cell.selectionStyle = .none
-                cell.onAddTapped = { [weak self] in
-                    guard let self = self else { return }
-                    self.addNewItemByEntryMode()
-                }
-                return cell
-            }
             guard indexPath.row < transactionItems.count else { return UITableViewCell() }
             let item = transactionItems[indexPath.row]
-            let cell = tableView.dequeueReusableCell(withIdentifier: "EditSalesItemTableViewCell", for: indexPath) as! EditSalesItemTableViewCell
-            cell.selectionStyle = .none
-            cell.nameLabel.text = item.itemName
-            cell.unitLabel.text = "\(item.unit)"
-            if let price = item.sellingPricePerUnit, price > 0 {
-                cell.priceLabel.text = String(format: "%.2f", price)
+
+            if !isEditingEnabled {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "SalesItemTableViewCell", for: indexPath) as! SalesItemTableViewCell
+                cell.selectionStyle = .none
+                cell.titleLabel.text = item.itemName
+                cell.detailLabel.text = String(format: "%@ × ₹%.2f", item.quantity.cleanString, item.sellingPricePerUnit ?? 0.0)
+                cell.priceLabel.text = String(format: "₹ %.2f", item.totalRevenue)
+                cell.setSeparatorHidden(indexPath.row == transactionItems.count - 1)
+                return cell
             } else {
-                cell.priceLabel.text = nil
+                let cell = tableView.dequeueReusableCell(withIdentifier: "EditSalesItemTableViewCell", for: indexPath) as! EditSalesItemTableViewCell
+                cell.selectionStyle = .none
+                cell.nameLabel.text = item.itemName
+                cell.unitLabel.text = "\(item.unit)"
+                if let price = item.sellingPricePerUnit, price > 0 {
+                    cell.priceLabel.text = String(format: "%.2f", price)
+                } else {
+                    cell.priceLabel.text = nil
+                }
+                cell.priceLabel.placeholder = "Price (₹)"
+                cell.quantityLabel.text = item.quantity.cleanString
+
+                cell.nameLabel.tag = indexPath.row
+                cell.unitLabel.tag = indexPath.row
+                cell.priceLabel.tag = indexPath.row
+                cell.quantityLabel.tag = indexPath.row
+                cell.deleteButton.tag = indexPath.row
+
+                // Clear prior targets before adding
+                cell.nameLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.unitLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.priceLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.quantityLabel.removeTarget(self, action: nil, for: .allEvents)
+                cell.deleteButton.removeTarget(self, action: nil, for: .allEvents)
+
+                cell.nameLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+                cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidBegin(_:)), for: .editingDidBegin)
+                cell.nameLabel.addTarget(self, action: #selector(itemNameChanged(_:)), for: .editingChanged)
+                cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidEnd(_:)), for: .editingDidEnd)
+                cell.deleteButton.addTarget(self, action: #selector(deleteItemTapped(_:)), for: .touchUpInside)
+                cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidBegin(_:)), for: .editingDidBegin)
+                cell.unitLabel.addTarget(self, action: #selector(itemUnitChanged(_:)), for: .editingChanged)
+                cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidEnd(_:)), for: .editingDidEnd)
+                cell.priceLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+                cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
+                cell.quantityLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
+                cell.quantityLabel.addTarget(self, action: #selector(itemQuantityChanged(_:)), for: .editingChanged)
+                cell.quantityLabel.addTarget(self, action: #selector(itemQuantityEditingDidEnd(_:)), for: .editingDidEnd)
+
+                cell.priceLabel.keyboardType = .decimalPad
+                cell.quantityLabel.keyboardType = .decimalPad
+
+                return cell
             }
-            cell.priceLabel.placeholder = "Price (₹)"
-            cell.quantityLabel.text = item.quantity.cleanString
 
-            cell.nameLabel.tag = indexPath.row
-            cell.unitLabel.tag = indexPath.row
-            cell.priceLabel.tag = indexPath.row
-            cell.quantityLabel.tag = indexPath.row
-            cell.deleteButton.tag = indexPath.row
-
-            // Clear prior targets before adding
-            cell.nameLabel.removeTarget(self, action: nil, for: .allEvents)
-            cell.unitLabel.removeTarget(self, action: nil, for: .allEvents)
-            cell.priceLabel.removeTarget(self, action: nil, for: .allEvents)
-            cell.quantityLabel.removeTarget(self, action: nil, for: .allEvents)
-            cell.deleteButton.removeTarget(self, action: nil, for: .allEvents)
-
-            cell.nameLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
-            cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidBegin(_:)), for: .editingDidBegin)
-            cell.nameLabel.addTarget(self, action: #selector(itemNameChanged(_:)), for: .editingChanged)
-            cell.nameLabel.addTarget(self, action: #selector(itemNameEditingDidEnd(_:)), for: .editingDidEnd)
-            cell.deleteButton.addTarget(self, action: #selector(deleteItemTapped(_:)), for: .touchUpInside)
-            cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidBegin(_:)), for: .editingDidBegin)
-            cell.unitLabel.addTarget(self, action: #selector(itemUnitChanged(_:)), for: .editingChanged)
-            cell.unitLabel.addTarget(self, action: #selector(itemUnitEditingDidEnd(_:)), for: .editingDidEnd)
-            cell.priceLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
-            cell.priceLabel.addTarget(self, action: #selector(itemPriceChanged(_:)), for: .editingChanged)
-            cell.quantityLabel.addTarget(self, action: #selector(clearTextField(_:)), for: .editingDidBegin)
-            cell.quantityLabel.addTarget(self, action: #selector(itemQuantityChanged(_:)), for: .editingChanged)
-            cell.quantityLabel.addTarget(self, action: #selector(itemQuantityEditingDidEnd(_:)), for: .editingDidEnd)
-
-            cell.priceLabel.keyboardType = .decimalPad
-            cell.quantityLabel.keyboardType = .decimalPad
-
+        case .addItem:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "AddNewItemTableViewCell", for: indexPath) as! AddNewItemTableViewCell
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+            cell.backgroundColor = .clear
+            cell.contentView.backgroundColor = .clear
+            cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
+            cell.selectionStyle = .none
+            cell.onAddTapped = { [weak self] in
+                guard let self = self else { return }
+                self.addNewItemByEntryMode()
+            }
             return cell
 
         case .summary:
@@ -1122,18 +1136,7 @@ extension SalesEntryTableViewController {
             titleLabel.text = "Credit"
             titleLabel.font = UIFont.preferredFont(forTextStyle: .body)
             titleLabel.textColor = .label
-
-            let subtitleLabel = UILabel()
-            subtitleLabel.text = "Enable when the customer will pay later."
-            subtitleLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
-            subtitleLabel.textColor = .secondaryLabel
-            subtitleLabel.numberOfLines = 0
-            subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-
-            let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-            textStack.axis = .vertical
-            textStack.spacing = 2
-            textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             let toggle = UISwitch()
             toggle.isOn = isCreditEnabled
@@ -1141,7 +1144,7 @@ extension SalesEntryTableViewController {
             toggle.setContentCompressionResistancePriority(.required, for: .horizontal)
             toggle.addTarget(self, action: #selector(creditToggleChanged(_:)), for: .valueChanged)
 
-            let mainStack = UIStackView(arrangedSubviews: [iconView, textStack, toggle])
+            let mainStack = UIStackView(arrangedSubviews: [iconView, titleLabel, toggle])
             mainStack.translatesAutoresizingMaskIntoConstraints = false
             mainStack.axis = .horizontal
             mainStack.alignment = .center
@@ -1209,8 +1212,47 @@ extension SalesEntryTableViewController {
         }
 
         if SalesSection(rawValue: indexPath.section) == .items {
+            if isEditingEnabled {
+                cell.backgroundColor = .clear
+                cell.contentView.backgroundColor = .clear
+                cell.layer.cornerRadius = 0
+                cell.layer.masksToBounds = false
+                cell.contentView.layer.cornerRadius = 0
+                cell.contentView.layer.masksToBounds = false
+            } else {
+                cell.backgroundColor = .systemBackground
+                cell.contentView.backgroundColor = .systemBackground
+                let totalRows = transactionItems.count
+                if totalRows == 1 {
+                    cell.layer.cornerRadius = 12
+                    cell.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                } else if indexPath.row == 0 {
+                    cell.layer.cornerRadius = 12
+                    cell.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+                } else if indexPath.row == totalRows - 1 {
+                    cell.layer.cornerRadius = 12
+                    cell.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                } else {
+                    cell.layer.cornerRadius = 0
+                    cell.layer.maskedCorners = []
+                }
+                cell.layer.masksToBounds = true
+                cell.contentView.layer.cornerRadius = cell.layer.cornerRadius
+                cell.contentView.layer.maskedCorners = cell.layer.maskedCorners
+                cell.contentView.layer.masksToBounds = true
+                if let sub = cell.contentView.subviews.first {
+                    sub.layer.cornerRadius = cell.layer.cornerRadius
+                    sub.layer.maskedCorners = cell.layer.maskedCorners
+                    sub.layer.masksToBounds = true
+                }
+            }
+        } else if SalesSection(rawValue: indexPath.section) == .addItem {
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
             cell.backgroundColor = .clear
             cell.contentView.backgroundColor = .clear
+            cell.layer.cornerRadius = 0
+            cell.layer.masksToBounds = false
+            cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
         }
     }
     
@@ -1277,6 +1319,8 @@ extension SalesEntryTableViewController {
                 tableView.deselectRow(at: indexPath, animated: true)
                 promptForState()
             }
+        } else if SalesSection(rawValue: indexPath.section) == .addItem {
+            addNewItemByEntryMode()
         } else if SalesSection(rawValue: indexPath.section) == .summary {
             if indexPath.row == 1 {
                 tableView.deselectRow(at: indexPath, animated: true)
@@ -1297,7 +1341,8 @@ extension SalesEntryTableViewController {
         if tableView == suggestionsTableView {
             return nil
         }
-        guard SalesSection(rawValue: section) != .items else { return nil }
+        guard SalesSection(rawValue: section) != .items,
+              SalesSection(rawValue: section) != .addItem else { return nil }
         return SalesSection(rawValue: section)?.title
     }
 
@@ -1311,13 +1356,25 @@ extension SalesEntryTableViewController {
         titleLabel.textColor = .secondaryLabel
         titleLabel.font = UIFont.preferredFont(forTextStyle: .headline)
 
-        container.addSubview(titleLabel)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        let button = UIButton(type: .system)
+        button.setTitle(isEditingEnabled ? "Done" : "Edit", for: .normal)
+        button.setTitleColor(UIColor(named: "Lime Moss") ?? .systemGreen, for: .normal)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        button.addTarget(self, action: #selector(toggleEditing), for: .touchUpInside)
+        button.isHidden = transactionItems.isEmpty
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, UIView(), button])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 8
+
+        container.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
-            titleLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
         ])
 
         return container
@@ -1327,8 +1384,24 @@ extension SalesEntryTableViewController {
         if tableView == suggestionsTableView {
             return 0.01
         }
+        if SalesSection(rawValue: section) == .addItem {
+            return 0.01
+        }
         guard SalesSection(rawValue: section) == .items else { return UITableView.automaticDimension }
         return 44
+    }
+
+    override func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        if tableView == suggestionsTableView {
+            return 0.01
+        }
+        if SalesSection(rawValue: section) == .items && transactionItems.isEmpty {
+            return 0.01
+        }
+        if SalesSection(rawValue: section) == .addItem {
+            return 6
+        }
+        return UITableView.automaticDimension
     }
 
     @objc private func toggleEditing() {
@@ -1382,8 +1455,13 @@ extension SalesEntryTableViewController {
 
     @objc private func itemNameEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            if self?.activeNameField == sender {
-                self?.dismissSuggestions()
+            guard let self = self else { return }
+            if self.isSuggestingUnits || self.activeUnitField != nil {
+                return
+            }
+            if self.activeNameField == sender {
+                self.activeNameField = nil
+                self.dismissSuggestions()
             }
         }
     }
@@ -1398,8 +1476,13 @@ extension SalesEntryTableViewController {
 
     @objc private func itemUnitEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            if self?.activeUnitField == sender {
-                self?.dismissSuggestions()
+            guard let self = self else { return }
+            if !self.isSuggestingUnits || self.activeNameField != nil {
+                return
+            }
+            if self.activeUnitField == sender {
+                self.activeUnitField = nil
+                self.dismissSuggestions()
             }
         }
     }

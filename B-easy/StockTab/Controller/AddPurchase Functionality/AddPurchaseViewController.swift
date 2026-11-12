@@ -29,7 +29,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             switch self {
             case .supplier: return "Supplier"
             case .items: return "Items"
-            case .paymentType: return "Credit Purchase"
+            case .paymentType: return "Payment Type"
             case .summary: return "Summary"
             }
         }
@@ -42,6 +42,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     private var isPayLaterEnabled = false
     private var inventoryCache: [Item] = []
     private var currentSuggestions: [Item] = []
+    private let suggestionsContainerView = UIView()
     private let suggestionsTableView = UITableView(frame: .zero, style: .plain)
     private weak var activeNameField: UITextField?
     private weak var activeUnitField: UITextField?
@@ -96,6 +97,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                            forCellReuseIdentifier: "StockTwoLabelsTableViewCell")
         inventoryCache = (try? AppDataModel.shared.dataModel.db.getAllItems()) ?? []
         setupSuggestionsTableView()
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTableTap(_:)))
+        tap.cancelsTouchesInView = false
+        tableView.addGestureRecognizer(tap)
         
         // Apply any data passed before viewDidLoad (e.g. from voice or scan callback)
         if let result = pendingResult {
@@ -110,6 +115,25 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             entries.append(PurchaseEntry())
         }
         setupBackButton()
+    }
+
+    @objc private func handleTableTap(_ gesture: UITapGestureRecognizer) {
+        if !suggestionsContainerView.isHidden {
+            let location = gesture.location(in: suggestionsContainerView)
+            if !suggestionsContainerView.bounds.contains(location) {
+                dismissSuggestions()
+            }
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        dismissSuggestions()
+    }
+
+    deinit {
+        suggestionsContainerView.removeFromSuperview()
+        suggestionsTableView.removeFromSuperview()
     }
 
     private func setupBackButton() {
@@ -133,6 +157,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     }
 
     @objc private func backButtonTapped() {
+        dismissSuggestions()
         if !entries.isEmpty {
             let alert = UIAlertController(title: "Unsaved Changes", message: "You have an ongoing purchase. Going back will erase this purchase. Are you sure?", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
@@ -146,35 +171,87 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     }
 
     private func setupSuggestionsTableView() {
-        suggestionsTableView.isHidden = true
+        suggestionsContainerView.isHidden = true
+        suggestionsContainerView.backgroundColor = .clear
+        suggestionsContainerView.layer.shadowColor = UIColor.black.cgColor
+        suggestionsContainerView.layer.shadowOpacity = 0.15
+        suggestionsContainerView.layer.shadowOffset = CGSize(width: 0, height: 4)
+        suggestionsContainerView.layer.shadowRadius = 8
+        suggestionsContainerView.layer.masksToBounds = false
+
+        suggestionsTableView.backgroundColor = .secondarySystemGroupedBackground
         suggestionsTableView.layer.cornerRadius = 12
-        suggestionsTableView.layer.borderWidth = 0.5
-        suggestionsTableView.layer.borderColor = UIColor.systemGray3.cgColor
-        suggestionsTableView.backgroundColor = .systemBackground
+        suggestionsTableView.layer.cornerCurve = .continuous
+        suggestionsTableView.layer.masksToBounds = true
+        suggestionsTableView.clipsToBounds = true
+        suggestionsTableView.layer.borderWidth = 1
+        suggestionsTableView.layer.borderColor = UIColor.systemGray4.cgColor
         suggestionsTableView.rowHeight = 44
         suggestionsTableView.dataSource = self
         suggestionsTableView.delegate = self
         suggestionsTableView.register(UITableViewCell.self, forCellReuseIdentifier: "PurchaseSuggestionCell")
-        
-        suggestionsTableView.sectionHeaderTopPadding = 0
-        suggestionsTableView.sectionHeaderHeight = 0
-        suggestionsTableView.sectionFooterHeight = 0
-        suggestionsTableView.contentInset = .zero
         suggestionsTableView.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
-        
-        // Shadow for floating appearance
-        suggestionsTableView.layer.shadowColor = UIColor.black.cgColor
-        suggestionsTableView.layer.shadowOpacity = 0.15
-        suggestionsTableView.layer.shadowOffset = CGSize(width: 0, height: 4)
-        suggestionsTableView.layer.shadowRadius = 12
-        suggestionsTableView.layer.masksToBounds = false
+        suggestionsTableView.sectionHeaderTopPadding = 0
+
+        suggestionsContainerView.addSubview(suggestionsTableView)
+        suggestionsTableView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            suggestionsTableView.leadingAnchor.constraint(equalTo: suggestionsContainerView.leadingAnchor),
+            suggestionsTableView.trailingAnchor.constraint(equalTo: suggestionsContainerView.trailingAnchor),
+            suggestionsTableView.topAnchor.constraint(equalTo: suggestionsContainerView.topAnchor),
+            suggestionsTableView.bottomAnchor.constraint(equalTo: suggestionsContainerView.bottomAnchor)
+        ])
+    }
+
+    private func dismissSuggestions() {
+        suggestionsContainerView.isHidden = true
+        suggestionsContainerView.removeFromSuperview()
+        suggestionsTableView.isHidden = true
+        currentSuggestions = []
+        currentUnitSuggestions = []
+        isSuggestingUnits = false
+    }
+
+    private func presentSuggestionsDropdown(below field: UIView, desiredHeight: CGFloat) {
+        guard let window = view.window else {
+            dismissSuggestions()
+            return
+        }
+
+        let fieldRect = field.convert(field.bounds, to: window)
+        let horizontalPadding: CGFloat = 16
+        let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
+
+        let spaceBelow = window.bounds.height - fieldRect.maxY - 20
+        let yPosition: CGFloat
+        if spaceBelow >= desiredHeight {
+            yPosition = fieldRect.maxY + 4
+        } else {
+            yPosition = max(fieldRect.minY - desiredHeight - 4, 60)
+        }
+
+        suggestionsContainerView.frame = CGRect(
+            x: horizontalPadding,
+            y: yPosition,
+            width: dropdownWidth,
+            height: desiredHeight
+        )
+
+        if suggestionsContainerView.superview != window {
+            suggestionsContainerView.removeFromSuperview()
+            window.addSubview(suggestionsContainerView)
+        }
+
+        suggestionsTableView.reloadData()
+        suggestionsContainerView.isHidden = false
+        suggestionsTableView.isHidden = false
+        window.bringSubviewToFront(suggestionsContainerView)
     }
 
     private func updateSuggestions(for query: String) {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+            dismissSuggestions()
             return
         }
 
@@ -183,43 +260,17 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         }
         currentSuggestions = InventoryMatcher.shared.getSuggestions(for: normalized, against: inventoryCache)
         guard !currentSuggestions.isEmpty, let field = activeNameField else {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+            dismissSuggestions()
             return
         }
+        isSuggestingUnits = false
 
-        // Add to the application window so it floats above the table view
-        guard let window = view.window else { return }
-        
-        let fieldRect = field.convert(field.bounds, to: window)
-        
-        let horizontalPadding: CGFloat = 16
-        let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
-        let desiredHeight = min(CGFloat(currentSuggestions.count) * suggestionsTableView.rowHeight, 220)
-        
-        let spaceBelow = window.bounds.height - fieldRect.maxY - 20
-        let yPosition: CGFloat
-        if spaceBelow >= desiredHeight {
-            yPosition = fieldRect.maxY + 4
-        } else {
-            yPosition = fieldRect.minY - desiredHeight - 4
-        }
-        
-        suggestionsTableView.frame = CGRect(
-            x: horizontalPadding,
-            y: yPosition,
-            width: dropdownWidth,
-            height: desiredHeight
-        )
-        
-        if suggestionsTableView.superview != window {
-            suggestionsTableView.removeFromSuperview()
-            window.addSubview(suggestionsTableView)
-        }
-        
-        suggestionsTableView.reloadData()
-        suggestionsTableView.isHidden = false
-        window.bringSubviewToFront(suggestionsTableView)
+        let rowHeight: CGFloat = 44
+        suggestionsTableView.rowHeight = rowHeight
+        let maxRows = max(1, min(4, Int((view.bounds.height * 0.45) / rowHeight)))
+        let visibleRows = min(currentSuggestions.count, maxRows)
+        let desiredHeight = CGFloat(visibleRows) * rowHeight
+        presentSuggestionsDropdown(below: field, desiredHeight: desiredHeight)
     }
 
     private func syncInventoryMatchForEntry(at index: Int) {
@@ -783,6 +834,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if tableView == suggestionsTableView {
             let cell = tableView.dequeueReusableCell(withIdentifier: "PurchaseSuggestionCell", for: indexPath)
+            cell.backgroundColor = .secondarySystemGroupedBackground
             var content = cell.defaultContentConfiguration()
             if isSuggestingUnits {
                 content.text = currentUnitSuggestions[indexPath.row]
@@ -911,20 +963,9 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             iconView.contentMode = .scaleAspectFit
 
             let titleLabel = UILabel()
-            titleLabel.text = "Credit Purchase"
+            titleLabel.text = "Credit"
             titleLabel.font = .preferredFont(forTextStyle: .body)
-
-            let subtitleLabel = UILabel()
-            subtitleLabel.text = "Enable if purchase is on credit."
-            subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
-            subtitleLabel.textColor = .secondaryLabel
-            subtitleLabel.numberOfLines = 0
-            subtitleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-
-            let labelStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-            labelStack.axis = .vertical
-            labelStack.spacing = 2
-            labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             let toggle = UISwitch()
             toggle.isOn = isPayLaterEnabled
@@ -932,7 +973,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             toggle.setContentCompressionResistancePriority(.required, for: .horizontal)
             toggle.addTarget(self, action: #selector(payLaterToggleChanged(_:)), for: .valueChanged)
 
-            let stack = UIStackView(arrangedSubviews: [iconView, labelStack, toggle])
+            let stack = UIStackView(arrangedSubviews: [iconView, titleLabel, toggle])
             stack.axis = .horizontal
             stack.alignment = .center
             stack.spacing = 14
@@ -1440,7 +1481,10 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     }
 
     override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        if tableView == suggestionsTableView { return }
+        if tableView == suggestionsTableView {
+            cell.backgroundColor = .secondarySystemGroupedBackground
+            return
+        }
 
         guard Section(rawValue: indexPath.section) == .items else { return }
 
@@ -1515,9 +1559,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                 entries[index].selectedUnitName = unit
                 field.text = unit
                 
-                suggestionsTableView.isHidden = true
-                suggestionsTableView.removeFromSuperview()
-                isSuggestingUnits = false
+                dismissSuggestions()
                 field.resignFirstResponder()
                 
                 self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
@@ -1539,8 +1581,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                 if let rate = selectedItem.gstRate { entries[index].gstRate = rate }
 
                 field.text = selectedItem.name
-                suggestionsTableView.isHidden = true
-                suggestionsTableView.removeFromSuperview()
+                dismissSuggestions()
                 field.resignFirstResponder()
                 tableView.deselectRow(at: indexPath, animated: true)
                 self.tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
@@ -1633,8 +1674,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView == tableView {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+            dismissSuggestions()
         }
     }
     
@@ -1708,6 +1748,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     }
     
     @objc private func detailNameEditingDidBegin(_ sender: UITextField) {
+        activeUnitField = nil
         isSuggestingUnits = false
         activeNameField = sender
         updateSuggestions(for: sender.text ?? "")
@@ -1727,18 +1768,23 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     
     @objc private func detailNameEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            if self?.activeNameField == sender {
-                self?.suggestionsTableView.isHidden = true
-                self?.suggestionsTableView.removeFromSuperview()
+            guard let self = self else { return }
+            if self.isSuggestingUnits || self.activeUnitField != nil {
+                return
+            }
+            if self.activeNameField == sender {
+                self.activeNameField = nil
+                self.dismissSuggestions()
             }
         }
     }
     
     @objc private func detailUnitEditingDidBegin(_ sender: UITextField) {
         sender.selectAll(nil)
+        activeNameField = nil
         activeUnitField = sender
         isSuggestingUnits = true
-        updateUnitSuggestions(for: sender.text ?? "")
+        updateUnitSuggestions(for: "")
     }
 
     @objc private func detailUnitEditingChanged(_ sender: UITextField) {
@@ -1752,10 +1798,13 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
 
     @objc private func detailUnitEditingDidEnd(_ sender: UITextField) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            if self?.activeUnitField == sender {
-                self?.suggestionsTableView.isHidden = true
-                self?.suggestionsTableView.removeFromSuperview()
-                self?.isSuggestingUnits = false
+            guard let self = self else { return }
+            if !self.isSuggestingUnits || self.activeNameField != nil {
+                return
+            }
+            if self.activeUnitField == sender {
+                self.activeUnitField = nil
+                self.dismissSuggestions()
             }
         }
     }
@@ -1771,41 +1820,17 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         }
         
         guard !currentUnitSuggestions.isEmpty, let field = activeUnitField else {
-            suggestionsTableView.isHidden = true
-            suggestionsTableView.removeFromSuperview()
+            dismissSuggestions()
             return
         }
+        isSuggestingUnits = true
 
-        guard let window = view.window else { return }
-        let fieldRect = field.convert(field.bounds, to: window)
-        
-        let horizontalPadding: CGFloat = 16
-        let dropdownWidth = window.bounds.width - (horizontalPadding * 2)
-        let desiredHeight = min(CGFloat(currentUnitSuggestions.count) * suggestionsTableView.rowHeight, 150)
-        
-        let spaceBelow = window.bounds.height - fieldRect.maxY
-        let yPos: CGFloat
-        if spaceBelow >= desiredHeight + 8 {
-            yPos = fieldRect.maxY + 4
-        } else {
-            yPos = fieldRect.minY - desiredHeight - 4
-        }
-        
-        suggestionsTableView.frame = CGRect(
-            x: horizontalPadding,
-            y: yPos,
-            width: dropdownWidth,
-            height: desiredHeight
-        )
-        
-        if suggestionsTableView.superview != window {
-            suggestionsTableView.removeFromSuperview()
-            window.addSubview(suggestionsTableView)
-        }
-        
-        suggestionsTableView.reloadData()
-        suggestionsTableView.isHidden = false
-        window.bringSubviewToFront(suggestionsTableView)
+        let rowHeight: CGFloat = 44
+        suggestionsTableView.rowHeight = rowHeight
+        let maxRows = max(1, min(4, Int((view.bounds.height * 0.45) / rowHeight)))
+        let visibleRows = min(currentUnitSuggestions.count, maxRows)
+        let desiredHeight = CGFloat(visibleRows) * rowHeight
+        presentSuggestionsDropdown(below: field, desiredHeight: desiredHeight)
     }
     
     // MARK: - Photo/Video for expanded entries

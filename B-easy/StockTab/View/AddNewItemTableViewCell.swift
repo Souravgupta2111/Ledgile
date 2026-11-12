@@ -33,7 +33,7 @@ class AddNewItemTableViewCell: UITableViewCell {
         addButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
         let plusConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
         addButton.setImage(UIImage(systemName: "plus.circle", withConfiguration: plusConfig), for: .normal)
-        addButton.setTitle("  Add another item", for: .normal)
+        addButton.setTitle("  Add an item", for: .normal)
         addButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
 
         contentView.addSubview(addButton)
