@@ -655,31 +655,6 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
                     itemID = newItem.id
                 }
 
-                if !entry.pendingItemPhotos.isEmpty {
-                    let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                    let tabsDataDir = docsDir.appendingPathComponent("TabsData", isDirectory: true)
-                    let photosDir = tabsDataDir.appendingPathComponent("ProductPhotos/\(itemID.uuidString)")
-                    try? FileManager.default.createDirectory(at: photosDir, withIntermediateDirectories: true)
-
-                    for photo in entry.pendingItemPhotos {
-                        if let jpegData = photo.jpegData(compressionQuality: 0.7) {
-                            let fileName = UUID().uuidString + ".jpg"
-                            let absolutePath = photosDir.appendingPathComponent(fileName)
-                            try? jpegData.write(to: absolutePath)
-
-                            let relativePath = "ProductPhotos/\(itemID.uuidString)/\(fileName)"
-                            let productPhoto = ProductPhoto(
-                                id: UUID(),
-                                itemID: itemID,
-                                localPath: relativePath,
-                                createdAt: Date()
-                            )
-                            try? db.insertProductPhoto(productPhoto)
-                        }
-                    }
-                    ProductFingerprintManager.shared.updateEmbeddings(for: itemID) { }
-                }
-
                 purchaseItems.append((
                     itemID: itemID,
                     quantity: quantity,
@@ -963,7 +938,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             iconView.contentMode = .scaleAspectFit
 
             let titleLabel = UILabel()
-            titleLabel.text = "Credit"
+            titleLabel.text = "Credit Purchase"
             titleLabel.font = .preferredFont(forTextStyle: .body)
             titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
@@ -1029,7 +1004,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
     private enum DetailRowType {
         case itemName, unit, quantity, costPrice, sellingPrice
         case hsnCode, gstRate   // GST-only
-        case lowStock, expiryToggle, expiry, barcode, photoRecord
+        case lowStock, expiryToggle, expiry, barcode, deleteItem
     }
 
 
@@ -1049,7 +1024,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             if entries[entryIndex].expiryDate != nil {
                 rows.append(.expiry)
             }
-            rows.append(contentsOf: [.barcode, .photoRecord])
+            rows.append(contentsOf: [.barcode, .deleteItem])
         }
         return rows
     }
@@ -1300,8 +1275,7 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.textField.rightViewMode = .always
             return cell
             
-        case .photoRecord:
-            let lime = UIColor(named: "Lime Moss") ?? .systemGreen
+        case .deleteItem:
             let cell = UITableViewCell()
             cell.selectionStyle = .none
             cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
@@ -1321,118 +1295,22 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             cell.clipsToBounds = true
             cell.separatorInset = UIEdgeInsets(top: 0, left: 10000, bottom: 0, right: 0)
 
-            let addPhotoBtn = UIButton(type: .system)
-            let cameraConfig = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-            addPhotoBtn.setImage(UIImage(systemName: "camera.badge.ellipsis", withConfiguration: cameraConfig), for: .normal)
-            addPhotoBtn.setTitle(" Photo", for: .normal)
-            addPhotoBtn.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
-            addPhotoBtn.tintColor = lime
-            addPhotoBtn.setTitleColor(lime, for: .normal)
-            addPhotoBtn.tag = entryIndex
-            addPhotoBtn.addTarget(self, action: #selector(addPhotoForEntry(_:)), for: .touchUpInside)
-            addPhotoBtn.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(addPhotoBtn)
-
-            let recordBtn = UIButton(type: .system)
-            let recordConfig = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-            recordBtn.setImage(UIImage(systemName: "record.circle", withConfiguration: recordConfig), for: .normal)
-            recordBtn.setTitle(" Record", for: .normal)
-            recordBtn.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
-            recordBtn.tintColor = lime
-            recordBtn.setTitleColor(lime, for: .normal)
-            recordBtn.tag = entryIndex
-            recordBtn.addTarget(self, action: #selector(recordVideoForEntry(_:)), for: .touchUpInside)
-            recordBtn.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(recordBtn)
-
             let deleteBtn = UIButton(type: .system)
-            deleteBtn.setImage(UIImage(systemName: "trash", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)), for: .normal)
+            let trashConfig = UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+            deleteBtn.setImage(UIImage(systemName: "trash", withConfiguration: trashConfig), for: .normal)
+            deleteBtn.setTitle(" Delete Item", for: .normal)
+            deleteBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
             deleteBtn.tintColor = .systemRed
+            deleteBtn.setTitleColor(.systemRed, for: .normal)
             deleteBtn.tag = entryIndex
             deleteBtn.addTarget(self, action: #selector(deleteItem(_:)), for: .touchUpInside)
             deleteBtn.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(deleteBtn)
 
-            let photos = entry.pendingItemPhotos
-            let subtitle = UILabel()
-            if photos.isEmpty {
-                subtitle.text = ""
-            } else {
-                subtitle.text = photos.count == 1 ? "1 Picture" : "\(photos.count) Pictures"
-            }
-            subtitle.font = .systemFont(ofSize: 13)
-            subtitle.textColor = photos.isEmpty ? .secondaryLabel : lime
-            subtitle.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(subtitle)
-
-            let scroll = UIScrollView()
-            scroll.showsHorizontalScrollIndicator = false
-            scroll.translatesAutoresizingMaskIntoConstraints = false
-            cell.contentView.addSubview(scroll)
-
-            let preview = UIStackView()
-            preview.axis = .horizontal
-            preview.spacing = 8
-            preview.translatesAutoresizingMaskIntoConstraints = false
-            scroll.addSubview(preview)
-
-            for (photoIndex, image) in photos.enumerated() {
-                let wrap = UIView()
-                wrap.translatesAutoresizingMaskIntoConstraints = false
-                NSLayoutConstraint.activate([
-                    wrap.widthAnchor.constraint(equalToConstant: 56),
-                    wrap.heightAnchor.constraint(equalToConstant: 56)
-                ])
-                let iv = UIImageView(image: image)
-                iv.contentMode = .scaleAspectFill
-                iv.clipsToBounds = true
-                iv.layer.cornerRadius = 8
-                iv.translatesAutoresizingMaskIntoConstraints = false
-                wrap.addSubview(iv)
-                NSLayoutConstraint.activate([
-                    iv.topAnchor.constraint(equalTo: wrap.topAnchor),
-                    iv.leadingAnchor.constraint(equalTo: wrap.leadingAnchor),
-                    iv.trailingAnchor.constraint(equalTo: wrap.trailingAnchor),
-                    iv.bottomAnchor.constraint(equalTo: wrap.bottomAnchor)
-                ])
-                let close = UIButton(type: .system)
-                close.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
-                close.tintColor = .secondaryLabel
-                close.tag = entryIndex * 1000 + photoIndex
-                close.addTarget(self, action: #selector(removePendingPhoto(_:)), for: .touchUpInside)
-                close.translatesAutoresizingMaskIntoConstraints = false
-                wrap.addSubview(close)
-                NSLayoutConstraint.activate([
-                    close.topAnchor.constraint(equalTo: wrap.topAnchor, constant: -6),
-                    close.trailingAnchor.constraint(equalTo: wrap.trailingAnchor, constant: 6)
-                ])
-                preview.addArrangedSubview(wrap)
-            }
-
             NSLayoutConstraint.activate([
-                addPhotoBtn.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-                addPhotoBtn.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 10),
-
-                recordBtn.centerYAnchor.constraint(equalTo: addPhotoBtn.centerYAnchor),
-                recordBtn.leadingAnchor.constraint(equalTo: addPhotoBtn.trailingAnchor, constant: 20),
-
-                subtitle.centerYAnchor.constraint(equalTo: addPhotoBtn.centerYAnchor),
-                subtitle.leadingAnchor.constraint(equalTo: recordBtn.trailingAnchor, constant: 12),
-
-                deleteBtn.centerYAnchor.constraint(equalTo: addPhotoBtn.centerYAnchor),
-                deleteBtn.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
-
-                scroll.topAnchor.constraint(equalTo: addPhotoBtn.bottomAnchor, constant: photos.isEmpty ? 0 : 10),
-                scroll.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
-                scroll.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
-                scroll.heightAnchor.constraint(equalToConstant: photos.isEmpty ? 0 : 56),
-                scroll.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -10),
-
-                preview.topAnchor.constraint(equalTo: scroll.topAnchor),
-                preview.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
-                preview.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
-                preview.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
-                preview.heightAnchor.constraint(equalTo: scroll.heightAnchor)
+                deleteBtn.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 10),
+                deleteBtn.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -10),
+                deleteBtn.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16)
             ])
 
             return cell
@@ -1711,7 +1589,6 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
             entries[index].quantity = max(entries[index].quantity, 1)
             entries[index].lowStockThreshold = 0
             entries[index].expiryDate = nil
-            entries[index].pendingItemPhotos = []
             entries[index].barcode = nil
         }
         tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .automatic)
@@ -1974,70 +1851,6 @@ class AddPurchaseViewController: UITableViewController, PurchaseItemInformationD
         let nav = UINavigationController(rootViewController: scanVC)
         present(nav, animated: true)
     }
-
-    @objc private func removePendingPhoto(_ sender: UIButton) {
-        let entryIndex = sender.tag / 1000
-        let photoIndex = sender.tag % 1000
-        guard entryIndex < entries.count,
-              photoIndex < entries[entryIndex].pendingItemPhotos.count else { return }
-        entries[entryIndex].pendingItemPhotos.remove(at: photoIndex)
-        tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
-    }
-
-    @objc private func addPhotoForEntry(_ sender: UIButton) {
-        let entryIndex = sender.tag
-        guard entryIndex < entries.count else { return }
-        
-        let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "Take Photo", style: .default) { [weak self] _ in
-            self?.presentCameraForEntry(at: entryIndex)
-        })
-        alert.addAction(UIAlertAction(title: "Choose from Library", style: .default) { [weak self] _ in
-            self?.presentPhotoPickerForEntry(at: entryIndex)
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
-    }
-    
-    @objc private func recordVideoForEntry(_ sender: UIButton) {
-        let entryIndex = sender.tag
-        guard entryIndex < entries.count else { return }
-        
-        let vc = InventoryCaptureVideoViewController()
-        vc.onComplete = { [weak self] images, barcode in
-            guard let self = self, !images.isEmpty else { return }
-            self.entries[entryIndex].pendingItemPhotos.append(contentsOf: images)
-            if let barcode, self.entries[entryIndex].barcode == nil || self.entries[entryIndex].barcode?.isEmpty == true {
-                self.entries[entryIndex].barcode = barcode
-            }
-            DispatchQueue.main.async {
-                self.tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
-            }
-        }
-        vc.onCancel = { /* nothing */ }
-        let nav = UINavigationController(rootViewController: vc)
-        nav.modalPresentationStyle = .fullScreen
-        present(nav, animated: true)
-    }
-    
-    private var photoTargetEntryIndex: Int = 0
-    
-    private func presentCameraForEntry(at index: Int) {
-        guard UIImagePickerController.isSourceTypeAvailable(.camera) else { return }
-        photoTargetEntryIndex = index
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.delegate = self
-        present(picker, animated: true)
-    }
-    
-    private func presentPhotoPickerForEntry(at index: Int) {
-        photoTargetEntryIndex = index
-        let picker = UIImagePickerController()
-        picker.sourceType = .photoLibrary
-        picker.delegate = self
-        present(picker, animated: true)
-    }
 }
 
 // MARK: - SupplierSelectionDelegate
@@ -2109,39 +1922,5 @@ extension AddPurchaseViewController: PurchaseUnitSelectionDelegate {
         }
         
         tableView.reloadSections(IndexSet([Section.items.rawValue, Section.summary.rawValue]), with: .none)
-    }
-}
-
-// MARK: - UIImagePickerControllerDelegate
-
-extension AddPurchaseViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-        picker.dismiss(animated: true) { [weak self] in
-            guard let self, let image = info[.originalImage] as? UIImage else { return }
-            PhotoObjectIsolateViewController.present(from: self, image: image) { [weak self] isolated in
-                self?.appendIsolatedProductPhoto(isolated)
-            }
-        }
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true)
-    }
-
-    private func appendIsolatedProductPhoto(_ image: UIImage) {
-        let maxDim: CGFloat = 480
-        let scale = min(maxDim / max(image.size.width, image.size.height), 1.0)
-        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let resized = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        if let compressed = resized?.jpegData(compressionQuality: 0.7),
-           let final = UIImage(data: compressed) {
-            entries[photoTargetEntryIndex].pendingItemPhotos.append(final)
-        } else {
-            entries[photoTargetEntryIndex].pendingItemPhotos.append(image)
-        }
-        tableView.reloadSections(IndexSet(integer: Section.items.rawValue), with: .none)
     }
 }

@@ -2561,7 +2561,6 @@
                                         </constraints>
                                         <segments>
                                             <segment title="Bill"/>
-                                            <segment title="Products"/>
                                             <segment title="Barcode"/>
                                         </segments>
                                         <color key="selectedSegmentTintColor" name="AccentColor"/>

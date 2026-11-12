@@ -14,6 +14,5 @@ struct PurchaseEntry {
     var hsnCode: String? = nil
     var gstRate: Double? = nil
     
-    var pendingItemPhotos: [UIImage] = []
     var expiryDate: Date? = nil
 }

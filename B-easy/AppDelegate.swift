@@ -7,7 +7,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         CrashLog.install()
         AppShortcutRefresher.start()
         ShopContextualEmbeddingMatcher.shared.warmup()
-        ProductFingerprintManager.shared.prepareEmbeddingsForCurrentExtractor()
         Task { @MainActor in
             ProStore.shared.start()
         }
