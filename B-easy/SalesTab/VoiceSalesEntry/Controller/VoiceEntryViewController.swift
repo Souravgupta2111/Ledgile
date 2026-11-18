@@ -55,6 +55,18 @@ class VoiceEntryViewController: UIViewController {
         
         WhisperService.shared.preloadModel()
         print("[VoiceSale] viewDidLoad — WhisperService preload triggered")
+
+        // Add close button when presented modally (e.g. via hotword wake phrase)
+        if onDismiss != nil {
+            let closeButton = UIBarButtonItem(
+                image: UIImage(systemName: "xmark"),
+                style: .plain,
+                target: self,
+                action: #selector(closeButtonTapped)
+            )
+            closeButton.tintColor = UIColor(named: "Onyx") ?? .label
+            navigationItem.leftBarButtonItem = closeButton
+        }
     }
 
      override func viewDidAppear(_ animated: Bool) {
@@ -72,9 +84,22 @@ class VoiceEntryViewController: UIViewController {
 
      override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if isBeingDismissed || isMovingFromParent {
+        let isLeaving = isBeingDismissed
+            || isMovingFromParent
+            || (navigationController?.isBeingDismissed == true)
+        if isLeaving {
             stopListening()
             onDismiss?()
+            HotwordListener.shared.resume()
+        }
+    }
+
+    @objc private func closeButtonTapped() {
+        stopListening()
+        let callback = onDismiss
+        onDismiss = nil          // prevent double-call from viewWillDisappear
+        dismiss(animated: true) {
+            callback?()
             HotwordListener.shared.resume()
         }
     }

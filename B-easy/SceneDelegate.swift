@@ -115,6 +115,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidBecomeActive(_ scene: UIScene) {
         CloudBackupService.shared.uploadIfDueForDaily()
         setupHotwordListener()
+        // Clear any stuck pause state (e.g. voice VC dismissed without
+        // calling resume). If a voice screen is currently visible it will
+        // re-pause in its own viewDidAppear.
+        HotwordListener.shared.resume()
         HotwordListener.shared.start()
     }
 
@@ -149,11 +153,12 @@ extension SceneDelegate {
             guard let voiceVC = storyboard.instantiateViewController(withIdentifier: "VoiceEntryViewController")
                     as? VoiceEntryViewController else { return }
             voiceVC.autoStartListening = true
-            voiceVC.modalPresentationStyle = .fullScreen
             voiceVC.onDismiss = {
                 HotwordListener.shared.resume()
             }
-            topVC.present(voiceVC, animated: true)
+            let nav = UINavigationController(rootViewController: voiceVC)
+            nav.modalPresentationStyle = .fullScreen
+            topVC.present(nav, animated: true)
         }
     }
 
