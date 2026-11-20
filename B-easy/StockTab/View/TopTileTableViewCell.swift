@@ -52,7 +52,7 @@ class TopTileTableViewCell: UITableViewCell {
     }
 
     
-    func configure(investmentAmount: String, itemCount: String, purchaseAmount: String, purchaseCount: String, lowStockCountText: String, grossMarginPercent: Double? = nil, purchasePercentChange: Double? = nil, expiryText: String) {
+    func configure(investmentAmount: String, itemCount: String, purchaseAmount: String, purchaseCount: String, lowStockCountText: String, grossMarginPercent: Double? = nil, purchasePercentChange: Double? = nil, expiryText: String, hasLowStockAlerts: Bool, hasExpiryAlerts: Bool) {
                 
         amountLabel.text = investmentAmount
         itemCountLabel.text = itemCount
@@ -60,6 +60,11 @@ class TopTileTableViewCell: UITableViewCell {
         purchaseCountLabel.text = purchaseCount
         restockCountLabel.text = lowStockCountText
         expiryLabel.text = expiryText
+
+        // Alert counts come from the current database snapshot. Always assign both
+        // states so a reused cell returns to black when an alert is resolved.
+        restockCountLabel.textColor = hasLowStockAlerts ? .systemRed : .black
+        expiryLabel.textColor = hasExpiryAlerts ? .systemRed : .black
             
                 // Gross Margin
         if let margin = grossMarginPercent {
@@ -92,4 +97,3 @@ class TopTileTableViewCell: UITableViewCell {
             }
         }
 }
-

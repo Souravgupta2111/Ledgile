@@ -220,7 +220,9 @@ extension StockViewController: UITableViewDataSource, UITableViewDelegate {
                 lowStockCountText: "\(lowStockAlerts.count) items",
                 grossMarginPercent: grossMarginPercent,
                 purchasePercentChange: purchasePercentChange,
-                expiryText: "\(expiryAlerts.count) items"
+                expiryText: "\(expiryAlerts.count) items",
+                hasLowStockAlerts: !lowStockAlerts.isEmpty,
+                hasExpiryAlerts: !expiryAlerts.isEmpty
             )
             return cell
         } else {
